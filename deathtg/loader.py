@@ -47,7 +47,7 @@ class ModuleLoader:
 
         module_name = path.stem
         import_name = f"deathtg_user_modules.{module_name}"
-        self.unload(module_name, silent=True)
+        self.unload(module_name, silent=True, force=True)
 
         spec = importlib.util.spec_from_file_location(import_name, path)
         if spec is None or spec.loader is None:
@@ -82,8 +82,8 @@ class ModuleLoader:
         target.write_text(text, encoding="utf-8")
         return target
 
-    def unload(self, module_name: str, *, silent: bool = False) -> list[str]:
-        removed = self.registry.remove_module(module_name)
+    def unload(self, module_name: str, *, silent: bool = False, force: bool = False) -> list[str]:
+        removed = self.registry.remove_module(module_name, force=force)
         self.loaded.pop(module_name, None)
         for key in list(sys.modules):
             if key.endswith(f".{module_name}"):
