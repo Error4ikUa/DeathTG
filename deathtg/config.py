@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).resolve().parent.parent
 MODULES_DIR = ROOT_DIR / "modules"
 DOWNLOADS_DIR = ROOT_DIR / "downloads"
+RUNTIME_DIR = ROOT_DIR / "runtime"
 ENV_PATH = ROOT_DIR / ".env"
 
 
