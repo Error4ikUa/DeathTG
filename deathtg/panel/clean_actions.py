@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from urllib.parse import quote
 
 import aiohttp
 from fastapi import APIRouter, File, Form, UploadFile
@@ -15,12 +16,21 @@ from deathtg.security import scan_module_source
 router = APIRouter()
 
 
+def redirect_with(path: str, key: str, value: str):
+    base, sep, fragment = path.partition("#")
+    mark = "&" if "?" in base else "?"
+    url = f"{base}{mark}{key}={quote(str(value))}"
+    if sep:
+        url += f"#{fragment}"
+    return RedirectResponse(url, status_code=303)
+
+
 def ok(path: str, msg: str):
-    return RedirectResponse(f"{path}?message={msg}", status_code=303)
+    return redirect_with(path, "message", msg)
 
 
 def bad(path: str, exc: Exception):
-    return RedirectResponse(f"{path}?error={type(exc).__name__}: {exc}", status_code=303)
+    return redirect_with(path, "error", f"{type(exc).__name__}: {exc}")
 
 
 @router.post("/profile/avatar")
