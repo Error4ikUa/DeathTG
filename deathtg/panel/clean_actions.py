@@ -46,6 +46,28 @@ def normalize_link(link: str) -> str:
     return url
 
 
+async def install_downloaded_module(link: str) -> str:
+    path = await loader.download_module(link)
+    try:
+        return await loader.load_file(path)
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
+
+
+async def install_uploaded_module(filename: str, text: str) -> str:
+    report = scan_module_source(text)
+    if not report.allowed:
+        raise RuntimeError("Модуль заблокирован: " + report.pretty())
+    target = MODULES_DIR / Path(filename).name
+    target.write_text(text, encoding="utf-8")
+    try:
+        return await loader.load_file(target)
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+
+
 @router.post("/profile/avatar")
 async def avatar_upload(file: UploadFile = File(...)):
     try:
@@ -67,8 +89,7 @@ async def avatar_upload(file: UploadFile = File(...)):
 @router.post("/modules/download")
 async def download_module(link: str = Form(...)):
     try:
-        path = await loader.download_module(link)
-        name = await loader.load_file(path)
+        name = await install_downloaded_module(link)
         return ok("/browser#installedPane", f"Module {name} installed")
     except Exception as exc:
         return bad("/browser#installPane", exc)
@@ -80,12 +101,7 @@ async def upload_module(file: UploadFile = File(...)):
         if not file.filename or not file.filename.endswith(".py"):
             raise RuntimeError("Нужен .py файл")
         text = (await file.read()).decode("utf-8")
-        report = scan_module_source(text)
-        if not report.allowed:
-            raise RuntimeError("Модуль заблокирован: " + report.pretty())
-        target = MODULES_DIR / Path(file.filename).name
-        target.write_text(text, encoding="utf-8")
-        name = await loader.load_file(target)
+        name = await install_uploaded_module(file.filename, text)
         return ok("/browser#installedPane", f"Module {name} uploaded")
     except Exception as exc:
         return bad("/browser#installPane", exc)
@@ -100,8 +116,7 @@ async def update_all_modules():
             link = item.get("link") or item.get("raw") or item.get("url")
             if not link:
                 continue
-            path = await loader.download_module(str(link))
-            await loader.load_file(path)
+            await install_downloaded_module(str(link))
             updated += 1
         return ok("/browser#installedPane", f"Updated modules: {updated}")
     except Exception as exc:
@@ -116,8 +131,7 @@ async def update_one_module(name: str):
             repo_name = str(item.get("name", "")).lower().replace(" ", "_")
             link = item.get("link") or item.get("raw") or item.get("url")
             if link and (repo_name == wanted or str(link).lower().endswith(f"/{wanted}.py")):
-                path = await loader.download_module(str(link))
-                await loader.load_file(path)
+                await install_downloaded_module(str(link))
                 return ok("/browser#installedPane", f"Module {name} updated")
         raise RuntimeError("Модуль не найден в DTG_Modules index.json")
     except Exception as exc:
