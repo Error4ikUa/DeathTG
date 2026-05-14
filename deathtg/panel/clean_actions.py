@@ -46,9 +46,9 @@ async def download_module(link: str = Form(...)):
     try:
         path = await loader.download_module(link)
         name = await loader.load_file(path)
-        return ok("/installed", f"Module {name} installed")
+        return ok("/browser#installedPane", f"Module {name} installed")
     except Exception as exc:
-        return bad("/install", exc)
+        return bad("/browser#installPane", exc)
 
 
 @router.post("/modules/upload")
@@ -63,9 +63,9 @@ async def upload_module(file: UploadFile = File(...)):
         target = MODULES_DIR / Path(file.filename).name
         target.write_text(text, encoding="utf-8")
         name = await loader.load_file(target)
-        return ok("/installed", f"Module {name} uploaded")
+        return ok("/browser#installedPane", f"Module {name} uploaded")
     except Exception as exc:
-        return bad("/install", exc)
+        return bad("/browser#installPane", exc)
 
 
 @router.post("/modules/update-all")
@@ -80,9 +80,9 @@ async def update_all_modules():
             path = await loader.download_module(str(link))
             await loader.load_file(path)
             updated += 1
-        return ok("/installed", f"Updated modules: {updated}")
+        return ok("/browser#installedPane", f"Updated modules: {updated}")
     except Exception as exc:
-        return bad("/installed", exc)
+        return bad("/browser#installedPane", exc)
 
 
 @router.post("/modules/{name}/update")
@@ -95,19 +95,19 @@ async def update_one_module(name: str):
             if link and (repo_name == wanted or str(link).lower().endswith(f"/{wanted}.py")):
                 path = await loader.download_module(str(link))
                 await loader.load_file(path)
-                return ok("/installed", f"Module {name} updated")
+                return ok("/browser#installedPane", f"Module {name} updated")
         raise RuntimeError("Модуль не найден в DTG_Modules index.json")
     except Exception as exc:
-        return bad("/installed", exc)
+        return bad("/browser#installedPane", exc)
 
 
 @router.post("/modules/{name}/unload")
 async def unload_module(name: str):
     try:
         loader.unload(name)
-        return ok("/installed", f"Module {name} unloaded")
+        return ok("/browser#installedPane", f"Module {name} unloaded")
     except Exception as exc:
-        return bad("/installed", exc)
+        return bad("/browser#installedPane", exc)
 
 
 @router.post("/modules/{name}/delete")
@@ -119,9 +119,9 @@ async def delete_module(name: str):
         path = MODULES_DIR / f"{Path(name).name}.py"
         if path.exists():
             path.unlink()
-        return ok("/installed", f"Module {name} deleted")
+        return ok("/browser#installedPane", f"Module {name} deleted")
     except Exception as exc:
-        return bad("/installed", exc)
+        return bad("/browser#installedPane", exc)
 
 
 @router.post("/scanner/check")
