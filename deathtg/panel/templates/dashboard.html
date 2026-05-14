@@ -15,24 +15,34 @@
         <div class="brand-mark">DTG</div>
         <div>
           <h2>DeathTG</h2>
-          <p>control core</p>
+          <p>neon control core</p>
         </div>
       </div>
       <nav>
+        <a href="#profile">Profile</a>
         <a href="#status">Status</a>
-        <a href="#modules">Modules</a>
-        <a href="#install">Install</a>
+        <a href="#browser">Module browser</a>
+        <a href="#modules">Installed</a>
+        <a href="#install">Manual install</a>
         <a href="#scanner">Scanner</a>
       </nav>
       <a class="logout" href="/logout">Logout</a>
     </aside>
 
     <main class="content">
-      <header class="hero glass-card">
-        <div>
-          <p class="eyebrow">Oracle Cloud ready</p>
-          <h1>DeathTG Web Control</h1>
-          <p>Управление ядром, модулями, обновлением и защитой прямо с сайта.</p>
+      <header id="profile" class="hero glass-card">
+        <div class="profile-head">
+          <div class="avatar-orb">{{ (profile.name or 'D')[0] }}</div>
+          <div>
+            <p class="eyebrow">Telegram profile</p>
+            <h1>{{ profile.name }}</h1>
+            <p>@{{ profile.username or 'no_username' }} · ID {{ profile.id or 'unknown' }}</p>
+          </div>
+        </div>
+        <div class="elo-card">
+          <span>DTG LEVEL</span>
+          <strong>{{ status.level.level }}</strong>
+          <p>ELO {{ status.level.elo }} · {{ status.level.current }}/100 XP</p>
         </div>
         <form method="post" action="/update">
           <button class="ghost-btn" type="submit">Update core</button>
@@ -45,9 +55,59 @@
       <section id="status" class="grid stats-grid">
         <article class="glass-card stat"><span>Config</span><strong>{{ 'OK' if status.config_ok else 'FAIL' }}</strong></article>
         <article class="glass-card stat"><span>Session</span><strong>{{ 'FOUND' if status.session_exists else 'NO' }}</strong></article>
-        <article class="glass-card stat"><span>Prefix</span><strong>{{ status.prefix }}</strong></article>
+        <article class="glass-card stat"><span>Uses</span><strong>{{ status.uses }}</strong></article>
+        <article class="glass-card stat"><span>Days</span><strong>{{ status.days }}</strong></article>
         <article class="glass-card stat"><span>Modules</span><strong>{{ status.modules_count }}</strong></article>
-        <article class="glass-card stat"><span>Commands</span><strong>{{ status.commands_count }}</strong></article>
+      </section>
+
+      <section class="grid two-col">
+        <article class="glass-card panel-card">
+          <h2>Usage timeline</h2>
+          <p>Наведи на день: в title будет модуль/команда/количество.</p>
+          <div class="heatline">
+            {% for row in usage_days %}
+              <span title="{{ row.day }} · {{ row.module }}.{{ row.command }} · {{ row.count }} uses" style="height: {{ 12 + row.count * 6 }}px"></span>
+            {% endfor %}
+          </div>
+        </article>
+        <article class="glass-card panel-card">
+          <h2>Top modules</h2>
+          <div class="module-list compact">
+            {% for item in top_modules %}
+            <div class="module-row"><b>{{ item.module }}</b><code>{{ item.count }} uses</code></div>
+            {% endfor %}
+            {% if not top_modules %}<p>Пока статистики нет. Юзни пару команд.</p>{% endif %}
+          </div>
+        </article>
+      </section>
+
+      <section id="browser" class="glass-card panel-card">
+        <div class="section-head">
+          <div>
+            <h2>DTG Module Browser</h2>
+            <p>Позже сюда будет тянуться репозиторий DTG_Modules с modul.png, описанием и ссылкой установки.</p>
+          </div>
+          <input class="search-input" type="text" id="moduleSearch" placeholder="Search module...">
+        </div>
+        <div class="browser-grid" id="browserGrid">
+          {% for mod in browser_modules %}
+          <article class="module-card" data-name="{{ mod.name }} {{ mod.description }}">
+            <img src="{{ mod.image or mod.modul_png or '' }}" alt="" onerror="this.style.display='none'">
+            <h3>{{ mod.name }}</h3>
+            <p>{{ mod.description }}</p>
+            <form method="post" action="/modules/download">
+              <input type="hidden" name="link" value="{{ mod.link or mod.raw or mod.url }}">
+              <button type="submit">Install</button>
+            </form>
+          </article>
+          {% endfor %}
+          {% if not browser_modules %}
+          <article class="module-card placeholder-card">
+            <h3>DTG_Modules пустой или index.json недоступен</h3>
+            <p>Формат будущего index.json: modules: name, description, image, link.</p>
+          </article>
+          {% endif %}
+        </div>
       </section>
 
       <section id="install" class="grid two-col">
@@ -59,7 +119,6 @@
             <button type="submit">Download module</button>
           </form>
         </article>
-
         <article class="glass-card panel-card">
           <h2>Upload file</h2>
           <p>Загрузить .py модуль с компа. Перед установкой идёт security scan.</p>
@@ -72,24 +131,21 @@
 
       <section id="modules" class="glass-card panel-card">
         <div class="section-head">
-          <div>
-            <h2>Installed modules</h2>
-            <p>Команды, которые сейчас видит ядро DeathTG.</p>
-          </div>
+          <div><h2>Installed modules</h2><p>Protected-модули нельзя удалить из панели.</p></div>
         </div>
         <div class="module-list">
           {% for module, commands in grouped.items() %}
           <div class="module-row">
             <div>
-              <h3>{{ module }}</h3>
+              <h3>{% if module in protected %}🛡{% else %}🧩{% endif %} {{ module }}</h3>
               <p>{% for cmd in commands %}<code>.{{ cmd.name }}</code> {% endfor %}</p>
             </div>
-            {% if module not in ['core', 'system'] %}
+            {% if module not in protected %}
             <div class="row-actions">
               <form method="post" action="/modules/{{ module }}/unload"><button class="small-btn" type="submit">Unload</button></form>
               <form method="post" action="/modules/{{ module }}/delete"><button class="small-btn danger-btn" type="submit">Delete</button></form>
             </div>
-            {% endif %}
+            {% else %}<code>protected</code>{% endif %}
           </div>
           {% endfor %}
         </div>
@@ -106,5 +162,6 @@
     </main>
   </div>
   <script src="/static/matrix.js"></script>
+  <script src="/static/dashboard.js"></script>
 </body>
 </html>
