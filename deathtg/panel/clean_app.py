@@ -99,7 +99,7 @@ async def browser(request: Request):
     locked = guard(request)
     if locked: return locked
     ctx = await base(request, "browser")
-    ctx.update({"browser_modules": await module_repo()})
+    ctx.update({"browser_modules": await module_repo(), "grouped": registry.by_module(), "protected": PROTECTED_MODULES})
     return templates.TemplateResponse("clean_browser.html", ctx)
 
 
