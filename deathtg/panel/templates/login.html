@@ -15,11 +15,11 @@
       <p>Панель управления юзерботом</p>
       {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
       <form method="post" action="/login" class="form-stack">
-        <label>Access key</label>
-        <input type="text" name="key" placeholder="Access key" autofocus required>
+        <label>Panel password</label>
+        <input type="text" name="key" placeholder="PANEL_PASSWORD из .env" autofocus required>
         <button type="submit">Enter</button>
       </form>
-      <small>На сервере задай PANEL_PASSWORD в .env.</small>
+      <small>Это пароль панели DeathTG, не пароль Telegram. Локально он нужен для теста, а на сервере защищает вход с телефона/браузера.</small>
     </section>
   </main>
   <script src="/static/matrix.js"></script>
