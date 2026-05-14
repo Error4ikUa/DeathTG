@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeathTG Scanner</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <canvas id="matrix"></canvas>
+  <main class="content single-page">
+    <section class="glass-card panel-card">
+      <p class="eyebrow">Security scanner</p>
+      <h1>{{ verdict }}</h1>
+      <p>Score: <strong>{{ report.score }}</strong></p>
+      <pre class="scan-box">{{ report.pretty() }}</pre>
+      <a class="ghost-link" href="/">Back to dashboard</a>
+    </section>
+  </main>
+  <script src="/static/matrix.js"></script>
+</body>
+</html>
