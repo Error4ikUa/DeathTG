@@ -18,6 +18,7 @@ class DeathTG:
     def __init__(self, config: DeathTGConfig) -> None:
         self.config = config
         self.client = TelegramClient(config.session_name, config.api_id, config.api_hash)
+        self.client.deathtg_app = self
         self.registry = CommandRegistry()
         self.loader = ModuleLoader(self.registry, MODULES_DIR)
 
