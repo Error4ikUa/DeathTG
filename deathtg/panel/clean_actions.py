@@ -8,7 +8,7 @@ from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import RedirectResponse
 
 from deathtg.config import MODULES_DIR, ROOT_DIR
-from deathtg.panel.clean_core import loader
+from deathtg.panel.clean_core import USER_STATIC_DIR, loader, module_repo
 from deathtg.registry import PROTECTED_MODULES
 from deathtg.security import scan_module_source
 
@@ -21,6 +21,24 @@ def ok(path: str, msg: str):
 
 def bad(path: str, exc: Exception):
     return RedirectResponse(f"{path}?error={type(exc).__name__}: {exc}", status_code=303)
+
+
+@router.post("/profile/avatar")
+async def avatar_upload(file: UploadFile = File(...)):
+    try:
+        if not file.filename:
+            raise RuntimeError("Файл не выбран")
+        suffix = Path(file.filename).suffix.lower()
+        if suffix not in {".png", ".jpg", ".jpeg", ".webp"}:
+            raise RuntimeError("Нужна картинка png/jpg/webp")
+        USER_STATIC_DIR.mkdir(parents=True, exist_ok=True)
+        for old in USER_STATIC_DIR.glob("avatar.*"):
+            old.unlink(missing_ok=True)
+        target = USER_STATIC_DIR / f"avatar{suffix}"
+        target.write_bytes(await file.read())
+        return ok("/profile", "Avatar updated")
+    except Exception as exc:
+        return bad("/profile", exc)
 
 
 @router.post("/modules/download")
@@ -48,6 +66,39 @@ async def upload_module(file: UploadFile = File(...)):
         return ok("/installed", f"Module {name} uploaded")
     except Exception as exc:
         return bad("/install", exc)
+
+
+@router.post("/modules/update-all")
+async def update_all_modules():
+    try:
+        updated = 0
+        items = await module_repo()
+        for item in items:
+            link = item.get("link") or item.get("raw") or item.get("url")
+            if not link:
+                continue
+            path = await loader.download_module(str(link))
+            await loader.load_file(path)
+            updated += 1
+        return ok("/installed", f"Updated modules: {updated}")
+    except Exception as exc:
+        return bad("/installed", exc)
+
+
+@router.post("/modules/{name}/update")
+async def update_one_module(name: str):
+    try:
+        wanted = name.lower().replace(".py", "")
+        for item in await module_repo():
+            repo_name = str(item.get("name", "")).lower().replace(" ", "_")
+            link = item.get("link") or item.get("raw") or item.get("url")
+            if link and (repo_name == wanted or str(link).lower().endswith(f"/{wanted}.py")):
+                path = await loader.download_module(str(link))
+                await loader.load_file(path)
+                return ok("/installed", f"Module {name} updated")
+        raise RuntimeError("Модуль не найден в DTG_Modules index.json")
+    except Exception as exc:
+        return bad("/installed", exc)
 
 
 @router.post("/modules/{name}/unload")
