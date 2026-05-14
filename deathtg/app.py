@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 
 from telethon import TelegramClient, events
 
-from deathtg.config import DeathTGConfig, MODULES_DIR
+from deathtg.config import DeathTGConfig, MODULES_DIR, RUNTIME_DIR
 from deathtg.loader import ModuleLoader
 from deathtg.metrics import init_metrics, record_command
 from deathtg.registry import CommandRegistry
@@ -32,12 +33,25 @@ class DeathTG:
         if self.config.owner_id is None:
             self.config.owner_id = me.id
 
+        self._write_runtime_profile(me)
+
         await self.loader.load_builtin("deathtg.modules", ["core", "system", "antivirus", "terminal"])
         await self.loader.load_all_local()
 
         self.client.add_event_handler(self._dispatch, events.NewMessage(outgoing=True))
         log.info("DeathTG started as @%s", getattr(me, "username", None) or me.id)
         await self.client.run_until_disconnected()
+
+    def _write_runtime_profile(self, me) -> None:
+        RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        name = " ".join([getattr(me, "first_name", "") or "", getattr(me, "last_name", "") or ""]).strip()
+        data = {
+            "id": str(getattr(me, "id", "unknown")),
+            "name": name or "DeathTG User",
+            "username": getattr(me, "username", None) or "",
+            "ok": "1",
+        }
+        (RUNTIME_DIR / "profile.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     async def _dispatch(self, event: events.NewMessage.Event) -> None:
         text = event.raw_text or ""
