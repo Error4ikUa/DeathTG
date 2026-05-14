@@ -36,6 +36,15 @@ class ModuleLoader:
             except Exception as exc:
                 print(f"[DeathTG] skip module {path.name}: {exc}")
 
+    def _install_compat_aliases(self) -> None:
+        core_pkg = importlib.import_module("deathtg")
+        sys.modules.setdefault("DeathTG", core_pkg)
+        for sub in ("command", "config", "registry", "security", "ui"):
+            try:
+                sys.modules.setdefault(f"DeathTG.{sub}", importlib.import_module(f"deathtg.{sub}"))
+            except Exception:
+                pass
+
     async def load_file(self, path: Path, *, force: bool = False) -> str:
         if not path.exists() or path.suffix != ".py":
             raise FileNotFoundError("Нужен существующий .py файл модуля")
@@ -45,6 +54,7 @@ class ModuleLoader:
         if not report.allowed and not force:
             raise RuntimeError("Модуль заблокирован защитой:\n" + report.pretty())
 
+        self._install_compat_aliases()
         module_name = path.stem
         import_name = f"deathtg.modules_external.{module_name}"
         self.unload(module_name, silent=True, force=True)
