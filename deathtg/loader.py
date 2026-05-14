@@ -46,7 +46,7 @@ class ModuleLoader:
             raise RuntimeError("Модуль заблокирован защитой:\n" + report.pretty())
 
         module_name = path.stem
-        import_name = f"deathtg_user_modules.{module_name}"
+        import_name = f"deathtg.modules_external.{module_name}"
         self.unload(module_name, silent=True, force=True)
 
         spec = importlib.util.spec_from_file_location(import_name, path)
@@ -54,6 +54,7 @@ class ModuleLoader:
             raise RuntimeError(f"Не могу прочитать модуль: {path}")
 
         module = importlib.util.module_from_spec(spec)
+        module.__package__ = "deathtg.modules_external"
         sys.modules[import_name] = module
         spec.loader.exec_module(module)
         self._register_module(module, module_name)
