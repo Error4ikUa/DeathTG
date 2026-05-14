@@ -18,6 +18,7 @@ TEMPLATES_DIR = PANEL_DIR / "templates"
 STATIC_DIR = PANEL_DIR / "static"
 USER_STATIC_DIR = STATIC_DIR / "user"
 MODULE_REPO_INDEX = os.getenv("MODULE_REPO_INDEX", "https://raw.githubusercontent.com/Error4ikUa/DTG_Modules/main/index.json")
+MODULE_REPO_API = os.getenv("MODULE_REPO_API", "https://api.github.com/repos/Error4ikUa/DTG_Modules/contents?ref=main")
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 registry = CommandRegistry()
@@ -82,14 +83,44 @@ def status(profile: dict[str, str]) -> dict:
     return {"config_ok": cfg_ok, "session_file": has_session(), "session_ok": profile.get("ok") == "1", "prefix": prefix, "modules_count": len(loader.loaded), "commands_count": len(list(registry.all())), "uses": usage_total(), "days": installed_days()}
 
 
+async def _module_repo_from_index(session: aiohttp.ClientSession) -> list[dict]:
+    async with session.get(MODULE_REPO_INDEX, timeout=10) as r:
+        if r.status != 200:
+            return []
+        data = await r.json()
+        items = data.get("modules", data if isinstance(data, list) else [])
+        return items if isinstance(items, list) else []
+
+
+async def _module_repo_from_github_contents(session: aiohttp.ClientSession) -> list[dict]:
+    async with session.get(MODULE_REPO_API, timeout=10) as r:
+        if r.status != 200:
+            return []
+        data = await r.json()
+    if not isinstance(data, list):
+        return []
+    modules: list[dict] = []
+    for item in data:
+        name = str(item.get("name") or "")
+        if not name.endswith(".py") or name.startswith("_"):
+            continue
+        stem = name[:-3]
+        modules.append({
+            "name": stem,
+            "description": f"{stem} module from DTG_Modules",
+            "image": "",
+            "link": item.get("download_url") or item.get("html_url") or "",
+        })
+    return modules
+
+
 async def module_repo() -> list[dict]:
     try:
         async with aiohttp.ClientSession() as s:
-            async with s.get(MODULE_REPO_INDEX, timeout=10) as r:
-                if r.status != 200:
-                    return []
-                data = await r.json()
-                return data.get("modules", data if isinstance(data, list) else [])
+            indexed = await _module_repo_from_index(s)
+            if indexed:
+                return indexed
+            return await _module_repo_from_github_contents(s)
     except Exception:
         return []
 
