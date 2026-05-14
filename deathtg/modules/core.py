@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from deathtg.command import command
-from deathtg.config import MODULES_DIR
+from deathtg.config import MODULES_DIR, ROOT_DIR
 from deathtg.registry import PROTECTED_MODULES
 from deathtg.ui import box, fail, ok
 
@@ -57,6 +58,21 @@ async def help_cmd(event, args: list[str]) -> None:
     await event.edit(box("DeathTG Help", lines), parse_mode="html")
 
 
+@command("tdgup", description="Обновить DeathTG до последней версии", usage=".tdgup", aliases=("update", "dtgup"))
+async def tdgup_cmd(event, args: list[str]) -> None:
+    msg = await event.edit("<b>☠️ DeathTG:</b> проверяю обновления...", parse_mode="html")
+    try:
+        result = subprocess.run(["git", "pull"], cwd=ROOT_DIR, text=True, capture_output=True, timeout=90)
+        output = (result.stdout + "\n" + result.stderr).strip()
+        if result.returncode != 0:
+            await msg.edit(fail("обновление не выполнено:\n<code>" + output[-1200:] + "</code>"), parse_mode="html")
+            return
+        short = output[-1200:] or "Already up to date."
+        await msg.edit(ok("DeathTG обновлён. Перезапусти процесс, чтобы сайт и юзербот взяли новый код.\n<code>" + short + "</code>"), parse_mode="html")
+    except Exception as exc:
+        await msg.edit(fail(f"ошибка обновления: <code>{type(exc).__name__}: {exc}</code>"), parse_mode="html")
+
+
 @command("dlmod", description="Скачать и загрузить модуль по ссылке", usage=".dlmod https://...")
 async def dlmod_cmd(event, args: list[str]) -> None:
     app = _app(event)
@@ -65,9 +81,16 @@ async def dlmod_cmd(event, args: list[str]) -> None:
         return
 
     msg = await event.edit("<b>☠️ DeathTG:</b> качаю модуль и проверяю защитой...", parse_mode="html")
-    path = await app.loader.download_module(args[0])
-    module_name = await app.loader.load_file(path)
-    await msg.edit(ok(f"модуль <code>{module_name}</code> скачан, проверен и загружен"), parse_mode="html")
+    try:
+        path = await app.loader.download_module(args[0])
+        try:
+            module_name = await app.loader.load_file(path)
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+        await msg.edit(ok(f"модуль <code>{module_name}</code> скачан, проверен и загружен"), parse_mode="html")
+    except Exception as exc:
+        await msg.edit(fail(f"ошибка в .dlmod: <code>{type(exc).__name__}: {exc}</code>"), parse_mode="html")
 
 
 @command("loadmod", description="Загрузить локальный модуль из папки modules", usage=".loadmod filename.py")
