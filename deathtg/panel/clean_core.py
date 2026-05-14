@@ -15,6 +15,7 @@ from deathtg.registry import CommandRegistry, PROTECTED_MODULES
 PANEL_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = PANEL_DIR / "templates"
 STATIC_DIR = PANEL_DIR / "static"
+USER_STATIC_DIR = STATIC_DIR / "user"
 MODULE_REPO_INDEX = os.getenv("MODULE_REPO_INDEX", "https://raw.githubusercontent.com/Error4ikUa/DTG_Modules/main/index.json")
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
@@ -44,6 +45,14 @@ def has_session() -> bool:
     return bool(list(ROOT_DIR.glob("*.session")))
 
 
+def avatar_url() -> str:
+    USER_STATIC_DIR.mkdir(parents=True, exist_ok=True)
+    for name in ("avatar.png", "avatar.jpg", "avatar.jpeg", "avatar.webp"):
+        if (USER_STATIC_DIR / name).exists():
+            return f"/static/user/{name}"
+    return ""
+
+
 async def refresh_modules() -> None:
     registry._commands.clear()
     registry._aliases.clear()
@@ -53,6 +62,7 @@ async def refresh_modules() -> None:
 
 
 async def profile_info() -> dict[str, str]:
+    avatar = avatar_url()
     try:
         from telethon import TelegramClient
         cfg = load_config()
@@ -61,9 +71,9 @@ async def profile_info() -> dict[str, str]:
         me = await client.get_me()
         await client.disconnect()
         name = " ".join([me.first_name or "", me.last_name or ""]).strip() or "DeathTG User"
-        return {"name": name, "username": me.username or "", "id": str(me.id), "ok": "1"}
+        return {"name": name, "username": me.username or "", "id": str(me.id), "ok": "1", "avatar": avatar}
     except Exception:
-        return {"name": "DeathTG User", "username": "not connected", "id": "unknown", "ok": "0"}
+        return {"name": "DeathTG User", "username": "not connected", "id": "unknown", "ok": "0", "avatar": avatar}
 
 
 def status(profile: dict[str, str]) -> dict:
