@@ -10,6 +10,16 @@ let lastFrame = 0;
 const frameDelay = 72;
 const fallSpeed = 0.42;
 
+function themeColor() {
+  const raw = getComputedStyle(document.body).getPropertyValue('--accent').trim();
+  return raw || '#52ff8b';
+}
+
+function themeGlow() {
+  const raw = getComputedStyle(document.body).getPropertyValue('--accent-rgb').trim();
+  return raw || '82,255,139';
+}
+
 function resize() {
   width = canvas.width = window.innerWidth;
   height = canvas.height = window.innerHeight;
@@ -25,7 +35,8 @@ function draw(timestamp = 0) {
   }
   lastFrame = timestamp;
 
-  ctx.fillStyle = 'rgba(0, 8, 2, 0.115)';
+  const rgb = themeGlow();
+  ctx.fillStyle = `rgba(0, 6, 4, 0.115)`;
   ctx.fillRect(0, 0, width, height);
   ctx.font = `${fontSize}px monospace`;
 
@@ -34,8 +45,11 @@ function draw(timestamp = 0) {
     const x = i * fontSize;
     const y = columns[i] * fontSize;
 
-    ctx.fillStyle = Math.random() > 0.992 ? '#d7ffd7' : '#00ff66';
+    ctx.fillStyle = Math.random() > 0.992 ? '#fff7d6' : themeColor();
+    ctx.shadowColor = `rgba(${rgb}, .28)`;
+    ctx.shadowBlur = 6;
     ctx.fillText(char, x, y);
+    ctx.shadowBlur = 0;
 
     if (y > height && Math.random() > 0.985) {
       columns[i] = Math.floor(Math.random() * -25);
