@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeathTG Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <canvas id="matrix"></canvas>
+  <div class="app-shell">
+    <aside class="sidebar glass-card">
+      <div class="logo-block">
+        <div class="brand-mark">DTG</div>
+        <div>
+          <h2>DeathTG</h2>
+          <p>control core</p>
+        </div>
+      </div>
+      <nav>
+        <a href="#status">Status</a>
+        <a href="#modules">Modules</a>
+        <a href="#install">Install</a>
+        <a href="#scanner">Scanner</a>
+      </nav>
+      <a class="logout" href="/logout">Logout</a>
+    </aside>
+
+    <main class="content">
+      <header class="hero glass-card">
+        <div>
+          <p class="eyebrow">Oracle Cloud ready</p>
+          <h1>DeathTG Web Control</h1>
+          <p>Управление ядром, модулями, обновлением и защитой прямо с сайта.</p>
+        </div>
+        <form method="post" action="/update">
+          <button class="ghost-btn" type="submit">Update core</button>
+        </form>
+      </header>
+
+      {% if message %}<div class="alert success">{{ message }}</div>{% endif %}
+      {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
+
+      <section id="status" class="grid stats-grid">
+        <article class="glass-card stat"><span>Config</span><strong>{{ 'OK' if status.config_ok else 'FAIL' }}</strong></article>
+        <article class="glass-card stat"><span>Session</span><strong>{{ 'FOUND' if status.session_exists else 'NO' }}</strong></article>
+        <article class="glass-card stat"><span>Prefix</span><strong>{{ status.prefix }}</strong></article>
+        <article class="glass-card stat"><span>Modules</span><strong>{{ status.modules_count }}</strong></article>
+        <article class="glass-card stat"><span>Commands</span><strong>{{ status.commands_count }}</strong></article>
+      </section>
+
+      <section id="install" class="grid two-col">
+        <article class="glass-card panel-card">
+          <h2>Install by link</h2>
+          <p>GitHub blob/raw ссылка на DeathTG-модуль.</p>
+          <form method="post" action="/modules/download" class="form-stack">
+            <input type="text" name="link" placeholder="https://github.com/user/repo/blob/main/module.py" required>
+            <button type="submit">Download module</button>
+          </form>
+        </article>
+
+        <article class="glass-card panel-card">
+          <h2>Upload file</h2>
+          <p>Загрузить .py модуль с компа. Перед установкой идёт security scan.</p>
+          <form method="post" action="/modules/upload" enctype="multipart/form-data" class="form-stack">
+            <input type="file" name="file" accept=".py" required>
+            <button type="submit">Upload module</button>
+          </form>
+        </article>
+      </section>
+
+      <section id="modules" class="glass-card panel-card">
+        <div class="section-head">
+          <div>
+            <h2>Installed modules</h2>
+            <p>Команды, которые сейчас видит ядро DeathTG.</p>
+          </div>
+        </div>
+        <div class="module-list">
+          {% for module, commands in grouped.items() %}
+          <div class="module-row">
+            <div>
+              <h3>{{ module }}</h3>
+              <p>{% for cmd in commands %}<code>.{{ cmd.name }}</code> {% endfor %}</p>
+            </div>
+            {% if module not in ['core', 'system'] %}
+            <div class="row-actions">
+              <form method="post" action="/modules/{{ module }}/unload"><button class="small-btn" type="submit">Unload</button></form>
+              <form method="post" action="/modules/{{ module }}/delete"><button class="small-btn danger-btn" type="submit">Delete</button></form>
+            </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section id="scanner" class="glass-card panel-card">
+        <h2>Module scanner</h2>
+        <p>Быстрая проверка кода перед установкой.</p>
+        <form method="post" action="/scan" class="form-stack">
+          <textarea name="source" rows="10" placeholder="Paste module code here"></textarea>
+          <button type="submit">Scan code</button>
+        </form>
+      </section>
+    </main>
+  </div>
+  <script src="/static/matrix.js"></script>
+</body>
+</html>
