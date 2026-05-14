@@ -61,17 +61,25 @@ class ModuleLoader:
         return module_name
 
     async def download_module(self, link: str) -> Path:
-        url = self._normalize_github_url(link.strip())
+        url = self._normalize_github_url(link)
         filename = Path(urlparse(url).path).name or "module.py"
         if not filename.endswith(".py"):
             raise RuntimeError("Ссылка должна вести на .py модуль")
 
         target = self.modules_dir / filename
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=30) as response:
-                if response.status != 200:
-                    raise RuntimeError(f"Не скачалось, HTTP {response.status}")
-                text = await response.text()
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=30) as response:
+                    if response.status != 200:
+                        raise RuntimeError(f"Не скачалось, HTTP {response.status}")
+                    text = await response.text()
+        except aiohttp.InvalidURL as exc:
+            raise RuntimeError("Некорректная ссылка на модуль") from exc
+        except aiohttp.ClientError as exc:
+            raise RuntimeError(f"Ошибка скачивания модуля: {exc}") from exc
+
+        if self._looks_like_html(text):
+            raise RuntimeError("По ссылке пришла HTML-страница, а не .py код. Дай raw/blob ссылку")
 
         report = scan_module_source(text)
         if not report.allowed:
@@ -114,7 +122,22 @@ class ModuleLoader:
         self.loaded[module_name] = module
 
     @staticmethod
+    def _looks_like_html(text: str) -> bool:
+        head = text[:500].lower()
+        return "<!doctype html" in head or "<html" in head or "<body" in head
+
+    @staticmethod
     def _normalize_github_url(link: str) -> str:
-        if "github.com" in link and "/blob/" in link:
-            return link.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
-        return link
+        url = (link or "").strip().strip("'\"")
+        if not url:
+            raise RuntimeError("Вставь ссылку на .py модуль")
+        if url.startswith("www."):
+            url = "https://" + url
+        if url.startswith("github.com/"):
+            url = "https://" + url
+        if "github.com" in url and "/blob/" in url:
+            url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise RuntimeError("Ссылка должна быть полной: https://.../module.py")
+        return url
