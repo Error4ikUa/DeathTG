@@ -14,7 +14,8 @@
       <div class="brand-mark">DTG</div>
       <p class="eyebrow">First launch</p>
       <h1>DeathTG Setup</h1>
-      <p>Заполни API_ID, API_HASH и номер. Потом один раз запусти <code>python main.py</code>, чтобы Telegram прислал код и создал session.</p>
+      <p>Заполни API_ID, API_HASH и номер. После нажатия <code>Save config</code> конфиг сохранится, но меню откроется только после создания Telegram session.</p>
+      <div class="alert success">После сохранения останови панель через <code>CTRL+C</code>, запусти <code>python main.py</code>, введи код Telegram/2FA, потом снова <code>python panel.py</code>.</div>
       {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
       <form method="post" action="/setup/save" class="form-stack">
         <label>API ID</label>
@@ -31,7 +32,7 @@
         <input type="text" name="bot_token" placeholder="123456:ABC...">
         <button type="submit">Save config</button>
       </form>
-      <small>После сохранения ключ панели будет создан автоматически в .env как PANEL_PASSWORD.</small>
+      <small>Ключ входа в панель создаётся автоматически в файле <code>.env</code> как <code>PANEL_PASSWORD</code>.</small>
     </section>
   </main>
   <script src="/static/matrix.js"></script>
