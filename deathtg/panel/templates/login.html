@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeathTG Panel</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <canvas id="matrix"></canvas>
+  <main class="login-shell">
+    <section class="glass-card login-card">
+      <div class="brand-mark">DTG</div>
+      <h1>DeathTG Control</h1>
+      <p>Панель управления юзерботом</p>
+      {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
+      <form method="post" action="/login" class="form-stack">
+        <label>Access key</label>
+        <input type="text" name="key" placeholder="Access key" autofocus required>
+        <button type="submit">Enter</button>
+      </form>
+      <small>На сервере задай PANEL_PASSWORD в .env.</small>
+    </section>
+  </main>
+  <script src="/static/matrix.js"></script>
+</body>
+</html>
