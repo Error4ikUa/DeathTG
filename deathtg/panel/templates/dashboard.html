@@ -9,158 +9,163 @@
 </head>
 <body>
   <canvas id="matrix"></canvas>
-  <div class="app-shell">
-    <aside class="sidebar glass-card">
-      <div class="logo-block">
-        <div class="brand-mark">DTG</div>
+
+  <button class="floating-avatar" id="menuToggle" title="Open menu">{{ (profile.name or 'D')[0] }}</button>
+
+  <aside class="drawer glass-card" id="drawer">
+    <div class="logo-block">
+      <div class="brand-mark soft-mark">DTG</div>
+      <div>
+        <h2>DeathTG</h2>
+        <p>control core</p>
+      </div>
+    </div>
+    <nav>
+      <a href="#profile">Profile</a>
+      <a href="#status">Status</a>
+      <a href="#activity">Activity</a>
+      <a href="#browser">Module browser</a>
+      <a href="#modules">Installed</a>
+      <a href="#install">Install</a>
+      <a href="#scanner">Scanner</a>
+    </nav>
+    <section class="mini-card">
+      <h3>Avatar</h3>
+      <p>Upload/crop сохранение добавим следующим слоем. Сейчас меню уже спрятано под аватар.</p>
+    </section>
+    <a class="logout" href="/logout">Logout</a>
+  </aside>
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+
+  <main class="content wide-content">
+    <header id="profile" class="hero glass-card calm-hero">
+      <div class="profile-head">
+        <div class="avatar-orb soft-avatar">{{ (profile.name or 'D')[0] }}</div>
         <div>
-          <h2>DeathTG</h2>
-          <p>neon control core</p>
+          <p class="eyebrow">Telegram profile</p>
+          <h1>{{ profile.name }}</h1>
+          <p>@{{ profile.username or 'no_username' }} · ID {{ profile.id or 'unknown' }}</p>
         </div>
       </div>
-      <nav>
-        <a href="#profile">Profile</a>
-        <a href="#status">Status</a>
-        <a href="#browser">Module browser</a>
-        <a href="#modules">Installed</a>
-        <a href="#install">Manual install</a>
-        <a href="#scanner">Scanner</a>
-      </nav>
-      <a class="logout" href="/logout">Logout</a>
-    </aside>
+      <div class="streak-card">
+        <span>DTG STREAK</span>
+        <strong>🔥 {{ status.days }}</strong>
+        <p>дней с момента установки · {{ status.uses }} действий</p>
+      </div>
+      <form method="post" action="/update">
+        <button class="ghost-btn" type="submit">Check update</button>
+      </form>
+    </header>
 
-    <main class="content">
-      <header id="profile" class="hero glass-card">
-        <div class="profile-head">
-          <div class="avatar-orb">{{ (profile.name or 'D')[0] }}</div>
-          <div>
-            <p class="eyebrow">Telegram profile</p>
-            <h1>{{ profile.name }}</h1>
-            <p>@{{ profile.username or 'no_username' }} · ID {{ profile.id or 'unknown' }}</p>
-          </div>
+    {% if message %}<div class="alert success">{{ message }}</div>{% endif %}
+    {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
+    {% if profile.username == 'not connected' %}<div class="alert danger">Telegram session выглядит сломанной или удалённой. Пересоздай session через setup.</div>{% endif %}
+
+    <section id="status" class="grid stats-grid">
+      <article class="glass-card stat"><span>Config</span><strong>{{ 'OK' if status.config_ok else 'FAIL' }}</strong></article>
+      <article class="glass-card stat"><span>Session</span><strong>{{ 'OK' if profile.username != 'not connected' else 'BAD' }}</strong></article>
+      <article class="glass-card stat"><span>Actions</span><strong>{{ status.uses }}</strong></article>
+      <article class="glass-card stat"><span>Days</span><strong>{{ status.days }}</strong></article>
+      <article class="glass-card stat"><span>Modules</span><strong>{{ status.modules_count }}</strong></article>
+    </section>
+
+    <section id="activity" class="glass-card panel-card">
+      <div class="section-head">
+        <div>
+          <h2>Module activity</h2>
+          <p>Один модуль за день считается один раз. Наведи на точку — увидишь дату и модуль.</p>
         </div>
-        <div class="elo-card">
-          <span>DTG LEVEL</span>
-          <strong>{{ status.level.level }}</strong>
-          <p>ELO {{ status.level.elo }} · {{ status.level.current }}/100 XP</p>
+      </div>
+      <div class="activity-chart">
+        {% for row in usage_days %}
+          <span title="{{ row.day }} · {{ row.module }}" style="height: {{ 18 + row.count * 10 }}px"></span>
+        {% endfor %}
+        {% if not usage_days %}<p>Пока пусто. Юзни пару команд в Telegram.</p>{% endif %}
+      </div>
+    </section>
+
+    <section id="browser" class="glass-card panel-card">
+      <div class="section-head">
+        <div>
+          <h2>DTG Module Browser</h2>
+          <p>Источник: <code>Error4ikUa/DTG_Modules</code>. Карточки будут брать modul.png, описание и raw-ссылку.</p>
         </div>
-        <form method="post" action="/update">
-          <button class="ghost-btn" type="submit">Update core</button>
-        </form>
-      </header>
-
-      {% if message %}<div class="alert success">{{ message }}</div>{% endif %}
-      {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
-
-      <section id="status" class="grid stats-grid">
-        <article class="glass-card stat"><span>Config</span><strong>{{ 'OK' if status.config_ok else 'FAIL' }}</strong></article>
-        <article class="glass-card stat"><span>Session</span><strong>{{ 'FOUND' if status.session_exists else 'NO' }}</strong></article>
-        <article class="glass-card stat"><span>Uses</span><strong>{{ status.uses }}</strong></article>
-        <article class="glass-card stat"><span>Days</span><strong>{{ status.days }}</strong></article>
-        <article class="glass-card stat"><span>Modules</span><strong>{{ status.modules_count }}</strong></article>
-      </section>
-
-      <section class="grid two-col">
-        <article class="glass-card panel-card">
-          <h2>Usage timeline</h2>
-          <p>Наведи на день: в title будет модуль/команда/количество.</p>
-          <div class="heatline">
-            {% for row in usage_days %}
-              <span title="{{ row.day }} · {{ row.module }}.{{ row.command }} · {{ row.count }} uses" style="height: {{ 12 + row.count * 6 }}px"></span>
-            {% endfor %}
-          </div>
-        </article>
-        <article class="glass-card panel-card">
-          <h2>Top modules</h2>
-          <div class="module-list compact">
-            {% for item in top_modules %}
-            <div class="module-row"><b>{{ item.module }}</b><code>{{ item.count }} uses</code></div>
-            {% endfor %}
-            {% if not top_modules %}<p>Пока статистики нет. Юзни пару команд.</p>{% endif %}
-          </div>
-        </article>
-      </section>
-
-      <section id="browser" class="glass-card panel-card">
-        <div class="section-head">
-          <div>
-            <h2>DTG Module Browser</h2>
-            <p>Позже сюда будет тянуться репозиторий DTG_Modules с modul.png, описанием и ссылкой установки.</p>
-          </div>
-          <input class="search-input" type="text" id="moduleSearch" placeholder="Search module...">
-        </div>
-        <div class="browser-grid" id="browserGrid">
-          {% for mod in browser_modules %}
-          <article class="module-card" data-name="{{ mod.name }} {{ mod.description }}">
-            <img src="{{ mod.image or mod.modul_png or '' }}" alt="" onerror="this.style.display='none'">
-            <h3>{{ mod.name }}</h3>
-            <p>{{ mod.description }}</p>
-            <form method="post" action="/modules/download">
-              <input type="hidden" name="link" value="{{ mod.link or mod.raw or mod.url }}">
-              <button type="submit">Install</button>
-            </form>
-          </article>
-          {% endfor %}
-          {% if not browser_modules %}
-          <article class="module-card placeholder-card">
-            <h3>DTG_Modules пустой или index.json недоступен</h3>
-            <p>Формат будущего index.json: modules: name, description, image, link.</p>
-          </article>
-          {% endif %}
-        </div>
-      </section>
-
-      <section id="install" class="grid two-col">
-        <article class="glass-card panel-card">
-          <h2>Install by link</h2>
-          <p>GitHub blob/raw ссылка на DeathTG-модуль.</p>
-          <form method="post" action="/modules/download" class="form-stack">
-            <input type="text" name="link" placeholder="https://github.com/user/repo/blob/main/module.py" required>
-            <button type="submit">Download module</button>
+        <input class="search-input" type="text" id="moduleSearch" placeholder="Search module...">
+      </div>
+      <div class="browser-grid" id="browserGrid">
+        {% for mod in browser_modules %}
+        <article class="module-card" data-name="{{ mod.name }} {{ mod.description }}">
+          <img src="{{ mod.image or mod.modul_png or '' }}" alt="" onerror="this.style.display='none'">
+          <h3>{{ mod.name }}</h3>
+          <p>{{ mod.description }}</p>
+          <form method="post" action="/modules/download">
+            <input type="hidden" name="link" value="{{ mod.link or mod.raw or mod.url }}">
+            <button type="submit">Install</button>
           </form>
         </article>
-        <article class="glass-card panel-card">
-          <h2>Upload file</h2>
-          <p>Загрузить .py модуль с компа. Перед установкой идёт security scan.</p>
-          <form method="post" action="/modules/upload" enctype="multipart/form-data" class="form-stack">
-            <input type="file" name="file" accept=".py" required>
-            <button type="submit">Upload module</button>
-          </form>
+        {% endfor %}
+        {% if not browser_modules %}
+        <article class="module-card placeholder-card">
+          <h3>Модули пока не найдены</h3>
+          <p>Создай index.json в DTG_Modules: name, description, image, link.</p>
         </article>
-      </section>
+        {% endif %}
+      </div>
+    </section>
 
-      <section id="modules" class="glass-card panel-card">
-        <div class="section-head">
-          <div><h2>Installed modules</h2><p>Protected-модули нельзя удалить из панели.</p></div>
-        </div>
-        <div class="module-list">
-          {% for module, commands in grouped.items() %}
-          <div class="module-row">
-            <div>
-              <h3>{% if module in protected %}🛡{% else %}🧩{% endif %} {{ module }}</h3>
-              <p>{% for cmd in commands %}<code>.{{ cmd.name }}</code> {% endfor %}</p>
-            </div>
-            {% if module not in protected %}
-            <div class="row-actions">
-              <form method="post" action="/modules/{{ module }}/unload"><button class="small-btn" type="submit">Unload</button></form>
-              <form method="post" action="/modules/{{ module }}/delete"><button class="small-btn danger-btn" type="submit">Delete</button></form>
-            </div>
-            {% else %}<code>protected</code>{% endif %}
-          </div>
-          {% endfor %}
-        </div>
-      </section>
-
-      <section id="scanner" class="glass-card panel-card">
-        <h2>Module scanner</h2>
-        <p>Быстрая проверка кода перед установкой.</p>
-        <form method="post" action="/scan" class="form-stack">
-          <textarea name="source" rows="10" placeholder="Paste module code here"></textarea>
-          <button type="submit">Scan code</button>
+    <section id="install" class="grid two-col">
+      <article class="glass-card panel-card">
+        <h2>Install by link</h2>
+        <p>Вставь GitHub blob/raw ссылку на .py модуль.</p>
+        <form method="post" action="/modules/download" class="form-stack">
+          <input type="text" name="link" placeholder="https://github.com/user/repo/blob/main/module.py" required>
+          <button type="submit">Download module</button>
         </form>
-      </section>
-    </main>
-  </div>
+      </article>
+      <article class="glass-card panel-card upload-card">
+        <h2>Upload file</h2>
+        <p>Выбери .py файл. Старая серая кнопка спрятана, теперь нормальный drop-style upload.</p>
+        <form method="post" action="/modules/upload" enctype="multipart/form-data" class="form-stack">
+          <label class="file-drop">Choose module file<input type="file" name="file" accept=".py" required></label>
+          <button type="submit">Upload module</button>
+        </form>
+      </article>
+    </section>
+
+    <section id="modules" class="glass-card panel-card">
+      <div class="section-head">
+        <div><h2>Installed modules</h2><p>Protected-модули нельзя удалить из панели.</p></div>
+      </div>
+      <div class="module-list">
+        {% for module, commands in grouped.items() %}
+        <div class="module-row">
+          <div>
+            <h3>{% if module in protected %}🛡{% else %}🧩{% endif %} {{ module }}</h3>
+            <p>{% for cmd in commands %}<code>.{{ cmd.name }}</code> {% endfor %}</p>
+          </div>
+          {% if module not in protected %}
+          <div class="row-actions">
+            <form method="post" action="/modules/{{ module }}/unload"><button class="small-btn" type="submit">Unload</button></form>
+            <form method="post" action="/modules/{{ module }}/delete"><button class="small-btn danger-btn" type="submit">Delete</button></form>
+          </div>
+          {% else %}<code>protected</code>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section id="scanner" class="glass-card panel-card">
+      <h2>Module scanner</h2>
+      <p>Вставь ссылку, выбери файл или вставь код модуля для проверки перед установкой.</p>
+      <form method="post" action="/scan" class="form-stack">
+        <input type="text" name="link" placeholder="Module link для проверки — скоро подключим backend">
+        <label class="file-drop">Choose module file<input type="file" name="file" accept=".py"></label>
+        <textarea name="source" rows="9" placeholder="Paste module code here"></textarea>
+        <button type="submit">Scan module</button>
+      </form>
+    </section>
+  </main>
+
   <script src="/static/matrix.js"></script>
   <script src="/static/dashboard.js"></script>
 </body>
