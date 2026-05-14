@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DeathTG Home</title><link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/layout.css"></head>
+<body>
+<canvas id="matrix"></canvas>
+<button class="floating-avatar" id="menuToggle">{{ (profile.name or 'D')[0] }}</button>
+<aside class="drawer glass-card" id="drawer">
+  <div class="logo-block"><div class="brand-mark soft-mark">DTG</div><div><h2>DeathTG</h2><p>main menu</p></div></div>
+  <nav><a href="/">News</a><a href="/profile">Profile</a><a href="/activity">Activity</a><a href="/browser">Module browser</a><a href="/installed">Installed</a><a href="/install">Install</a><a href="/scanner">Scanner</a></nav>
+  <a class="logout" href="/logout">Logout</a>
+</aside><div class="drawer-backdrop" id="drawerBackdrop"></div>
+<main class="content wide-content">
+  <section class="hero glass-card calm-hero">
+    <div><p class="eyebrow">DeathTG Core</p><h1>News & Control</h1><p>Главная панель DTG: обновления, состояние ядра и быстрые действия. Профиль теперь отдельной страницей, чтобы не было каши.</p></div>
+    <form method="post" action="/update"><button class="ghost-btn" type="submit">Check update</button></form>
+  </section>
+  {% if message %}<div class="alert success">{{ message }}</div>{% endif %}{% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
+  <section class="grid stats-grid">
+    <article class="glass-card stat"><span>Config</span><strong>{{ 'OK' if status.config_ok else 'FAIL' }}</strong></article>
+    <article class="glass-card stat"><span>Session</span><strong>{{ 'OK' if profile.username != 'not connected' else 'BAD' }}</strong></article>
+    <article class="glass-card stat"><span>Modules</span><strong>{{ status.modules_count }}</strong></article>
+    <article class="glass-card stat"><span>Commands</span><strong>{{ status.commands_count }}</strong></article>
+    <article class="glass-card stat"><span>Streak</span><strong>🔥 {{ status.days }}</strong></article>
+  </section>
+  {% if profile.username == 'not connected' %}<div class="alert danger">Telegram session не отвечает или удалена. Нужно пересоздать session.</div>{% endif %}
+  <section class="grid two-col">
+    <article class="glass-card panel-card"><p class="eyebrow">What’s new</p><h2>Текущая сборка</h2><div class="news-list"><div><b>Новая навигация</b><p>Главная, профиль, активность и модули разнесены по отдельным страницам.</p></div><div><b>Мягкий UI</b><p>Меньше кислотного зелёного, больше спокойного неона.</p></div><div><b>DTG_Modules</b><p>Браузер готов под репозиторий модулей и modul.png.</p></div></div></article>
+    <article class="glass-card panel-card"><p class="eyebrow">Quick actions</p><h2>Быстрый доступ</h2><div class="quick-grid"><a href="/browser">Browse modules</a><a href="/install">Install module</a><a href="/scanner">Scan module</a><a href="/activity">View activity</a></div></article>
+  </section>
+</main><script src="/static/matrix.js"></script><script src="/static/dashboard.js"></script></body></html>
