@@ -72,9 +72,6 @@ class ModuleLoader:
                     raise RuntimeError(f"Не скачалось, HTTP {response.status}")
                 text = await response.text()
 
-        if "from deathtg.command import command" not in text and "@command" not in text:
-            raise RuntimeError("Это не похоже на DeathTG-модуль")
-
         report = scan_module_source(text)
         if not report.allowed:
             raise RuntimeError("Модуль заблокирован защитой:\n" + report.pretty())
