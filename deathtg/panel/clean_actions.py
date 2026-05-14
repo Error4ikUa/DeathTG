@@ -33,6 +33,19 @@ def bad(path: str, exc: Exception):
     return redirect_with(path, "error", f"{type(exc).__name__}: {exc}")
 
 
+def normalize_link(link: str) -> str:
+    url = (link or "").strip().strip("'\"")
+    if not url:
+        raise RuntimeError("Вставь ссылку")
+    if url.startswith("www."):
+        url = "https://" + url
+    if url.startswith("github.com/"):
+        url = "https://" + url
+    if "github.com" in url and "/blob/" in url:
+        url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
+    return url
+
+
 @router.post("/profile/avatar")
 async def avatar_upload(file: UploadFile = File(...)):
     try:
@@ -141,8 +154,9 @@ async def scanner_check(source: str = Form(""), link: str = Form(""), file: Uplo
         if file and file.filename:
             text = (await file.read()).decode("utf-8")
         if link and not text:
+            url = normalize_link(link)
             async with aiohttp.ClientSession() as session:
-                async with session.get(link, timeout=20) as response:
+                async with session.get(url, timeout=20) as response:
                     text = await response.text()
         if not text.strip():
             raise RuntimeError("Вставь ссылку, файл или код")
