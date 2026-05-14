@@ -9,25 +9,21 @@
 ╚═════╝░╚══════╝╚═╝░░╚═╝░░░╚═╝░░░╚═╝░░╚═╝        ░░░╚═╝░░░░╚═════╝░
 ```
 
-DeathTG — модульный Telegram userbot на Telethon с веб-панелью управления в стиле зелёного Matrix-интерфейса.
-
-> Важно: userbot работает от твоего Telegram-аккаунта. Не грузи левые модули от непонятных типов — модуль получает доступ к клиенту и может писать/читать от имени аккаунта.
+DeathTG — модульный Telegram userbot на Telethon с неоновой web-панелью, Matrix-фоном, защитой модулей, статистикой, профилем и браузером модулей.
 
 ## Что уже есть
 
-- подключение к Telegram-аккаунту через Telethon;
-- конфиг через `.env`;
-- модульная система;
-- декоратор `@command` для команд;
-- `.help` — список модулей и команд;
-- `.modules` — список загруженных модулей;
-- `.dlmod <link>` — скачать и загрузить модуль по ссылке;
-- `.loadmod <file.py>` — загрузить модуль из папки `modules`;
-- `.unloadmod <name>` — выгрузить модуль;
-- `.ping` и `.alive` для проверки работы;
-- security scanner для модулей;
-- web dashboard: login, status, modules, upload, download, delete, scanner, update;
-- Matrix-style зелёный визуал на фоне.
+- userbot на Telethon;
+- setup wizard в web panel;
+- зелёный Matrix-style dashboard;
+- профиль Telegram в панели;
+- статистика использований, дни работы, DTG level/ELO;
+- browser модулей под будущий `DTG_Modules/index.json`;
+- загрузка модулей по ссылке и файлом;
+- protected-модули: `core`, `system`, `antivirus`, `terminal`;
+- security scanner перед установкой модулей;
+- красивый `.help` с copy-friendly командами;
+- `.unloadnod` добавлен как алиас к `.unloadmod`.
 
 ## Установка
 
@@ -35,50 +31,21 @@ DeathTG — модульный Telegram userbot на Telethon с веб-пане
 git clone https://github.com/Error4ikUa/DeathTG.git
 cd DeathTG
 python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install python-multipart
 ```
 
 Windows:
 
 ```powershell
+python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-copy .env.example .env
+pip install python-multipart
 ```
 
-Linux/macOS:
-
-```bash
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-```
-
-## Настройка
-
-Открой `.env` и вставь данные:
-
-```env
-API_ID=123456
-API_HASH=your_api_hash_here
-SESSION_NAME=deathtg
-COMMAND_PREFIX=.
-OWNER_ID=
-
-PANEL_PASSWORD=change_me_now
-PANEL_SECRET=change_me_to_random_long_string
-```
-
-`API_ID` и `API_HASH` берутся с https://my.telegram.org/apps.
-
-## Запуск userbot
-
-```bash
-python main.py
-```
-
-Первый запуск попросит номер, код Telegram и, если включена, 2FA-пароль.
-
-## Запуск web panel
+## Первый запуск через сайт
 
 ```bash
 python panel.py
@@ -87,81 +54,108 @@ python panel.py
 Открой:
 
 ```text
-http://127.0.0.1:8080
+http://127.0.0.1:8080/setup
 ```
 
-Для Oracle Cloud лучше держать панель за reverse proxy и не светить её голой в интернет без HTTPS и нормального пароля.
+Введи:
 
-## Основные команды
+- `API_ID`
+- `API_HASH`
+- номер Telegram
+- имя session, можно оставить `deathtg`
+- `PANEL_SECRET`
+- `BOT_TOKEN`, если хочешь потом inline-бота и красивые кнопки
+
+После сохранения сайт создаст `.env`. Потом один раз запусти:
+
+```bash
+python main.py
+```
+
+Telethon спросит код Telegram и 2FA, если она есть. После успешного входа создастся `.session`, и web panel начнёт открывать полноценное меню.
+
+## Запуск
+
+Userbot:
+
+```bash
+python main.py
+```
+
+Panel:
+
+```bash
+python panel.py
+```
+
+## Oracle Cloud
+
+По умолчанию panel слушает только localhost:
 
 ```text
-.help                 показать все модули и команды
-.help core            показать команды конкретного модуля
+127.0.0.1:8080
+```
+
+Для сервера лучше открыть её через Nginx + HTTPS, а не светить голый порт наружу.
+
+Пример reverse proxy:
+
+```nginx
+server {
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+## Команды
+
+```text
+.help                 красивый список модулей и команд
+.help core            описание конкретного модуля
 .modules              список загруженных модулей
-.dlmod <link>         скачать и загрузить модуль по ссылке
-.loadmod <file.py>    загрузить модуль из папки modules
+.dlmod <link>         скачать и загрузить модуль
+.loadmod <file.py>    загрузить модуль из modules
 .unloadmod <name>     выгрузить модуль
-.ping                 проверить задержку
-.alive                статус DeathTG
+.unloadnod <name>     алиас unloadmod
+.scanmod <file.py>    проверить модуль антивирусом
+.antivirus            статус защиты
+.term <command>       безопасный терминал
+.ping                 задержка
+.alive                статус
+```
+
+## Формат DTG_Modules/index.json
+
+```json
+{
+  "modules": [
+    {
+      "name": "YouTube Downloader",
+      "description": "Скачивает видео и аудио с YouTube",
+      "image": "https://raw.githubusercontent.com/Error4ikUa/DTG_Modules/main/youtube/modul.png",
+      "link": "https://raw.githubusercontent.com/Error4ikUa/DTG_Modules/main/youtube/youtube.py"
+    }
+  ]
+}
 ```
 
 ## Security scanner
 
-Перед установкой модуль проверяется на опасные маркеры и AST-паттерны:
+Перед установкой модуль проверяется на:
 
 - удаление Telegram-аккаунта;
 - выход из аккаунта;
 - попытки трогать `.session`;
 - `eval` / `exec`;
-- запуск системных команд;
-- массовое удаление файлов и папок;
+- системные команды;
+- массовое удаление файлов;
 - подозрительные сетевые/SSH/FTP импорты.
 
-Это не замена ручному аудиту, но типичную вредоносную хуйню оно режет ещё до загрузки.
-
-## Пример модуля
-
-```python
-from deathtg.command import command
-from deathtg.ui import ok
-
-
-@command("hello", description="Сказать привет", usage=".hello")
-async def hello_cmd(event, args):
-    await event.edit(ok("привет, DeathTG жив"), parse_mode="html")
-```
-
-Сохрани как `modules/hello.py`, потом в Telegram напиши:
-
-```text
-.loadmod hello.py
-.hello
-```
-
-## Структура
-
-```text
-DeathTG/
-├── main.py
-├── panel.py
-├── requirements.txt
-├── .env.example
-├── deathtg/
-│   ├── app.py
-│   ├── command.py
-│   ├── config.py
-│   ├── loader.py
-│   ├── main.py
-│   ├── registry.py
-│   ├── security.py
-│   ├── ui.py
-│   ├── modules/
-│   │   ├── core.py
-│   │   └── system.py
-│   └── panel/
-│       ├── server.py
-│       ├── templates/
-│       └── static/
-└── modules/
-    └── example.py
-```
+Это не магический бог-антивирус, но типичную вредоносную хуйню режет до загрузки.
