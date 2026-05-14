@@ -8,6 +8,7 @@ from telethon import TelegramClient, events
 
 from deathtg.config import DeathTGConfig, MODULES_DIR
 from deathtg.loader import ModuleLoader
+from deathtg.metrics import init_metrics, record_command
 from deathtg.registry import CommandRegistry
 from deathtg.ui import CONSOLE_BANNER, fail
 
@@ -24,13 +25,14 @@ class DeathTG:
 
     async def start(self) -> None:
         print(CONSOLE_BANNER)
+        init_metrics()
         await self.client.start()
 
         me = await self.client.get_me()
         if self.config.owner_id is None:
             self.config.owner_id = me.id
 
-        await self.loader.load_builtin("deathtg.modules", ["core", "system"])
+        await self.loader.load_builtin("deathtg.modules", ["core", "system", "antivirus", "terminal"])
         await self.loader.load_all_local()
 
         self.client.add_event_handler(self._dispatch, events.NewMessage(outgoing=True))
@@ -53,6 +55,7 @@ class DeathTG:
             return
 
         try:
+            record_command(command.module, command.name)
             await command.handler(event, args)
         except Exception as exc:
             log.exception("Command failed: %s", command.name)
