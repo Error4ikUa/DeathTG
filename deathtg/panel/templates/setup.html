@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeathTG Setup</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/layout.css">
+</head>
+<body>
+  <canvas id="matrix"></canvas>
+  <main class="login-shell">
+    <section class="glass-card login-card setup-card">
+      <div class="brand-mark">DTG</div>
+      <p class="eyebrow">First launch</p>
+      <h1>DeathTG Setup</h1>
+      <p>Заполни API_ID, API_HASH и номер. Потом один раз запусти <code>python main.py</code>, чтобы Telegram прислал код и создал session.</p>
+      {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
+      <form method="post" action="/setup/save" class="form-stack">
+        <label>API ID</label>
+        <input type="number" name="api_id" placeholder="123456" required>
+        <label>API HASH</label>
+        <input type="text" name="api_hash" placeholder="your_api_hash" required>
+        <label>Phone</label>
+        <input type="text" name="phone" placeholder="+380..." required>
+        <label>Session name</label>
+        <input type="text" name="session_name" value="deathtg" required>
+        <label>Panel secret</label>
+        <input type="text" name="panel_secret" placeholder="long_random_secret" required>
+        <label>Bot token, optional</label>
+        <input type="text" name="bot_token" placeholder="123456:ABC...">
+        <button type="submit">Save config</button>
+      </form>
+      <small>После сохранения ключ панели будет создан автоматически в .env как PANEL_PASSWORD.</small>
+    </section>
+  </main>
+  <script src="/static/matrix.js"></script>
+</body>
+</html>
