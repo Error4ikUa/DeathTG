@@ -45,7 +45,6 @@ async def help_cmd(event, args: list[str]) -> None:
     lines: list[str] = [
         f"Приветствую, <b>{nickname}</b>",
         "📗 <b>Установленные модули DeathTG</b>",
-        "Нажми и скопируй команду из <code>code</code>-блока.",
         "",
     ]
     for module, commands in sorted(grouped.items()):
