@@ -12,6 +12,7 @@ import aiohttp
 
 from deathtg.command import Command
 from deathtg.registry import CommandRegistry
+from deathtg.security import scan_module_source
 
 
 class ModuleLoader:
@@ -30,11 +31,19 @@ class ModuleLoader:
         for path in sorted(self.modules_dir.glob("*.py")):
             if path.name.startswith("_"):
                 continue
-            await self.load_file(path)
+            try:
+                await self.load_file(path)
+            except Exception as exc:
+                print(f"[DeathTG] skip module {path.name}: {exc}")
 
-    async def load_file(self, path: Path) -> str:
+    async def load_file(self, path: Path, *, force: bool = False) -> str:
         if not path.exists() or path.suffix != ".py":
             raise FileNotFoundError("Нужен существующий .py файл модуля")
+
+        source = path.read_text(encoding="utf-8")
+        report = scan_module_source(source)
+        if not report.allowed and not force:
+            raise RuntimeError("Модуль заблокирован защитой:\n" + report.pretty())
 
         module_name = path.stem
         import_name = f"deathtg_user_modules.{module_name}"
@@ -65,6 +74,10 @@ class ModuleLoader:
 
         if "from deathtg.command import command" not in text and "@command" not in text:
             raise RuntimeError("Это не похоже на DeathTG-модуль")
+
+        report = scan_module_source(text)
+        if not report.allowed:
+            raise RuntimeError("Модуль заблокирован защитой:\n" + report.pretty())
 
         target.write_text(text, encoding="utf-8")
         return target
