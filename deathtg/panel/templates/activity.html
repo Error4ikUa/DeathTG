@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DeathTG Activity</title><link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/layout.css"></head>
+<body>
+<canvas id="matrix"></canvas>
+<button class="floating-avatar" id="menuToggle">{{ (profile.name or 'D')[0] }}</button>
+<aside class="drawer glass-card" id="drawer"><div class="logo-block"><div class="brand-mark soft-mark">DTG</div><div><h2>DeathTG</h2><p>activity</p></div></div><nav><a href="/">Profile</a><a href="/activity">Activity</a><a href="/browser">Module browser</a><a href="/installed">Installed</a><a href="/install">Install</a><a href="/scanner">Scanner</a></nav><a class="logout" href="/logout">Logout</a></aside><div class="drawer-backdrop" id="drawerBackdrop"></div>
+<main class="content wide-content">
+<section class="glass-card panel-card"><p class="eyebrow">Statistics</p><h1>Module activity</h1><p>Один модуль за день считается один раз. Наведи на точку — увидишь дату и модуль.</p><div class="activity-chart">{% for row in usage_days %}<span title="{{ row.day }} · {{ row.module }}" style="height: {{ 18 + row.count * 10 }}px"></span>{% endfor %}{% if not usage_days %}<p>Пока пусто. Юзни пару команд.</p>{% endif %}</div></section>
+<section class="glass-card panel-card"><h2>Top modules</h2><div class="module-list compact">{% for item in top_modules %}<div class="module-row"><b>{{ item.module }}</b><code>{{ item.count }} uses</code></div>{% endfor %}{% if not top_modules %}<p>Пока статистики нет.</p>{% endif %}</div></section>
+</main><script src="/static/matrix.js"></script><script src="/static/dashboard.js"></script></body></html>
