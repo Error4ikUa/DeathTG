@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -7,10 +8,10 @@ import aiohttp
 from dotenv import load_dotenv
 from fastapi.templating import Jinja2Templates
 
-from deathtg.config import ROOT_DIR, MODULES_DIR, load_config
+from deathtg.config import MODULES_DIR, ROOT_DIR, RUNTIME_DIR, load_config
 from deathtg.loader import ModuleLoader
 from deathtg.metrics import installed_days, top_modules, usage_by_day, usage_total
-from deathtg.registry import CommandRegistry, PROTECTED_MODULES
+from deathtg.registry import CommandRegistry
 
 PANEL_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = PANEL_DIR / "templates"
@@ -63,17 +64,14 @@ async def refresh_modules() -> None:
 
 async def profile_info() -> dict[str, str]:
     avatar = avatar_url()
-    try:
-        from telethon import TelegramClient
-        cfg = load_config()
-        client = TelegramClient(str(ROOT_DIR / cfg.session_name), cfg.api_id, cfg.api_hash)
-        await client.connect()
-        me = await client.get_me()
-        await client.disconnect()
-        name = " ".join([me.first_name or "", me.last_name or ""]).strip() or "DeathTG User"
-        return {"name": name, "username": me.username or "", "id": str(me.id), "ok": "1", "avatar": avatar}
-    except Exception:
-        return {"name": "DeathTG User", "username": "not connected", "id": "unknown", "ok": "0", "avatar": avatar}
+    path = RUNTIME_DIR / "profile.json"
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return {"name": data.get("name") or "DeathTG User", "username": data.get("username") or "", "id": str(data.get("id") or "unknown"), "ok": data.get("ok") or "1", "avatar": avatar}
+        except Exception:
+            pass
+    return {"name": "DeathTG User", "username": "not connected", "id": "unknown", "ok": "0", "avatar": avatar}
 
 
 def status(profile: dict[str, str]) -> dict:
