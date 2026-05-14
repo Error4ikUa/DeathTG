@@ -5,6 +5,8 @@ from typing import Iterable
 
 from deathtg.command import Command
 
+PROTECTED_MODULES = {"core", "system", "antivirus", "terminal"}
+
 
 class CommandRegistry:
     def __init__(self) -> None:
@@ -21,7 +23,10 @@ class CommandRegistry:
                 raise ValueError(f"Алиас уже занят: {alias}")
             self._aliases[alias] = command.name
 
-    def remove_module(self, module_name: str) -> list[str]:
+    def remove_module(self, module_name: str, *, force: bool = False) -> list[str]:
+        if module_name in PROTECTED_MODULES and not force:
+            raise RuntimeError(f"Модуль {module_name} защищён и не может быть удалён")
+
         removed: list[str] = []
         for name, cmd in list(self._commands.items()):
             if cmd.module == module_name:
