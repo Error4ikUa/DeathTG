@@ -83,11 +83,11 @@ async def login_page(request: Request):
 
 
 @app.post("/login")
-async def login(request: Request, password: str = Form(...)):
-    if secrets.compare_digest(password, panel_password()):
+async def login(request: Request, key: str = Form(...)):
+    if secrets.compare_digest(key, panel_password()):
         request.session["auth"] = True
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
+    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный ключ"})
 
 
 @app.get("/logout")
