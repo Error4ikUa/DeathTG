@@ -8,7 +8,7 @@ from deathtg.ui import box, fail, ok
 
 
 def _app(event):
-    return event.client._event_builders[0][0].callback.__self__
+    return event.client.deathtg_app
 
 
 @command("help", description="Показать все модули и команды", usage=".help [module]", aliases=("h",))
