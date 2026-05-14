@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeathTG Reconnect</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/layout.css">
+</head>
+<body>
+  <canvas id="matrix"></canvas>
+  <main class="login-shell">
+    <section class="glass-card login-card">
+      <div class="brand-mark">DTG</div>
+      <h1>Reconnect</h1>
+      <p>Session удалена или сломана. Данные из <code>.env</code> уже есть, нужно только заново войти в Telegram.</p>
+      {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
+      {% if step == 'start' %}
+      <form method="post" action="/reconnect/start" class="form-stack">
+        <button type="submit">Войти ещё раз</button>
+      </form>
+      {% elif step == 'pin' %}
+      <form method="post" action="/reconnect/pin" class="form-stack">
+        <label>Telegram code</label>
+        <input type="text" name="pin" placeholder="Код из Telegram" autofocus required>
+        <button type="submit">Confirm code</button>
+      </form>
+      {% elif step == 'secret' %}
+      <form method="post" action="/reconnect/secret" class="form-stack">
+        <label>2FA password</label>
+        <input type="text" name="secret_value" placeholder="Пароль 2FA" autofocus required>
+        <button type="submit">Confirm 2FA</button>
+      </form>
+      {% endif %}
+      <small>Это пересоздаёт локальный session-файл DeathTG, API_ID/API_HASH повторно вводить не надо.</small>
+    </section>
+  </main>
+  <script src="/static/matrix.js"></script>
+</body>
+</html>
