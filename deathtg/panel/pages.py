@@ -58,7 +58,7 @@ async def profile_info() -> dict[str, str]:
         return {"name": "DeathTG User", "username": "not connected", "id": ""}
 
 
-def status_data() -> dict[str, Any]:
+async def status_data() -> dict[str, Any]:
     try:
         cfg = load_config()
         cfg_ok = True
@@ -66,7 +66,17 @@ def status_data() -> dict[str, Any]:
     except Exception:
         cfg_ok = False
         prefix = "."
-    return {"env_exists": (ROOT_DIR / ".env").exists(), "session_exists": bool(list(ROOT_DIR.glob("*.session"))), "config_ok": cfg_ok, "prefix": prefix, "modules_count": len(loader.loaded), "commands_count": len(list(registry.all())), "uses": usage_total(), "days": installed_days(), "level": level_info()}
+    return {
+        "env_exists": (ROOT_DIR / ".env").exists(),
+        "session_exists": bool(list(ROOT_DIR.glob("*.session"))),
+        "config_ok": cfg_ok,
+        "prefix": prefix,
+        "modules_count": len(loader.loaded),
+        "commands_count": len(list(registry.all())),
+        "uses": await usage_total(),
+        "days": await installed_days(),
+        "level": await level_info()
+    }
 
 
 async def browser_items() -> list[dict[str, Any]]:
@@ -83,7 +93,14 @@ async def browser_items() -> list[dict[str, Any]]:
 
 async def base_ctx(request: Request) -> dict[str, Any]:
     await refresh_modules()
-    return {"request": request, "status": status_data(), "profile": await profile_info(), "protected": PROTECTED_MODULES, "message": request.query_params.get("message"), "error": request.query_params.get("error")}
+    return {
+        "request": request,
+        "status": await status_data(),
+        "profile": await profile_info(),
+        "protected": PROTECTED_MODULES,
+        "message": request.query_params.get("message"),
+        "error": request.query_params.get("error")
+    }
 
 
 @router.get("/activity")
@@ -91,7 +108,7 @@ async def activity_page(request: Request):
     blocked = guard(request)
     if blocked: return blocked
     ctx = await base_ctx(request)
-    ctx.update({"usage_days": usage_by_day(), "top_modules": top_modules()})
+    ctx.update({"usage_days": await usage_by_day(), "top_modules": await top_modules()})
     return templates.TemplateResponse("activity.html", ctx)
 
 
