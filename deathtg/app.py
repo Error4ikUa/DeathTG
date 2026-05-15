@@ -27,7 +27,7 @@ class DeathTG:
 
     async def start(self) -> None:
         print(CONSOLE_BANNER)
-        init_metrics()
+        await init_metrics()
         await self.client.start()
 
         me = await self.client.get_me()
@@ -70,7 +70,7 @@ class DeathTG:
             return
 
         try:
-            record_command(command.module, command.name)
+            await record_command(command.module, command.name)
             await command.handler(event, args)
         except Exception as exc:
             log.exception("Command failed: %s", command.name)
