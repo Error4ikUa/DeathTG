@@ -83,7 +83,7 @@ async def profile_info() -> dict[str, str]:
         return {"name": "DeathTG User", "username": "not connected", "id": ""}
 
 
-def status_data() -> dict[str, Any]:
+async def status_data() -> dict[str, Any]:
     try:
         cfg = load_config()
         cfg_ok = True
@@ -91,7 +91,17 @@ def status_data() -> dict[str, Any]:
     except Exception:
         cfg_ok = False
         prefix = "."
-    return {"env_exists": (ROOT_DIR / ".env").exists(), "session_exists": bool(list(ROOT_DIR.glob("*.session"))), "config_ok": cfg_ok, "prefix": prefix, "modules_count": len(loader.loaded), "commands_count": len(list(registry.all())), "uses": usage_total(), "days": installed_days(), "level": level_info()}
+    return {
+        "env_exists": (ROOT_DIR / ".env").exists(),
+        "session_exists": bool(list(ROOT_DIR.glob("*.session"))),
+        "config_ok": cfg_ok,
+        "prefix": prefix,
+        "modules_count": len(loader.loaded),
+        "commands_count": len(list(registry.all())),
+        "uses": await usage_total(),
+        "days": await installed_days(),
+        "level": await level_info()
+    }
 
 
 async def browser_items() -> list[dict[str, Any]]:
@@ -148,7 +158,24 @@ async def dashboard(request: Request):
     if locked:
         return locked
     await refresh_modules()
-    return templates.TemplateResponse("dashboard.html", {"request": request, "status": status_data(), "profile": await profile_info(), "modules": loader.loaded, "grouped": registry.by_module(), "protected": PROTECTED_MODULES, "usage_days": usage_by_day(), "top_modules": top_modules(), "browser_modules": await browser_items(), "message": request.query_params.get("message"), "error": request.query_params.get("error")})
+    st = await status_data()
+    prof = await profile_info()
+    u_days = await usage_by_day()
+    t_mods = await top_modules()
+    b_mods = await browser_items()
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "status": st,
+        "profile": prof,
+        "modules": loader.loaded,
+        "grouped": registry.by_module(),
+        "protected": PROTECTED_MODULES,
+        "usage_days": u_days,
+        "top_modules": t_mods,
+        "browser_modules": b_mods,
+        "message": request.query_params.get("message"),
+        "error": request.query_params.get("error")
+    })
 
 
 @app.post("/modules/download")
