@@ -1,5 +1,30 @@
 from __future__ import annotations
 
+"""
+Module loading and registration for DeathTG.
+
+The ``ModuleLoader`` class in this file is responsible for
+downloading, importing and registering modules.  It handles both
+built‑in modules (shipped with DeathTG) and third‑party modules
+downloaded from arbitrary URLs.  Loading errors are caught and
+reported to the console so that the control panel continues to
+function even when individual modules fail to import.
+
+Some key points:
+
+* Modules are loaded into the ``deathtg.modules_external`` namespace
+  to isolate them from built‑ins.
+* Commands are registered via the ``CommandRegistry`` and decorated
+  with the ``@command`` decorator.
+* The loader provides convenience methods to download modules from
+  GitHub raw or blob URLs, automatically normalising URLs and
+  validating that the downloaded content is Python code rather than
+  HTML.
+* When a module is unloaded all of its commands are removed from the
+  registry and any traces from ``sys.modules`` are cleared to allow a
+  fresh reload.
+"""
+
 import importlib
 import importlib.util
 import inspect
@@ -18,6 +43,8 @@ from deathtg.security import scan_module_source
 
 
 class Module:
+    """Base class for module classes that expose coroutine methods."""
+
     strings: dict = {}
 
     def __init__(self) -> None:
@@ -26,18 +53,24 @@ class Module:
 
 
 def owner(func=None, *args, **kwargs):
+    """Compatibility decorator; noop in this loader."""
+
     def deco(f):
         return f
     return deco(func) if callable(func) else deco
 
 
 def unrestricted(func=None, *args, **kwargs):
+    """Compatibility decorator; noop in this loader."""
+
     def deco(f):
         return f
     return deco(func) if callable(func) else deco
 
 
 class ModuleLoader:
+    """Load, register and unload modules for DeathTG."""
+
     def __init__(self, registry: CommandRegistry, modules_dir: Path) -> None:
         self.registry = registry
         self.modules_dir = modules_dir
@@ -48,15 +81,14 @@ class ModuleLoader:
         for name in module_names:
             try:
                 import_name = f"{package}.{name}"
-                # Если модуль уже был загружен, делаем жесткий reload для обновления кода
+                # If the module was already loaded, reload it to update code
                 if import_name in sys.modules:
                     module = importlib.reload(sys.modules[import_name])
                 else:
                     module = importlib.import_module(import_name)
-                
                 self._register_module(module, name)
             except Exception as exc:
-                # Перехватываем ошибку, чтобы панель не ложилась с 500 Internal Server Error
+                # Catch exceptions to prevent a single bad module from stopping the panel
                 print(f"\n[DeathTG] ⚠️ КРИТИЧЕСКАЯ ОШИБКА В СИСТЕМНОМ МОДУЛЕ '{name}':")
                 traceback.print_exc()
                 print("[DeathTG] Панель продолжит работу, но этот модуль не загружен.\n")
@@ -80,10 +112,8 @@ class ModuleLoader:
                 setattr(core_pkg, sub, mod)
             except Exception:
                 pass
-
         if "DeathTG.utils" not in sys.modules:
             utils = types.ModuleType("DeathTG.utils")
-
             async def answer(event, text=None, **kwargs):
                 if text is None:
                     text = ""
@@ -95,7 +125,6 @@ class ModuleLoader:
                 if hasattr(event, "reply"):
                     return await event.reply(text, **kwargs)
                 return None
-
             utils.answer = answer
             utils.reply = answer
             sys.modules["DeathTG.utils"] = utils
@@ -104,21 +133,17 @@ class ModuleLoader:
     async def load_file(self, path: Path, *, force: bool = False) -> str:
         if not path.exists() or path.suffix != ".py":
             raise FileNotFoundError("Нужен существующий .py файл модуля")
-
         source = path.read_text(encoding="utf-8")
         report = scan_module_source(source)
         if not report.allowed and not force:
             raise RuntimeError("Модуль заблокирован защитой:\n" + report.pretty())
-
         self._install_compat_aliases()
         module_name = path.stem
         import_name = f"deathtg.modules_external.{module_name}"
         self.unload(module_name, silent=True, force=True)
-
         spec = importlib.util.spec_from_file_location(import_name, path)
         if spec is None or spec.loader is None:
             raise RuntimeError(f"Не могу прочитать модуль: {path}")
-
         module = importlib.util.module_from_spec(spec)
         module.__package__ = "deathtg.modules_external"
         sys.modules[import_name] = module
@@ -131,7 +156,6 @@ class ModuleLoader:
         filename = Path(urlparse(url).path).name or "module.py"
         if not filename.endswith(".py"):
             raise RuntimeError("Ссылка должна вести на .py модуль")
-
         target = self.modules_dir / filename
         try:
             async with aiohttp.ClientSession() as session:
@@ -143,14 +167,11 @@ class ModuleLoader:
             raise RuntimeError("Некорректная ссылка на модуль") from exc
         except aiohttp.ClientError as exc:
             raise RuntimeError(f"Ошибка скачивания модуля: {exc}") from exc
-
         if self._looks_like_html(text):
             raise RuntimeError("По ссылке пришла HTML-страница, а не .py код. Дай raw/blob ссылку")
-
         report = scan_module_source(text)
         if not report.allowed:
             raise RuntimeError("Модуль заблокирован защитой:\n" + report.pretty())
-
         target.write_text(text, encoding="utf-8")
         return target
 
@@ -178,14 +199,16 @@ class ModuleLoader:
         meta = getattr(obj, "__deathtg_command__", None)
         if not meta:
             return False
-        self.registry.add(Command(
-            name=meta["name"], 
-            handler=self._wrap_handler(obj), 
-            description=meta["description"], 
-            usage=meta["usage"], 
-            aliases=meta["aliases"], 
-            module=module_name
-        ))
+        self.registry.add(
+            Command(
+                name=meta["name"],
+                handler=self._wrap_handler(obj),
+                description=meta["description"],
+                usage=meta["usage"],
+                aliases=meta["aliases"],
+                module=module_name,
+            )
+        )
         return True
 
     def _register_module(self, module: ModuleType, module_name: str) -> None:
@@ -193,7 +216,6 @@ class ModuleLoader:
         for _, obj in inspect.getmembers(module, inspect.iscoroutinefunction):
             if self._add_command(obj, module_name):
                 registered += 1
-
         for _, cls in inspect.getmembers(module, inspect.isclass):
             if cls is Module:
                 continue
@@ -207,13 +229,15 @@ class ModuleLoader:
                 if not (inspect.iscoroutinefunction(obj) or inspect.ismethod(obj)):
                     continue
                 if not getattr(obj, "__deathtg_command__", None) and attr_name.endswith("cmd"):
-                    obj = command(attr_name[:-3].lower(), description=f"{attr_name[:-3]} command", usage=f".{attr_name[:-3].lower()}")(obj)
+                    obj = command(
+                        attr_name[:-3].lower(),
+                        description=f"{attr_name[:-3]} command",
+                        usage=f".{attr_name[:-3].lower()}",
+                    )(obj)
                 if self._add_command(obj, module_name):
                     registered += 1
-
         if registered == 0:
             raise RuntimeError(f"В модуле {module_name} нет команд (декоратор @command не найден)")
-
         self.loaded[module_name] = module
 
     @staticmethod
