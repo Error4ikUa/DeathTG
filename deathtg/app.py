@@ -14,6 +14,7 @@ from deathtg.registry import CommandRegistry
 from deathtg.ui import CONSOLE_BANNER, fail
 
 log = logging.getLogger("deathtg")
+CORE_MODULES = ["core", "info", "system", "antivirus", "terminal"]
 
 
 class DeathTG:
@@ -35,7 +36,7 @@ class DeathTG:
 
         self._write_runtime_profile(me)
 
-        await self.loader.load_builtin("deathtg.modules", ["core", "system", "antivirus", "terminal"])
+        await self.loader.load_builtin("deathtg.modules", CORE_MODULES)
         await self.loader.load_all_local()
 
         self.client.add_event_handler(self._dispatch, events.NewMessage(outgoing=True))
