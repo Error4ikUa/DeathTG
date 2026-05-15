@@ -104,7 +104,8 @@ async def setup_save(
 async def base(request: Request, page: str):
     await refresh_modules()
     profile = await profile_info()
-    return {"request": request, "page": page, "profile": profile, "status": status(profile), "message": request.query_params.get("message"), "error": request.query_params.get("error")}
+    st = await status(profile)
+    return {"request": request, "page": page, "profile": profile, "status": st, "message": request.query_params.get("message"), "error": request.query_params.get("error")}
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -145,7 +146,7 @@ async def activity(request: Request):
     locked = guard(request)
     if locked: return locked
     ctx = await base(request, "activity")
-    ctx.update({"activity_points": activity_points(), "top_modules": top_modules()})
+    ctx.update({"activity_points": await activity_points(), "top_modules": await top_modules()})
     return templates.TemplateResponse("clean_activity.html", ctx)
 
 
