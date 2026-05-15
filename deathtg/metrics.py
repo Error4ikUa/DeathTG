@@ -1,30 +1,28 @@
 from __future__ import annotations
 
-import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import aiosqlite
+
 from deathtg.config import ROOT_DIR
 
 DB_PATH = ROOT_DIR / "deathtg_stats.sqlite3"
-
 
 @dataclass(slots=True)
 class UsagePoint:
     day: str
     count: int
 
-
-def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+async def _connect() -> aiosqlite.Connection:
+    conn = await aiosqlite.connect(DB_PATH)
+    conn.row_factory = aiosqlite.Row
     return conn
 
-
-def init_metrics() -> None:
-    with _connect() as conn:
-        conn.execute(
+async def init_metrics() -> None:
+    async with await _connect() as conn:
+        await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS meta (
                 key TEXT PRIMARY KEY,
@@ -32,7 +30,7 @@ def init_metrics() -> None:
             )
             """
         )
-        conn.execute(
+        await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS command_usage (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,40 +40,43 @@ def init_metrics() -> None:
             )
             """
         )
-        exists = conn.execute("SELECT value FROM meta WHERE key='installed_at'").fetchone()
+        async with conn.execute("SELECT value FROM meta WHERE key='installed_at'") as cursor:
+            exists = await cursor.fetchone()
+        
         if not exists:
-            conn.execute("INSERT INTO meta(key, value) VALUES('installed_at', ?)", (str(int(time.time())),))
+            await conn.execute("INSERT INTO meta(key, value) VALUES('installed_at', ?)", (str(int(time.time())),))
+        
+        await conn.commit()
 
-
-def record_command(module: str, command: str) -> None:
-    init_metrics()
-    with _connect() as conn:
-        conn.execute(
+async def record_command(module: str, command: str) -> None:
+    await init_metrics()
+    async with await _connect() as conn:
+        await conn.execute(
             "INSERT INTO command_usage(module, command, used_at) VALUES(?, ?, ?)",
             (module, command, int(time.time())),
         )
+        await conn.commit()
 
+async def usage_total() -> int:
+    await init_metrics()
+    async with await _connect() as conn:
+        async with conn.execute("SELECT COUNT(*) AS c FROM command_usage") as cursor:
+            row = await cursor.fetchone()
+            return int(row["c"]) if row else 0
 
-def usage_total() -> int:
-    init_metrics()
-    with _connect() as conn:
-        row = conn.execute("SELECT COUNT(*) AS c FROM command_usage").fetchone()
-        return int(row["c"])
-
-
-def installed_days() -> int:
-    init_metrics()
-    with _connect() as conn:
-        row = conn.execute("SELECT value FROM meta WHERE key='installed_at'").fetchone()
-        installed_at = int(row["value"]) if row else int(time.time())
+async def installed_days() -> int:
+    await init_metrics()
+    async with await _connect() as conn:
+        async with conn.execute("SELECT value FROM meta WHERE key='installed_at'") as cursor:
+            row = await cursor.fetchone()
+            installed_at = int(row["value"]) if row else int(time.time())
     return max(1, int((time.time() - installed_at) // 86400) + 1)
 
-
-def usage_by_day(days: int = 14) -> list[dict[str, object]]:
-    init_metrics()
+async def usage_by_day(days: int = 14) -> list[dict[str, object]]:
+    await init_metrics()
     since = int(time.time()) - days * 86400
-    with _connect() as conn:
-        rows = conn.execute(
+    async with await _connect() as conn:
+        async with conn.execute(
             """
             SELECT date(used_at, 'unixepoch') AS day, module, command, COUNT(*) AS count
             FROM command_usage
@@ -84,14 +85,14 @@ def usage_by_day(days: int = 14) -> list[dict[str, object]]:
             ORDER BY day ASC, count DESC
             """,
             (since,),
-        ).fetchall()
+        ) as cursor:
+            rows = await cursor.fetchall()
     return [dict(row) for row in rows]
 
-
-def top_modules(limit: int = 7) -> list[dict[str, object]]:
-    init_metrics()
-    with _connect() as conn:
-        rows = conn.execute(
+async def top_modules(limit: int = 7) -> list[dict[str, object]]:
+    await init_metrics()
+    async with await _connect() as conn:
+        async with conn.execute(
             """
             SELECT module, COUNT(*) AS count
             FROM command_usage
@@ -100,12 +101,12 @@ def top_modules(limit: int = 7) -> list[dict[str, object]]:
             LIMIT ?
             """,
             (limit,),
-        ).fetchall()
+        ) as cursor:
+            rows = await cursor.fetchall()
     return [dict(row) for row in rows]
 
-
-def level_info() -> dict[str, int]:
-    total = usage_total()
+async def level_info() -> dict[str, int]:
+    total = await usage_total()
     level = total // 100 + 1
     current = total % 100
     next_needed = 100 - current
