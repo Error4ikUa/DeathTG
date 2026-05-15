@@ -1,154 +1,246 @@
 from __future__ import annotations
 
-"""
-This file contains the entrypoint for the web panel.  It replaces the
-deprecated ``pages.py`` and ``server_v2.py`` modules and uses FastAPI to
-serve the UI.  The panel exposes routes for the home page, profile page,
-module browser and installed modules list.  All routes are asynchronous
-and await the underlying metrics and profile functions to avoid 500
-errors caused by returning unawaited coroutines to Jinja2.
-
-In addition to wiring up routes, the application registers a startup
-event that initialises the metrics database.  Without this hook
-``init_metrics`` would be invoked lazily on the first metric call,
-potentially causing a race when multiple requests arrive at once.  By
-pre‑creating the tables on startup we guarantee that later calls to
-``usage_total`` or ``installed_days`` complete without locking.
-"""
-
 import os
 import secrets
-from fastapi import FastAPI, Request
+import subprocess
+from pathlib import Path
+
+import aiohttp
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
+from deathtg.config import ROOT_DIR
+from deathtg.metrics import init_metrics
+from deathtg.panel.clean_actions import router as actions_router
 from deathtg.panel.clean_core import (
     STATIC_DIR,
-    profile_info,
-    status,
-    templates,
+    activity_points,
     env_load,
     has_env,
-    has_session,
-    activity_points,
-    top_modules,
     module_repo,
+    panel_password,
+    profile_info,
+    refresh_modules,
     registry,
+    status,
+    templates,
+    top_modules,
 )
-from deathtg.panel.clean_actions import router as actions_router
+from deathtg.panel.re_auth import router as reconnect_router
 from deathtg.registry import PROTECTED_MODULES
-from deathtg.metrics import init_metrics
+from deathtg.security import scan_module_source
+from deathtg.panel.auth_flow import write_env
 
 
-# Ensure environment variables are loaded from ``.env``.  This call must
-# happen before instantiating the FastAPI app so that settings are
-# available when the app starts up.
 env_load()
 
-app = FastAPI()
-
-# Use a random session secret for the development server.  In a
-# production deployment this key should be set via environment
-# variables or another secret manager.
-app.add_middleware(SessionMiddleware, secret_key=secrets.token_hex(32))
-
-# Mount static files for CSS/JS/assets.  ``STATIC_DIR`` points into the
-# ``deathtg/panel/static`` directory of the main project.
+app = FastAPI(title="DeathTG Panel")
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("PANEL_SECRET", secrets.token_hex(32)),
+    same_site="lax",
+    https_only=False,
+)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-# Register action handlers (form submissions, uploads, etc.).
 app.include_router(actions_router)
+app.include_router(reconnect_router)
 
 
 @app.on_event("startup")
 async def startup_event() -> None:
-    """Initialise the metrics database on application startup.
-
-    Without this call the metrics tables are created lazily on the
-    first access.  In a multi‑threaded environment that can result in
-    race conditions where two requests attempt to create the tables at
-    the same time.  Pre‑creating the tables on startup avoids this
-    situation.
-    """
-    try:
-        await init_metrics()
-    except Exception:
-        # If metrics initialisation fails we still continue; later
-        # accesses will attempt to initialise again.
-        pass
+    await init_metrics()
+    await refresh_modules()
 
 
-@app.get("/")
-async def home(request: Request):
-    """Render the dashboard home page.
-
-    The home page shows basic status information and the user's
-    profile.  If the environment has not yet been configured the
-    request is redirected to the setup page.  If the user is not
-    authenticated they are redirected to the login page.
-    """
+def _auth_guard(request: Request):
     if not has_env():
-        return RedirectResponse("/setup")
+        return RedirectResponse("/setup", status_code=303)
     if not request.session.get("auth"):
-        return RedirectResponse("/login")
+        return RedirectResponse("/login", status_code=303)
+    return None
+
+
+async def _base_context(request: Request) -> dict:
     profile = await profile_info()
     st = await status(profile)
-    return templates.TemplateResponse(
-        "clean_home.html", {"request": request, "profile": profile, "status": st, "page": "home"}
-    )
+    return {
+        "request": request,
+        "profile": profile,
+        "status": st,
+        "message": request.query_params.get("message"),
+        "error": request.query_params.get("error"),
+    }
 
 
-@app.get("/profile")
+@app.get("/setup", response_class=HTMLResponse)
+async def setup_page(request: Request):
+    if has_env() and request.session.get("auth"):
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse("setup.html", {"request": request, "step": "start", "error": None})
+
+
+@app.post("/setup/save")
+async def setup_save(
+    request: Request,
+    api_id: int = Form(...),
+    api_hash: str = Form(...),
+    phone: str = Form(...),
+    session_name: str = Form("deathtg"),
+    panel_secret: str = Form("change_me_long_secret"),
+    bot_token: str = Form(""),
+):
+    try:
+        panel_key = secrets.token_urlsafe(18)
+        write_env(api_id, api_hash, session_name, phone, panel_key, panel_secret, bot_token)
+        os.environ["PANEL_PASSWORD"] = panel_key
+        os.environ["PANEL_SECRET"] = panel_secret
+        panel_password.cache_clear()
+        request.session["auth"] = True
+        return RedirectResponse("/reconnect?message=Config saved", status_code=303)
+    except Exception as exc:
+        return templates.TemplateResponse(
+            "setup.html",
+            {"request": request, "step": "start", "error": f"{type(exc).__name__}: {exc}"},
+        )
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    if not has_env():
+        return RedirectResponse("/setup", status_code=303)
+    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+
+
+@app.post("/login")
+async def login(request: Request, key: str = Form(...)):
+    if secrets.compare_digest(key, panel_password()):
+        request.session["auth"] = True
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный ключ"})
+
+
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login", status_code=303)
+
+
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    ctx = await _base_context(request)
+    ctx["page"] = "home"
+    return templates.TemplateResponse("clean_home.html", ctx)
+
+
+@app.get("/profile", response_class=HTMLResponse)
 async def profile_page(request: Request):
-    """Render the profile page.
-
-    Displays details from ``profile_info`` and the current status.  If
-    the visitor is not authenticated they are redirected to the login
-    page.
-    """
-    if not request.session.get("auth"):
-        return RedirectResponse("/login")
-    profile = await profile_info()
-    st = await status(profile)
-    return templates.TemplateResponse(
-        "clean_profile.html", {"request": request, "profile": profile, "status": st}
-    )
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    return templates.TemplateResponse("clean_profile.html", await _base_context(request))
 
 
-@app.get("/browser")
-async def browser_page(request: Request):
-    """Render the module browser page.
-
-    The browser page lists available modules from the remote
-    repository.  It also displays the user's profile and current
-    status.
-    """
-    profile = await profile_info()
-    st = await status(profile)
-    repo = await module_repo()
-    return templates.TemplateResponse(
-        "clean_browser.html", {"request": request, "profile": profile, "status": st, "browser_modules": repo}
-    )
-
-
-@app.get("/installed")
-async def installed_page(request: Request):
-    """Render the installed modules page.
-
-    Shows modules currently loaded into the bot along with basic
-    statistics about the installation.  Protected modules (those that
-    cannot be uninstalled) are passed separately to the template.
-    """
-    profile = await profile_info()
-    st = await status(profile)
-    return templates.TemplateResponse(
-        "clean_installed.html",
+@app.get("/activity", response_class=HTMLResponse)
+async def activity_page(request: Request):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    ctx = await _base_context(request)
+    ctx.update(
         {
-            "request": request,
-            "profile": profile,
-            "status": st,
+            "activity_points": await activity_points(),
+            "top_modules": await top_modules(),
+        }
+    )
+    return templates.TemplateResponse("clean_activity.html", ctx)
+
+
+@app.get("/browser", response_class=HTMLResponse)
+async def browser_page(request: Request):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    await refresh_modules()
+    ctx = await _base_context(request)
+    ctx.update(
+        {
+            "browser_modules": await module_repo(),
             "grouped": registry.by_module(),
             "protected": PROTECTED_MODULES,
-        },
+        }
     )
+    return templates.TemplateResponse("clean_browser.html", ctx)
+
+
+@app.get("/installed", response_class=HTMLResponse)
+async def installed_page(request: Request):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    await refresh_modules()
+    ctx = await _base_context(request)
+    ctx.update({"grouped": registry.by_module(), "protected": PROTECTED_MODULES})
+    return templates.TemplateResponse("clean_installed.html", ctx)
+
+
+@app.get("/scanner", response_class=HTMLResponse)
+async def scanner_page(request: Request):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    ctx = await _base_context(request)
+    ctx.update({"report": None, "verdict": None})
+    return templates.TemplateResponse("clean_scanner.html", ctx)
+
+
+@app.post("/scanner/check", response_class=HTMLResponse)
+async def scanner_check(
+    request: Request,
+    source: str = Form(""),
+    link: str = Form(""),
+    file: UploadFile | None = File(None),
+):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    try:
+        text = source or ""
+        if file and file.filename:
+            text = (await file.read()).decode("utf-8", errors="replace")
+        if link and not text.strip():
+            async with aiohttp.ClientSession() as session:
+                async with session.get(link, timeout=20) as response:
+                    text = await response.text()
+        if not text.strip():
+            raise RuntimeError("Нечего проверять: вставь ссылку, файл или код")
+        report = scan_module_source(text)
+        verdict = "ALLOWED" if report.allowed else "BLOCKED"
+        ctx = await _base_context(request)
+        ctx.update({"report": report, "verdict": verdict})
+        return templates.TemplateResponse("clean_scanner.html", ctx)
+    except Exception as exc:
+        return RedirectResponse(f"/scanner?error={type(exc).__name__}: {exc}", status_code=303)
+
+
+@app.post("/update")
+async def update_project(request: Request):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    try:
+        result = subprocess.run(
+            ["git", "pull"],
+            cwd=ROOT_DIR,
+            text=True,
+            capture_output=True,
+            timeout=60,
+        )
+        output = (result.stdout + "\n" + result.stderr).strip() or "No output"
+        return RedirectResponse(f"/?message={output[-240:]}", status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f"/?error={type(exc).__name__}: {exc}", status_code=303)
