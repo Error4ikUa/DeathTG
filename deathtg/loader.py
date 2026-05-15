@@ -11,9 +11,29 @@ from urllib.parse import urlparse
 
 import aiohttp
 
-from deathtg.command import Command
+from deathtg.command import Command, command
 from deathtg.registry import CommandRegistry
 from deathtg.security import scan_module_source
+
+
+class Module:
+    strings: dict = {}
+
+    def __init__(self) -> None:
+        self.client = None
+        self.app = None
+
+
+def owner(func=None, *args, **kwargs):
+    def deco(f):
+        return f
+    return deco(func) if callable(func) else deco
+
+
+def unrestricted(func=None, *args, **kwargs):
+    def deco(f):
+        return f
+    return deco(func) if callable(func) else deco
 
 
 class ModuleLoader:
@@ -40,7 +60,7 @@ class ModuleLoader:
     def _install_compat_aliases(self) -> None:
         core_pkg = importlib.import_module("deathtg")
         sys.modules.setdefault("DeathTG", core_pkg)
-        for sub in ("command", "config", "registry", "security", "ui"):
+        for sub in ("command", "config", "registry", "security", "ui", "loader"):
             try:
                 mod = importlib.import_module(f"deathtg.{sub}")
                 sys.modules.setdefault(f"DeathTG.{sub}", mod)
@@ -131,23 +151,45 @@ class ModuleLoader:
             raise RuntimeError(f"Модуль не найден: {module_name}")
         return removed
 
+    def _wrap_handler(self, obj):
+        async def wrapped(event, args):
+            try:
+                if len(inspect.signature(obj).parameters) <= 1:
+                    return await obj(event)
+            except Exception:
+                pass
+            return await obj(event, args)
+        return wrapped
+
+    def _add_command(self, obj, module_name: str) -> bool:
+        meta = getattr(obj, "__deathtg_command__", None)
+        if not meta:
+            return False
+        self.registry.add(Command(name=meta["name"], handler=self._wrap_handler(obj), description=meta["description"], usage=meta["usage"], aliases=meta["aliases"], module=module_name))
+        return True
+
     def _register_module(self, module: ModuleType, module_name: str) -> None:
         registered = 0
         for _, obj in inspect.getmembers(module, inspect.iscoroutinefunction):
-            meta = getattr(obj, "__deathtg_command__", None)
-            if not meta:
+            if self._add_command(obj, module_name):
+                registered += 1
+
+        for _, cls in inspect.getmembers(module, inspect.isclass):
+            if cls is Module:
                 continue
-            self.registry.add(
-                Command(
-                    name=meta["name"],
-                    handler=obj,
-                    description=meta["description"],
-                    usage=meta["usage"],
-                    aliases=meta["aliases"],
-                    module=module_name,
-                )
-            )
-            registered += 1
+            if not issubclass(cls, Module):
+                continue
+            inst = cls()
+            for attr_name in dir(inst):
+                if attr_name.startswith("_"):
+                    continue
+                obj = getattr(inst, attr_name)
+                if not (inspect.iscoroutinefunction(obj) or inspect.ismethod(obj)):
+                    continue
+                if not getattr(obj, "__deathtg_command__", None) and attr_name.endswith("cmd"):
+                    obj = command(attr_name[:-3].lower(), description=f"{attr_name[:-3]} command", usage=f".{attr_name[:-3].lower()}")(obj)
+                if self._add_command(obj, module_name):
+                    registered += 1
 
         if registered == 0:
             raise RuntimeError(f"В модуле {module_name} нет команд")
