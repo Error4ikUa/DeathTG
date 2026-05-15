@@ -4,10 +4,11 @@ import os
 import secrets
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
+from deathtg.config import ROOT_DIR
 from deathtg.panel.clean_actions import router as actions_router
 from deathtg.panel.clean_core import (
     STATIC_DIR,
@@ -44,6 +45,60 @@ def guard(request: Request):
     if not request.session.get("auth"):
         return RedirectResponse("/login", status_code=303)
     return None
+
+
+def static_file(name: str):
+    target = STATIC_DIR / name
+    if target.exists() and target.is_file():
+        return FileResponse(target)
+    return RedirectResponse(f"/static/{name}", status_code=307)
+
+
+@app.get("/theme_cards.css")
+async def theme_cards_css():
+    return static_file("theme_cards.css")
+
+
+def write_env(api_id: int, api_hash: str, session_name: str, phone: str, panel_secret: str, bot_token: str = "") -> str:
+    key = secrets.token_urlsafe(18)
+    text = (
+        f"API_ID={api_id}\n"
+        f"API_HASH={api_hash}\n"
+        f"SESSION_NAME={session_name}\n"
+        "COMMAND_PREFIX=.\n"
+        "OWNER_ID=\n"
+        f"BOT_TOKEN={bot_token}\n"
+        f"PANEL_PASSWORD={key}\n"
+        f"PANEL_SECRET={panel_secret}\n"
+        f"PHONE={phone}\n"
+    )
+    (ROOT_DIR / ".env").write_text(text, encoding="utf-8")
+    os.environ["PANEL_PASSWORD"] = key
+    os.environ["PANEL_SECRET"] = panel_secret
+    return key
+
+
+@app.get("/setup", response_class=HTMLResponse)
+async def setup_page(request: Request):
+    return templates.TemplateResponse("setup.html", {"request": request, "step": "start", "error": None})
+
+
+@app.post("/setup/save")
+async def setup_save(
+    request: Request,
+    api_id: int = Form(...),
+    api_hash: str = Form(...),
+    phone: str = Form(...),
+    session_name: str = Form("deathtg"),
+    panel_secret: str = Form("change_me_long_secret"),
+    bot_token: str = Form(""),
+):
+    try:
+        key = write_env(api_id, api_hash, session_name, phone, panel_secret, bot_token)
+        request.session["auth"] = True
+        return RedirectResponse(f"/reconnect?message=Config saved. Panel password: {key}", status_code=303)
+    except Exception as exc:
+        return templates.TemplateResponse("setup.html", {"request": request, "step": "start", "error": f"{type(exc).__name__}: {exc}"})
 
 
 async def base(request: Request, page: str):
