@@ -4,6 +4,7 @@ import importlib
 import importlib.util
 import inspect
 import sys
+import types
 from pathlib import Path
 from types import ModuleType
 from urllib.parse import urlparse
@@ -41,9 +42,31 @@ class ModuleLoader:
         sys.modules.setdefault("DeathTG", core_pkg)
         for sub in ("command", "config", "registry", "security", "ui"):
             try:
-                sys.modules.setdefault(f"DeathTG.{sub}", importlib.import_module(f"deathtg.{sub}"))
+                mod = importlib.import_module(f"deathtg.{sub}")
+                sys.modules.setdefault(f"DeathTG.{sub}", mod)
+                setattr(core_pkg, sub, mod)
             except Exception:
                 pass
+
+        if "DeathTG.utils" not in sys.modules:
+            utils = types.ModuleType("DeathTG.utils")
+
+            async def answer(event, text=None, **kwargs):
+                if text is None:
+                    text = ""
+                if hasattr(event, "edit"):
+                    try:
+                        return await event.edit(text, **kwargs)
+                    except Exception:
+                        pass
+                if hasattr(event, "reply"):
+                    return await event.reply(text, **kwargs)
+                return None
+
+            utils.answer = answer
+            utils.reply = answer
+            sys.modules["DeathTG.utils"] = utils
+            setattr(core_pkg, "utils", utils)
 
     async def load_file(self, path: Path, *, force: bool = False) -> str:
         if not path.exists() or path.suffix != ".py":
