@@ -10,6 +10,7 @@ from fastapi.responses import RedirectResponse
 
 from deathtg.config import MODULES_DIR, ROOT_DIR
 from deathtg.panel.clean_core import USER_STATIC_DIR, loader, module_repo
+from deathtg.profile_store import save_profile_settings, update_env_value
 from deathtg.registry import PROTECTED_MODULES
 from deathtg.security import scan_module_source
 
@@ -47,7 +48,7 @@ def normalize_link(link: str) -> str:
 
 
 async def install_downloaded_module(link: str) -> str:
-    path = await loader.download_module(link)
+    path = await loader.download_module(normalize_link(link))
     try:
         return await loader.load_file(path)
     except Exception:
@@ -86,13 +87,32 @@ async def avatar_upload(file: UploadFile = File(...)):
         return bad("/profile", exc)
 
 
+@router.post("/profile/settings")
+async def profile_settings_save(
+    language: str = Form("en"),
+    description: str = Form(""),
+    profile_title: str = Form("DeathTG Operator"),
+    accent: str = Form("blue"),
+    prefix: str = Form("."),
+):
+    try:
+        prefix = (prefix or ".").strip()[:4] or "."
+        if any(ch.isspace() for ch in prefix):
+            raise RuntimeError("Prefix cannot contain spaces")
+        save_profile_settings(language=language, description=description, profile_title=profile_title, accent=accent)
+        update_env_value("COMMAND_PREFIX", prefix)
+        return ok("/profile", "Profile settings saved")
+    except Exception as exc:
+        return bad("/profile", exc)
+
+
 @router.post("/modules/download")
 async def download_module(link: str = Form(...)):
     try:
         name = await install_downloaded_module(link)
-        return ok("/browser#installedPane", f"Module {name} installed")
+        return ok("/browser", f"Module {name} installed")
     except Exception as exc:
-        return bad("/browser#installPane", exc)
+        return bad("/browser", exc)
 
 
 @router.post("/modules/upload")
@@ -102,9 +122,9 @@ async def upload_module(file: UploadFile = File(...)):
             raise RuntimeError("Нужен .py файл")
         text = (await file.read()).decode("utf-8")
         name = await install_uploaded_module(file.filename, text)
-        return ok("/browser#installedPane", f"Module {name} uploaded")
+        return ok("/browser", f"Module {name} uploaded")
     except Exception as exc:
-        return bad("/browser#installPane", exc)
+        return bad("/browser", exc)
 
 
 @router.post("/modules/update-all")
@@ -118,9 +138,9 @@ async def update_all_modules():
                 continue
             await install_downloaded_module(str(link))
             updated += 1
-        return ok("/browser#installedPane", f"Updated modules: {updated}")
+        return ok("/browser", f"Updated modules: {updated}")
     except Exception as exc:
-        return bad("/browser#installedPane", exc)
+        return bad("/browser", exc)
 
 
 @router.post("/modules/{name}/update")
@@ -132,19 +152,19 @@ async def update_one_module(name: str):
             link = item.get("link") or item.get("raw") or item.get("url")
             if link and (repo_name == wanted or str(link).lower().endswith(f"/{wanted}.py")):
                 await install_downloaded_module(str(link))
-                return ok("/browser#installedPane", f"Module {name} updated")
+                return ok("/browser", f"Module {name} updated")
         raise RuntimeError("Модуль не найден в DTG_Modules index.json")
     except Exception as exc:
-        return bad("/browser#installedPane", exc)
+        return bad("/browser", exc)
 
 
 @router.post("/modules/{name}/unload")
 async def unload_module(name: str):
     try:
         loader.unload(name)
-        return ok("/browser#installedPane", f"Module {name} unloaded")
+        return ok("/browser", f"Module {name} unloaded")
     except Exception as exc:
-        return bad("/browser#installedPane", exc)
+        return bad("/browser", exc)
 
 
 @router.post("/modules/{name}/delete")
@@ -156,9 +176,9 @@ async def delete_module(name: str):
         path = MODULES_DIR / f"{Path(name).name}.py"
         if path.exists():
             path.unlink()
-        return ok("/browser#installedPane", f"Module {name} deleted")
+        return ok("/browser", f"Module {name} deleted")
     except Exception as exc:
-        return bad("/browser#installedPane", exc)
+        return bad("/browser", exc)
 
 
 @router.post("/scanner/check")
@@ -185,7 +205,8 @@ async def scanner_check(source: str = Form(""), link: str = Form(""), file: Uplo
 async def update_project():
     try:
         result = subprocess.run(["git", "pull"], cwd=ROOT_DIR, text=True, capture_output=True, timeout=60)
-        output = (result.stdout + "\n" + result.stderr).strip()[-220:] or "Already up to date"
-        return ok("/", output)
+        if result.returncode != 0:
+            raise RuntimeError("Update failed")
+        return ok("/", "System updated. Restart DeathTG to apply code changes.")
     except Exception as exc:
         return bad("/", exc)
