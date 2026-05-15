@@ -4,7 +4,7 @@ import os
 import secrets
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -44,18 +44,6 @@ def guard(request: Request):
     if not request.session.get("auth"):
         return RedirectResponse("/login", status_code=303)
     return None
-
-
-def static_file(name: str):
-    target = STATIC_DIR / name
-    if target.exists() and target.is_file():
-        return FileResponse(target)
-    return RedirectResponse(f"/static/{name}", status_code=307)
-
-
-@app.get("/theme_cards.css")
-async def theme_cards_css():
-    return static_file("theme_cards.css")
 
 
 async def base(request: Request, page: str):
