@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from functools import lru_cache
 from pathlib import Path
 
 import aiohttp
@@ -25,11 +26,10 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 registry = CommandRegistry()
 loader = ModuleLoader(registry, MODULES_DIR)
 
-
 def env_load() -> None:
     load_dotenv(ROOT_DIR / ".env", override=True)
 
-
+@lru_cache(maxsize=1)
 def panel_password() -> str:
     env_load()
     env = ROOT_DIR / ".env"
@@ -39,14 +39,11 @@ def panel_password() -> str:
                 return line.split("=", 1)[1].strip()
     return os.getenv("PANEL_PASSWORD", "deathtg")
 
-
 def has_env() -> bool:
     return (ROOT_DIR / ".env").exists()
 
-
 def has_session() -> bool:
     return bool(list(ROOT_DIR.glob("*.session")))
-
 
 def avatar_url() -> str:
     USER_STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -55,14 +52,12 @@ def avatar_url() -> str:
             return f"/static/user/{name}"
     return ""
 
-
 async def refresh_modules() -> None:
     registry._commands.clear()
     registry._aliases.clear()
     loader.loaded.clear()
     await loader.load_builtin("deathtg.modules", ["core", "system", "antivirus", "terminal"])
     await loader.load_all_local()
-
 
 async def profile_info() -> dict[str, str]:
     avatar = avatar_url()
@@ -96,14 +91,28 @@ async def profile_info() -> dict[str, str]:
         "profile_title": settings.get("profile_title", "DeathTG Operator"),
     }
 
-
-def status(profile: dict[str, str]) -> dict:
+async def status(profile: dict[str, str]) -> dict:
     try:
-        cfg = load_config(); cfg_ok = True; prefix = cfg.command_prefix
+        cfg = load_config()
+        cfg_ok = True
+        prefix = cfg.command_prefix
     except Exception:
-        cfg_ok = False; prefix = "."
-    return {"config_ok": cfg_ok, "session_file": has_session(), "session_ok": profile.get("ok") == "1", "prefix": prefix, "modules_count": len(loader.loaded), "commands_count": len(list(registry.all())), "uses": usage_total(), "days": installed_days()}
-
+        cfg_ok = False
+        prefix = "."
+        
+    uses = await usage_total()
+    days = await installed_days()
+    
+    return {
+        "config_ok": cfg_ok,
+        "session_file": has_session(),
+        "session_ok": profile.get("ok") == "1",
+        "prefix": prefix,
+        "modules_count": len(loader.loaded),
+        "commands_count": len(list(registry.all())),
+        "uses": uses,
+        "days": days
+    }
 
 async def _module_repo_from_index(session: aiohttp.ClientSession) -> list[dict]:
     async with session.get(MODULE_REPO_INDEX, timeout=10) as r:
@@ -112,7 +121,6 @@ async def _module_repo_from_index(session: aiohttp.ClientSession) -> list[dict]:
         data = await r.json()
         items = data.get("modules", data if isinstance(data, list) else [])
         return items if isinstance(items, list) else []
-
 
 async def _module_repo_from_github_contents(session: aiohttp.ClientSession) -> list[dict]:
     async with session.get(MODULE_REPO_API, timeout=10) as r:
@@ -136,7 +144,6 @@ async def _module_repo_from_github_contents(session: aiohttp.ClientSession) -> l
         })
     return modules
 
-
 async def module_repo() -> list[dict]:
     try:
         async with aiohttp.ClientSession() as s:
@@ -147,9 +154,9 @@ async def module_repo() -> list[dict]:
     except Exception:
         return []
 
-
-def activity_points() -> list[dict]:
+async def activity_points() -> list[dict]:
     grouped = {}
-    for row in usage_by_day(30):
+    rows = await usage_by_day(30)
+    for row in rows:
         grouped.setdefault(str(row.get("day")), set()).add(str(row.get("module")))
     return [{"day": d, "count": len(m), "modules": sorted(m)} for d, m in sorted(grouped.items())]
