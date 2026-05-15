@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from deathtg.config import MODULES_DIR, ROOT_DIR, RUNTIME_DIR, load_config
 from deathtg.loader import ModuleLoader
 from deathtg.metrics import installed_days, top_modules, usage_by_day, usage_total
+from deathtg.profile_store import profile_settings
 from deathtg.registry import CommandRegistry
 
 PANEL_DIR = Path(__file__).resolve().parent
@@ -65,14 +66,35 @@ async def refresh_modules() -> None:
 
 async def profile_info() -> dict[str, str]:
     avatar = avatar_url()
+    settings = profile_settings()
     path = RUNTIME_DIR / "profile.json"
     if path.exists():
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            return {"name": data.get("name") or "DeathTG User", "username": data.get("username") or "", "id": str(data.get("id") or "unknown"), "ok": data.get("ok") or "1", "avatar": avatar}
+            return {
+                "name": data.get("name") or "DeathTG User",
+                "username": data.get("username") or "",
+                "id": str(data.get("id") or "unknown"),
+                "ok": data.get("ok") or "1",
+                "avatar": avatar,
+                "description": settings.get("description", ""),
+                "language": settings.get("language", "en"),
+                "accent": settings.get("accent", "blue"),
+                "profile_title": settings.get("profile_title", "DeathTG Operator"),
+            }
         except Exception:
             pass
-    return {"name": "DeathTG User", "username": "not connected", "id": "unknown", "ok": "0", "avatar": avatar}
+    return {
+        "name": "DeathTG User",
+        "username": "not connected",
+        "id": "unknown",
+        "ok": "0",
+        "avatar": avatar,
+        "description": settings.get("description", ""),
+        "language": settings.get("language", "en"),
+        "accent": settings.get("accent", "blue"),
+        "profile_title": settings.get("profile_title", "DeathTG Operator"),
+    }
 
 
 def status(profile: dict[str, str]) -> dict:
@@ -110,6 +132,7 @@ async def _module_repo_from_github_contents(session: aiohttp.ClientSession) -> l
             "description": f"{stem} module from DTG_Modules",
             "image": "",
             "link": item.get("download_url") or item.get("html_url") or "",
+            "keywords": stem.replace("_", " "),
         })
     return modules
 
