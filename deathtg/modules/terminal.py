@@ -16,10 +16,6 @@ SAFE_COMMANDS = {
     "uptime",
     "df",
     "free",
-    "python",
-    "python3",
-    "pip",
-    "git",
 }
 
 BLOCKED_PARTS = {
@@ -41,8 +37,7 @@ BLOCKED_PARTS = {
     "su",
 }
 
-
-@command("term", description="Безопасная терминальная команда", usage=".term git status")
+@command("term", description="Безопасная терминальная команда", usage=".term ls")
 async def term_cmd(event, args: list[str]) -> None:
     if not args:
         await event.edit(fail("укажи команду"), parse_mode="html")
