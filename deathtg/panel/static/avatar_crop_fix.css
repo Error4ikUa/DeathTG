@@ -1,1 +1,154 @@
-.crop-frame{width:560px!important;height:360px!important;min-height:220px!important;max-width:92vw!important;margin-inline:auto!important}.crop-box{width:260px!important;height:260px!important}.range-line{display:none!important}@media(max-width:760px){.crop-frame{width:92vw!important;height:60vw!important;min-height:230px!important}}
+/*
+ * Updated avatar crop styles
+ *
+ * The original CSS forced the cropping frame and box to fixed dimensions using
+ * hard‑coded widths/heights and `!important` flags. This caused the crop
+ * overlay to float separately from the underlying image and prevented it
+ * from adapting to the photo’s aspect ratio. To resolve the issue we
+ * redefine the cropping workspace to be responsive. The frame now scales
+ * based on the available viewport and the image’s natural aspect ratio. A
+ * draggable, resizable crop box (square) floats above the image allowing
+ * users to select any portion of the photo. The dark overlay outside the
+ * box visually isolates the selected area. Handles on each corner let the
+ * user resize the box while maintaining a square aspect ratio.
+ */
+
+/* container for the image and crop box */
+.crop-frame {
+  display: block !important;
+  position: relative !important;
+  /* The frame scales up to a maximum size but adapts to the viewport. */
+  width: min(560px, 78vw) !important;
+  height: min(380px, 58vw) !important;
+  min-height: 260px !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(var(--accent-rgb), 0.55) !important;
+  background: #050805 !important;
+  overflow: hidden !important;
+  /* remove default grid placement from clean.css */
+  place-items: unset !important;
+}
+
+/* hide decorative pseudo‑elements */
+.crop-frame:before,
+.crop-frame:after {
+  display: none !important;
+}
+
+/* the image is centered and can be dragged */
+.crop-frame img {
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  /* disable max constraints so the image can exceed the frame */
+  max-width: none !important;
+  max-height: none !important;
+  width: auto !important;
+  height: auto !important;
+  object-fit: unset !important;
+  user-select: none !important;
+  -webkit-user-drag: none !important;
+  touch-action: none !important;
+  cursor: grab;
+}
+
+/* change cursor on drag */
+.crop-frame:active img {
+  cursor: grabbing;
+}
+
+/* ensure the image appears only when a file is loaded */
+.crop-frame.has-image img {
+  display: block !important;
+}
+
+/* the draggable, resizable square crop box */
+.crop-box {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  /* responsive size: limited by viewport and frame size */
+  width: min(300px, 58vw, 72%);
+  aspect-ratio: 1 / 1;
+  transform: translate(-50%, -50%);
+  border: 2px solid #2f9cff;
+  /* dark overlay outside crop area */
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.48);
+  z-index: 8;
+  cursor: move;
+}
+
+/* diagonal grid overlay inside the crop box */
+.crop-box:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+      90deg,
+      transparent 32.8%,
+      rgba(255, 255, 255, 0.22) 33%,
+      rgba(255, 255, 255, 0.22) 33.5%,
+      transparent 33.7%,
+      transparent 66.3%,
+      rgba(255, 255, 255, 0.22) 66.5%,
+      rgba(255, 255, 255, 0.22) 67%,
+      transparent 67.2%
+    ),
+    linear-gradient(
+      0deg,
+      transparent 32.8%,
+      rgba(255, 255, 255, 0.22) 33%,
+      rgba(255, 255, 255, 0.22) 33.5%,
+      transparent 33.7%,
+      transparent 66.3%,
+      rgba(255, 255, 255, 0.22) 66.5%,
+      rgba(255, 255, 255, 0.22) 67%,
+      transparent 67.2%
+    );
+  pointer-events: none;
+}
+
+/* corner handles for resizing */
+.crop-box .handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: #2f9cff;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  z-index: 10;
+}
+
+.crop-box .nw {
+  left: -7px;
+  top: -7px;
+  cursor: nwse-resize;
+}
+.crop-box .ne {
+  right: -7px;
+  top: -7px;
+  cursor: nesw-resize;
+}
+.crop-box .sw {
+  left: -7px;
+  bottom: -7px;
+  cursor: nesw-resize;
+}
+.crop-box .se {
+  right: -7px;
+  bottom: -7px;
+  cursor: nwse-resize;
+}
+
+/* hide any legacy range line from the old cropper */
+.range-line {
+  display: none !important;
+}
+
+/* responsive adjustments on smaller screens */
+@media (max-width: 760px) {
+  .crop-frame {
+    width: min(92vw, 560px) !important;
+    height: min(64vw, 360px) !important;
+    min-height: 230px !important;
+  }
+}
