@@ -22,10 +22,13 @@ async def info_cmd(event, args: list[str]) -> None:
     me = await event.client.get_me()
     cfg = load_config()
     settings = profile_settings()
-    total = usage_total()
+    
+    total = await usage_total()
+    days = await installed_days()
+    modules = await top_modules(3)
+    
     level = total // 100 + 1
     progress = total % 100
-    modules = top_modules(3)
     module_line = ", ".join(f"{m['module']}({m['count']})" for m in modules) or "no usage yet"
     name = " ".join([me.first_name or "", me.last_name or ""]).strip() or me.username or "DeathTG User"
     username = f"@{me.username}" if me.username else "no username"
@@ -37,7 +40,7 @@ async def info_cmd(event, args: list[str]) -> None:
         f"<b>Status:</b> online\n"
         f"<b>Ping:</b> <code>{ping} ms</code>\n"
         f"<b>Prefix:</b> <code>{cfg.command_prefix}</code>\n"
-        f"<b>Streak:</b> <code>{installed_days()} days</code>\n"
+        f"<b>Streak:</b> <code>{days} days</code>\n"
         f"<b>Actions:</b> <code>{total}</code>\n"
         f"<b>Level:</b> <code>{level}</code> [{_bar(progress)}] {progress}/100\n"
         f"<b>Top modules:</b> <code>{module_line}</code>"
