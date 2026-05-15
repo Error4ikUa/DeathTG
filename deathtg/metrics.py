@@ -1,5 +1,21 @@
 from __future__ import annotations
 
+"""
+Asynchronous usage statistics for DeathTG.
+
+This module implements a simple metrics system backed by SQLite via
+``aiosqlite``.  It records when commands are executed, counts usage
+over time and determines how many days the bot has been installed.
+All functions are asynchronous and must be awaited to obtain their
+results.
+
+Database schema:
+
+* ``meta``: holds a single row with the ``installed_at`` timestamp.
+* ``command_usage``: logs each command invocation with module,
+  command name and timestamp.
+"""
+
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -9,20 +25,28 @@ import aiosqlite
 
 from deathtg.config import ROOT_DIR
 
+
 DB_PATH = ROOT_DIR / "deathtg_stats.sqlite3"
+
 
 @dataclass(slots=True)
 class UsagePoint:
+    """Represents a usage aggregate for a given day and module."""
+
     day: str
     count: int
 
+
 @asynccontextmanager
 async def get_db():
+    """Yield an aiosqlite connection with row factory set to return dicts."""
     async with aiosqlite.connect(DB_PATH) as conn:
         conn.row_factory = aiosqlite.Row
         yield conn
 
+
 async def init_metrics() -> None:
+    """Initialise the metrics database if it has not been created yet."""
     async with get_db() as conn:
         await conn.execute(
             """
@@ -44,13 +68,16 @@ async def init_metrics() -> None:
         )
         async with conn.execute("SELECT value FROM meta WHERE key='installed_at'") as cursor:
             exists = await cursor.fetchone()
-        
         if not exists:
-            await conn.execute("INSERT INTO meta(key, value) VALUES('installed_at', ?)", (str(int(time.time())),))
-        
+            await conn.execute(
+                "INSERT INTO meta(key, value) VALUES('installed_at', ?)",
+                (str(int(time.time())),),
+            )
         await conn.commit()
 
+
 async def record_command(module: str, command: str) -> None:
+    """Record that a command has been executed."""
     await init_metrics()
     async with get_db() as conn:
         await conn.execute(
@@ -59,14 +86,18 @@ async def record_command(module: str, command: str) -> None:
         )
         await conn.commit()
 
+
 async def usage_total() -> int:
+    """Return the total number of recorded command invocations."""
     await init_metrics()
     async with get_db() as conn:
         async with conn.execute("SELECT COUNT(*) AS c FROM command_usage") as cursor:
             row = await cursor.fetchone()
             return int(row["c"]) if row else 0
 
+
 async def installed_days() -> int:
+    """Return the number of days since installation (minimum 1)."""
     await init_metrics()
     async with get_db() as conn:
         async with conn.execute("SELECT value FROM meta WHERE key='installed_at'") as cursor:
@@ -74,7 +105,9 @@ async def installed_days() -> int:
             installed_at = int(row["value"]) if row else int(time.time())
     return max(1, int((time.time() - installed_at) // 86400) + 1)
 
+
 async def usage_by_day(days: int = 14) -> list[dict[str, object]]:
+    """Return aggregated usage counts by day, module and command."""
     await init_metrics()
     since = int(time.time()) - days * 86400
     async with get_db() as conn:
@@ -91,7 +124,9 @@ async def usage_by_day(days: int = 14) -> list[dict[str, object]]:
             rows = await cursor.fetchall()
     return [dict(row) for row in rows]
 
+
 async def top_modules(limit: int = 7) -> list[dict[str, object]]:
+    """Return the most used modules, sorted by usage count."""
     await init_metrics()
     async with get_db() as conn:
         async with conn.execute(
@@ -107,7 +142,14 @@ async def top_modules(limit: int = 7) -> list[dict[str, object]]:
             rows = await cursor.fetchall()
     return [dict(row) for row in rows]
 
+
 async def level_info() -> dict[str, int]:
+    """Return a simple level and XP calculation based on usage.
+
+    The bot's level is ``total // 100 + 1``, current progress
+    ``total % 100`` and next needed to level up ``100 - current``.  Elo
+    rating is arbitrary and increases linearly with usage.
+    """
     total = await usage_total()
     level = total // 100 + 1
     current = total % 100
