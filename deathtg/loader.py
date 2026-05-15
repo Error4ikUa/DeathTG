@@ -4,6 +4,7 @@ import importlib
 import importlib.util
 import inspect
 import sys
+import traceback
 import types
 from pathlib import Path
 from types import ModuleType
@@ -45,8 +46,20 @@ class ModuleLoader:
 
     async def load_builtin(self, package: str, module_names: list[str]) -> None:
         for name in module_names:
-            module = importlib.import_module(f"{package}.{name}")
-            self._register_module(module, name)
+            try:
+                import_name = f"{package}.{name}"
+                # Если модуль уже был загружен, делаем жесткий reload для обновления кода
+                if import_name in sys.modules:
+                    module = importlib.reload(sys.modules[import_name])
+                else:
+                    module = importlib.import_module(import_name)
+                
+                self._register_module(module, name)
+            except Exception as exc:
+                # Перехватываем ошибку, чтобы панель не ложилась с 500 Internal Server Error
+                print(f"\n[DeathTG] ⚠️ КРИТИЧЕСКАЯ ОШИБКА В СИСТЕМНОМ МОДУЛЕ '{name}':")
+                traceback.print_exc()
+                print("[DeathTG] Панель продолжит работу, но этот модуль не загружен.\n")
 
     async def load_all_local(self) -> None:
         for path in sorted(self.modules_dir.glob("*.py")):
@@ -165,7 +178,14 @@ class ModuleLoader:
         meta = getattr(obj, "__deathtg_command__", None)
         if not meta:
             return False
-        self.registry.add(Command(name=meta["name"], handler=self._wrap_handler(obj), description=meta["description"], usage=meta["usage"], aliases=meta["aliases"], module=module_name))
+        self.registry.add(Command(
+            name=meta["name"], 
+            handler=self._wrap_handler(obj), 
+            description=meta["description"], 
+            usage=meta["usage"], 
+            aliases=meta["aliases"], 
+            module=module_name
+        ))
         return True
 
     def _register_module(self, module: ModuleType, module_name: str) -> None:
@@ -192,7 +212,7 @@ class ModuleLoader:
                     registered += 1
 
         if registered == 0:
-            raise RuntimeError(f"В модуле {module_name} нет команд")
+            raise RuntimeError(f"В модуле {module_name} нет команд (декоратор @command не найден)")
 
         self.loaded[module_name] = module
 
