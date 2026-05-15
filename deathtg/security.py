@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, field
 
-
 @dataclass(slots=True)
 class SecurityReport:
     allowed: bool
@@ -14,7 +13,6 @@ class SecurityReport:
         if not self.reasons:
             return "чисто, явной дичи не найдено"
         return "\n".join(f"- {reason}" for reason in self.reasons)
-
 
 BLOCKED_TEXT_MARKERS = {
     "DeleteAccountRequest": "попытка удалить Telegram-аккаунт",
@@ -31,6 +29,8 @@ DANGEROUS_CALLS = {
     "compile": "compile может готовить чужой код к выполнению",
     "open": "работа с файлами требует проверки",
     "__import__": "динамический импорт может скрывать вредный код",
+    "getattr": "может использоваться для обхода AST-защиты",
+    "setattr": "может использоваться для обхода AST-защиты",
 }
 
 DANGEROUS_IMPORTS = {
@@ -58,7 +58,6 @@ FATAL_MARKERS = {
     "account.DeleteAccount",
     "log_out",
 }
-
 
 def scan_module_source(source: str) -> SecurityReport:
     report = SecurityReport(allowed=True)
