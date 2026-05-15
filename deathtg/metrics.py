@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,13 +16,14 @@ class UsagePoint:
     day: str
     count: int
 
-async def _connect() -> aiosqlite.Connection:
-    conn = await aiosqlite.connect(DB_PATH)
-    conn.row_factory = aiosqlite.Row
-    return conn
+@asynccontextmanager
+async def get_db():
+    async with aiosqlite.connect(DB_PATH) as conn:
+        conn.row_factory = aiosqlite.Row
+        yield conn
 
 async def init_metrics() -> None:
-    async with await _connect() as conn:
+    async with get_db() as conn:
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS meta (
@@ -50,7 +52,7 @@ async def init_metrics() -> None:
 
 async def record_command(module: str, command: str) -> None:
     await init_metrics()
-    async with await _connect() as conn:
+    async with get_db() as conn:
         await conn.execute(
             "INSERT INTO command_usage(module, command, used_at) VALUES(?, ?, ?)",
             (module, command, int(time.time())),
@@ -59,14 +61,14 @@ async def record_command(module: str, command: str) -> None:
 
 async def usage_total() -> int:
     await init_metrics()
-    async with await _connect() as conn:
+    async with get_db() as conn:
         async with conn.execute("SELECT COUNT(*) AS c FROM command_usage") as cursor:
             row = await cursor.fetchone()
             return int(row["c"]) if row else 0
 
 async def installed_days() -> int:
     await init_metrics()
-    async with await _connect() as conn:
+    async with get_db() as conn:
         async with conn.execute("SELECT value FROM meta WHERE key='installed_at'") as cursor:
             row = await cursor.fetchone()
             installed_at = int(row["value"]) if row else int(time.time())
@@ -75,7 +77,7 @@ async def installed_days() -> int:
 async def usage_by_day(days: int = 14) -> list[dict[str, object]]:
     await init_metrics()
     since = int(time.time()) - days * 86400
-    async with await _connect() as conn:
+    async with get_db() as conn:
         async with conn.execute(
             """
             SELECT date(used_at, 'unixepoch') AS day, module, command, COUNT(*) AS count
@@ -91,7 +93,7 @@ async def usage_by_day(days: int = 14) -> list[dict[str, object]]:
 
 async def top_modules(limit: int = 7) -> list[dict[str, object]]:
     await init_metrics()
-    async with await _connect() as conn:
+    async with get_db() as conn:
         async with conn.execute(
             """
             SELECT module, COUNT(*) AS count
