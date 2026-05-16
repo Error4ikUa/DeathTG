@@ -233,8 +233,8 @@ async def setup_save(
     api_hash: str = Form(...),
     phone: str = Form(...),
     session_name: str = Form("deathtg"),
-    panel_password_value: str = Form("deathtg"),
-    panel_secret: str = Form("change_me_long_secret"),
+    panel_password_value: str = Form(""),
+    panel_secret: str = Form(""),
     bot_token: str = Form(""),
     setup_token: str = Form(""),
 ):
