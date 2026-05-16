@@ -1,33 +1,26 @@
 # DeathTG
 
 ```text
-█████████████████████████████████████████████████████████████████████████████████████████████████████████████
-█░░░░░░░░░░░░███░░░░░░░░░░░░░░█░░░░░░░░░░░░░░█░░░░░░░░░░░░░░█░░░░░░██░░░░░░████░░░░░░░░░░░░░░█░░░░░░░░░░░░░░█
-█░░▄▀▄▀▄▀▄▀░░░░█░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀░░██░░▄▀░░████░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀▄▀▄▀▄▀▄▀░░█
-█░░▄▀░░░░▄▀▄▀░░█░░▄▀░░░░░░░░░░█░░▄▀░░░░░░▄▀░░█░░░░░░▄▀░░░░░░█░░▄▀░░██░░▄▀░░████░░░░░░▄▀░░░░░░█░░▄▀░░░░░░░░░░█
-█░░▄▀░░██░░▄▀░░█░░▄▀░░█████████░░▄▀░░██░░▄▀░░█████░░▄▀░░█████░░▄▀░░██░░▄▀░░████████░░▄▀░░█████░░▄▀░░█████████
-█░░▄▀░░██░░▄▀░░█░░▄▀░░░░░░░░░░█░░▄▀░░░░░░▄▀░░█████░░▄▀░░█████░░▄▀░░░░░░▄▀░░████████░░▄▀░░█████░░▄▀░░█████████
-█░░▄▀░░██░░▄▀░░█░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀▄▀▄▀▄▀▄▀░░█████░░▄▀░░█████░░▄▀▄▀▄▀▄▀▄▀░░████████░░▄▀░░█████░░▄▀░░██░░░░░░█
-█░░▄▀░░██░░▄▀░░█░░▄▀░░░░░░░░░░█░░▄▀░░░░░░▄▀░░█████░░▄▀░░█████░░▄▀░░░░░░▄▀░░████████░░▄▀░░█████░░▄▀░░██░░▄▀░░█
-█░░▄▀░░██░░▄▀░░█░░▄▀░░█████████░░▄▀░░██░░▄▀░░█████░░▄▀░░█████░░▄▀░░██░░▄▀░░████████░░▄▀░░█████░░▄▀░░██░░▄▀░░█
-█░░▄▀░░░░▄▀▄▀░░█░░▄▀░░░░░░░░░░█░░▄▀░░██░░▄▀░░█████░░▄▀░░█████░░▄▀░░██░░▄▀░░████████░░▄▀░░█████░░▄▀░░░░░░▄▀░░█
-█░░▄▀▄▀▄▀▄▀░░░░█░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀░░██░░▄▀░░█████░░▄▀░░█████░░▄▀░░██░░▄▀░░████████░░▄▀░░█████░░▄▀▄▀▄▀▄▀▄▀░░█
-█░░░░░░░░░░░░███░░░░░░░░░░░░░░█░░░░░░██░░░░░░█████░░░░░░█████░░░░░░██░░░░░░████████░░░░░░█████░░░░░░░░░░░░░░█
-█████████████████████████████████████████████████████████████████████████████████████████████████████████████
+██████╗░███████╗░█████╗░████████╗██╗░░██╗  ████████╗░██████╗░
+██╔══██╗██╔════╝██╔══██╗╚══██╔══╝██║░░██║  ╚══██╔══╝██╔════╝░
+██║░░██║█████╗░░███████║░░░██║░░░███████║  ░░░██║░░░██║░░██╗░
+██║░░██║██╔══╝░░██╔══██║░░░██║░░░██╔══██║  ░░░██║░░░██║░░╚██╗
+██████╔╝███████╗██║░░██║░░░██║░░░██║░░██║  ░░░██║░░░╚██████╔╝
+╚═════╝░╚══════╝╚═╝░░╚═╝░░░╚═╝░░░╚═╝░░╚═╝  ░░░╚═╝░░░░╚═════╝░
 ```
 
 DeathTG is a secure Telegram userbot platform with:
 
 - web-first setup
 - trusted multi-device panel access
-- Telegram-delivered secure links
+- Telegram-delivered secure device links
 - update notifications in bot instead of silent auto-update
 - module cards with images on the website
 - folder-based module architecture
 
 ## One-Line Install
 
-For Linux / VPS / Oracle Cloud:
+For Ubuntu / WSL / VPS / Oracle Cloud:
 
 ```bash
 clear && cd ~ && rm -rf DeathTG && git clone https://github.com/Error4ikUa/DeathTG.git && cd DeathTG && python3 bootstrap.py
@@ -36,17 +29,15 @@ clear && cd ~ && rm -rf DeathTG && git clone https://github.com/Error4ikUa/Death
 What happens automatically:
 
 1. Creates `.venv`
-2. Installs `pip` updates
+2. Updates `pip`
 3. Installs `requirements.txt`
 4. Starts `dtg.py`
-5. Prints your setup link in terminal
+5. Prints setup link in terminal
 6. Opens DeathTG web setup flow
 
-## First Start Flow
+## First Start
 
 You do not need manual `nano .env`.
-
-On first start:
 
 1. Open the setup link from terminal
 2. Enter `API_ID`
@@ -59,29 +50,33 @@ After that DeathTG:
 
 1. Creates Telegram session
 2. Starts userbot automatically
-3. Creates / syncs bots
+3. Syncs bots
 4. Sends welcome message in Telegram
 5. Sends your personal secure panel links
 
 ## Public Server Logic
 
-DeathTG is designed for normal environments:
+Supported environments:
 
 - Ubuntu / Debian VPS
 - Oracle Cloud free server
 - Linux desktop
 - Windows PowerShell
 - Windows CMD
+- WSL
 
-DeathTG blocks unsupported Android terminal environments like Termux.
+Blocked:
 
-For public servers:
+- Termux
+- Android terminal environments
 
-- setup is protected with setup-token
-- remote password login is restricted
-- access for phone / PC / tablet goes through secure signed device links
-- multiple trusted devices can exist at once
-- each device can be revoked separately
+For public servers DeathTG uses:
+
+- setup-token protection
+- trusted multi-device sessions
+- secure signed one-time device links
+- restricted remote password login
+- per-device revoke
 
 ## Update Logic
 
@@ -118,15 +113,27 @@ modules/MyModule/Module.png
 Rules:
 
 - module can be `.py` file or folder
-- module folder can contain `MyModule.py`, `main.py`, or `__init__.py`
+- folder module can use `ModuleName.py`, `main.py`, or `__init__.py`
 - module image should be `Module.png`
 - recommended image ratio is `16:9`
 
 Fallback image logic:
 
-- first: module local `Module.png`
-- second: `images/modules/<module_name>.png`
-- third: `images/modules/Module.png`
+1. module local `Module.png`
+2. `images/modules/<module_name>.png`
+3. `images/modules/Module.png`
+
+## DTG_Modules Repo Contract
+
+For repository modules in `DTG_Modules` the normal format is:
+
+```text
+ModuleName/
+ModuleName/ModuleName.py
+ModuleName/Module.png
+```
+
+If `Module.png` is missing, DeathTG shows the shared fallback from `images/modules/Module.png`.
 
 ## Image Contract
 
@@ -141,36 +148,6 @@ Module images:
 - `images/modules/Module.png`
 - `images/modules/<module_name>.png`
 
-## Profile / Info Text
-
-Profile editor supports:
-
-- Unicode text
-- custom info text
-- Telegram premium emoji HTML in info caption
-
-Example:
-
-```html
-<emoji id="1234567890123456789">⭐️</emoji> {title}
-```
-
-`info_text` can use placeholders like:
-
-- `{title}`
-- `{name}`
-- `{username}`
-- `{description}`
-- `{role}`
-- `{prefix}`
-- `{uses}`
-- `{days}`
-- `{level}`
-- `{level_current}`
-- `{top_modules}`
-- `{version}`
-- `{branch}`
-
 ## Useful Commands
 
 Run directly:
@@ -179,19 +156,19 @@ Run directly:
 python dtg.py
 ```
 
-Cross-platform bootstrap:
+Bootstrap:
 
 ```bash
 python3 bootstrap.py
 ```
 
-Windows PowerShell:
+PowerShell:
 
 ```powershell
 .\bootstrap.ps1
 ```
 
-Windows CMD:
+CMD:
 
 ```cmd
 bootstrap.cmd
@@ -213,9 +190,9 @@ DTG_PUBLIC_HOST=panel.example.com DTG_PUBLIC_URL=https://panel.example.com bash 
 
 - keep `.env` private
 - keep `*.session` private
-- do not share your secure panel links
+- do not share secure panel links
 - do not expose plain HTTP publicly
-- use HTTPS for public panel access
+- prefer HTTPS for public panel access
 - use trusted device links instead of sharing panel password
 
 ## Docs
