@@ -429,6 +429,8 @@ async def module_repo() -> list[dict]:
                     stem = Path(link.split("?", 1)[0]).stem
                     item["image"] = await _discover_image(s, link, stem)
                     item["modul_png"] = item["image"]
+                item["image"] = repo_module_image_url(str(item.get("name") or ""), str(item.get("image") or ""))
+                item["modul_png"] = item["image"]
                 item["verified"] = is_trusted_module_link(link)
                 item["source_label"] = "Verified by DTG" if item["verified"] else "External source"
             return items
@@ -461,6 +463,20 @@ def module_image_url(module_name: str, meta_image: str = "") -> str:
         except OSError:
             stamp = 0
         return f"/module-media/{module_name}?t={stamp}"
+    shared = shared_module_image_path(module_name)
+    if shared and shared.exists() and IMAGES_DIR in shared.parents:
+        try:
+            stamp = int(shared.stat().st_mtime)
+        except OSError:
+            stamp = 0
+        relative = shared.relative_to(IMAGES_DIR).as_posix()
+        return f"/images/{relative}?t={stamp}"
+    return ""
+
+
+def repo_module_image_url(module_name: str, remote_image: str = "") -> str:
+    if remote_image:
+        return remote_image
     shared = shared_module_image_path(module_name)
     if shared and shared.exists() and IMAGES_DIR in shared.parents:
         try:
@@ -617,7 +633,7 @@ async def repo_module_detail(module_name: str) -> dict:
         },
         "protected": False,
         "description": str(selected.get("description") or f"{name} module from DTG_Modules"),
-        "image": str(selected.get("image") or selected.get("modul_png") or ""),
+        "image": repo_module_image_url(name, str(selected.get("image") or selected.get("modul_png") or "")),
         "scopes": parsed_meta["scopes"],
         "requires": parsed_meta["requires"],
         "hikka_meta": parsed_meta["meta"],
