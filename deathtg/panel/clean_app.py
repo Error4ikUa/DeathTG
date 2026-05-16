@@ -100,7 +100,8 @@ async def startup_event() -> None:
 
 @app.middleware("http")
 async def harden_responses(request: Request, call_next):
-    session_id = str(request.session.get("device_session_id") or "")
+    session_data = request.scope.get("session") or {}
+    session_id = str(session_data.get("device_session_id") or "")
     if session_id:
         touch_device_session(session_id, ip=_client_ip(request), user_agent=request.headers.get("user-agent", ""))
     response = await call_next(request)
