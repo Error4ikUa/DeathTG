@@ -1,1 +1,115 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DeathTG Activity</title><link rel="stylesheet" href="/static/clean.css"><link rel="stylesheet" href="/static/clean_patch.css"><link rel="stylesheet" href="/static/activity_fix.css"></head><body class="theme-activity"><canvas id="matrix"></canvas><button class="menu-btn" id="menuToggle">{% if profile.avatar %}<img src="{{ profile.avatar }}">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}</button><aside class="mini-menu" id="drawer"><div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>Activity</span></div></div><nav><a href="/">News</a><a href="/profile">Profile</a><a class="active" href="/activity">Activity</a><a href="/browser">Modules</a><a href="/scanner">Scanner</a></nav><a class="logout" href="/logout">Logout</a></aside><div class="overlay" id="drawerBackdrop"></div><main class="page"><section class="hero card"><div><p class="eyebrow">Activity</p><h1>Usage line</h1><p>Один модуль за день считается один раз. Наведи на точку — дата и модули.</p></div><a class="btn ghost" href="/browser">Modules</a></section><section class="card chart-card"><div id="lineChart" class="line-chart"></div><div id="chartData" style="display:none">{% for point in activity_points %}<i data-day="{{ point.day }}" data-count="{{ point.count }}" data-modules="{{ point.modules|join(', ') }}"></i>{% endfor %}</div></section><section class="card panel"><h2>Top modules</h2><div class="news">{% for item in top_modules %}<div><b>{{ item.module }}</b><p>{{ item.count }} uses</p></div>{% endfor %}{% if not top_modules %}<p>Пока статистики нет.</p>{% endif %}</div></section></main><script src="/static/matrix.js"></script><script src="/static/clean.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DeathTG Activity</title>
+    <link rel="stylesheet" href="/static/clean.css">
+    <link rel="stylesheet" href="/static/clean_patch.css">
+    <link rel="stylesheet" href="/static/accent_fix.css">
+    <link rel="stylesheet" href="/static/activity_fix.css">
+    <style>
+        .activity-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}
+        .rank-list{display:grid;gap:10px}
+        .rank-item{padding:10px 12px;border-radius:12px;background:rgba(0,0,0,.24);border:1px solid rgba(var(--accent-rgb),.16)}
+        .rank-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:8px}
+        .rank-head b{display:block;max-width:72%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .rank-bar{height:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+        .rank-bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+        .recent-list{display:grid;gap:10px}
+        .recent-item{padding:10px 12px;border-radius:12px;background:rgba(0,0,0,.24);border:1px solid rgba(var(--accent-rgb),.16)}
+        .recent-item b{display:block;margin-bottom:4px}
+        .recent-item p{margin:0;color:var(--muted)}
+        .mini-empty{padding:12px;border:1px dashed rgba(var(--accent-rgb),.28);border-radius:12px;color:var(--muted)}
+        @media(max-width:900px){.activity-grid{grid-template-columns:1fr}}
+    </style>
+</head>
+<body class="theme-activity" data-accent="{{ profile.accent or 'blue' }}">
+<canvas id="matrix"></canvas>
+<button class="menu-btn" id="menuToggle">
+    {% if profile.avatar %}<img src="{{ profile.avatar }}">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}
+</button>
+<aside class="mini-menu" id="drawer">
+    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>Activity</span></div></div>
+    <nav><a href="/">News</a><a href="/profile">Profile</a><a class="active" href="/activity">Activity</a><a href="/browser">Modules</a><a href="/scanner">Scanner</a></nav>
+    <a class="logout" href="/logout">Logout</a>
+</aside>
+<div class="overlay" id="drawerBackdrop"></div>
+
+<main class="page">
+    <section class="hero card">
+        <div>
+            <p class="eyebrow">Activity</p>
+            <h1>Usage</h1>
+            <p>Daily unique modules, command totals, and recent module momentum.</p>
+        </div>
+        <a class="btn ghost" href="/browser">Modules</a>
+    </section>
+
+    <section class="stats">
+        <article class="stat card"><span>Total uses</span><b>{{ status.uses }}</b></article>
+        <article class="stat card"><span>Commands</span><b>{{ status.commands_count }}</b></article>
+        <article class="stat card"><span>Active days</span><b>{{ status.days }}</b></article>
+        <article class="stat card"><span>Top module</span><b>{{ (top_modules[0].module if top_modules else 'None') }}</b></article>
+        <article class="stat card"><span>Loaded modules</span><b>{{ status.modules_count }}</b></article>
+    </section>
+
+    <section class="card chart-card">
+        <div class="section-line">
+            <div>
+                <p class="eyebrow">Chart</p>
+                <h2 style="margin:0">Daily modules</h2>
+            </div>
+        </div>
+        <div id="lineChart" class="line-chart"></div>
+        <div id="chartData" style="display:none">
+            {% for point in activity_points %}
+            <i data-day="{{ point.day }}" data-count="{{ point.count }}" data-modules="{{ point.modules|join(', ') }}"></i>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="activity-grid">
+        <article class="card panel">
+            <p class="eyebrow">Top modules</p>
+            <h2 style="margin:0 0 12px">Ranked usage</h2>
+            {% set max_count = (top_modules[0].count if top_modules else 1) %}
+            <div class="rank-list">
+                {% for item in top_modules %}
+                <div class="rank-item">
+                    <div class="rank-head">
+                        <b>{{ item.module }}</b>
+                        <span>{{ item.count }}</span>
+                    </div>
+                    <div class="rank-bar"><i style="width: {{ ((item.count / max_count) * 100) if max_count else 0 }}%"></i></div>
+                </div>
+                {% endfor %}
+                {% if not top_modules %}
+                <div class="mini-empty">No activity yet.</div>
+                {% endif %}
+            </div>
+        </article>
+
+        <article class="card panel">
+            <p class="eyebrow">Recent days</p>
+            <h2 style="margin:0 0 12px">Modules per day</h2>
+            <div class="recent-list">
+                {% for point in activity_points[-7:]|reverse %}
+                <div class="recent-item">
+                    <b>{{ point.day }}</b>
+                    <p>{{ point.count }} unique modules{% if point.modules %} &middot; {{ point.modules|join(', ') }}{% endif %}</p>
+                </div>
+                {% endfor %}
+                {% if not activity_points %}
+                <div class="mini-empty">Run a few commands to see recent activity here.</div>
+                {% endif %}
+            </div>
+        </article>
+    </section>
+</main>
+
+<script src="/static/matrix.js"></script>
+<script src="/static/clean.js"></script>
+</body>
+</html>
+

@@ -144,15 +144,14 @@ async def top_modules(limit: int = 7) -> list[dict[str, object]]:
 
 
 async def level_info() -> dict[str, int]:
-    """Return a simple level and XP calculation based on usage.
+    """Return account level based on account age inside DeathTG.
 
-    The bot's level is ``total // 100 + 1``, current progress
-    ``total % 100`` and next needed to level up ``100 - current``.  Elo
-    rating is arbitrary and increases linearly with usage.
+    Usage counters are activity stats, not account strength.  Leveling
+    uses installed days so it cannot be farmed by spamming commands.
     """
-    total = await usage_total()
-    level = total // 100 + 1
-    current = total % 100
-    next_needed = 100 - current
-    elo = 700 + total * 3
+    days = await installed_days()
+    level = days // 7 + 1
+    current = days % 7
+    next_needed = 7 - current if current else 7
+    elo = 700 + days * 12
     return {"level": level, "current": current, "next_needed": next_needed, "elo": elo}

@@ -17,11 +17,29 @@ if ENV_PATH.exists():
 
 userbot_process = None
 
-def cleanup(signum, frame):
+
+def stop_userbot(timeout: float = 8.0) -> None:
     global userbot_process
-    if userbot_process:
-        userbot_process.terminate()
-        userbot_process.wait()
+    process = userbot_process
+    if process is None:
+        return
+    if process.poll() is not None:
+        userbot_process = None
+        return
+    try:
+        process.terminate()
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=timeout)
+    except ProcessLookupError:
+        pass
+    finally:
+        userbot_process = None
+
+
+def cleanup(signum, frame):
+    stop_userbot()
     sys.exit(0)
 
 def run_panel() -> None:
@@ -42,6 +60,4 @@ if __name__ == "__main__":
     try:
         run_panel()
     finally:
-        if userbot_process:
-            userbot_process.terminate()
-            userbot_process.wait()
+        stop_userbot()

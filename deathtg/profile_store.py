@@ -12,6 +12,7 @@ DEFAULT_PROFILE_SETTINGS = {
     "description": "DeathTG userbot online. Neon profile, modules and automation in one panel.",
     "accent": "blue",
     "profile_title": "DeathTG Operator",
+    "role": "admin",
 }
 
 def profile_settings() -> dict[str, str]:

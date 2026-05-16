@@ -1,48 +1,137 @@
 from __future__ import annotations
 
-import time
+import contextlib
+import json
+from datetime import datetime, timedelta
+from pathlib import Path
+
+from telethon import Button
 
 from deathtg.command import command
-from deathtg.config import load_config
-from deathtg.metrics import installed_days, usage_total, top_modules
+from deathtg.config import RUNTIME_DIR, load_config
+from deathtg.info_card import render_info_card
+from deathtg.metrics import installed_days, level_info, top_modules, usage_by_day, usage_total
 from deathtg.profile_store import profile_settings
+from deathtg.startup_sync import STATUS_PATH
 
 
-def _bar(value: int, maximum: int = 100, size: int = 12) -> str:
-    maximum = max(1, maximum)
-    filled = max(0, min(size, round((value / maximum) * size)))
-    return "█" * filled + "░" * (size - filled)
+def _startup_status() -> dict:
+    if STATUS_PATH.exists():
+        try:
+            return json.loads(STATUS_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {
+        "bot": {"configured": False, "username": "", "valid_username": False, "error": None},
+        "channels": [],
+        "folder": {"name": "DeathTG", "ok": False, "error": None},
+    }
 
 
-@command("info", description="Show DeathTG profile, uptime, ping and status", usage=".info", aliases=("me", "profile"))
+def _top_modules_text(rows: list[dict[str, object]]) -> str:
+    parts = []
+    for row in rows[:4]:
+        name = str(row.get("module") or "unknown")
+        count = int(row.get("count") or 0)
+        parts.append(f"{name}({count})")
+    return ", ".join(parts) or "No stats yet"
+
+
+def _usage_chart_points(rows: list[dict[str, object]]) -> list[dict]:
+    grouped: dict[str, int] = {}
+    for row in rows:
+        day = str(row.get("day") or "")
+        grouped[day] = grouped.get(day, 0) + int(row.get("count") or 0)
+    today = datetime.now().date()
+    days = [(today - timedelta(days=idx)).isoformat() for idx in range(29, -1, -1)]
+    return [{"day": day, "count": grouped.get(day, 0)} for day in days]
+
+
+def _build_buttons() -> list[list[Button]] | None:
+    startup = _startup_status()
+    buttons: list[Button] = [
+        Button.url("News", "https://t.me/Death_Telega"),
+        Button.url("Offtop", "https://t.me/Death_TgOfftop"),
+    ]
+    bot_name = str(startup.get("bot", {}).get("username") or "").strip()
+    if bot_name:
+        buttons.insert(0, Button.url("Inline Bot", f"https://t.me/{bot_name}"))
+    if not buttons:
+        return None
+    rows: list[list[Button]] = []
+    for index in range(0, len(buttons), 2):
+        rows.append(buttons[index : index + 2])
+    return rows
+
+
+@command(
+    "info",
+    description="Render the DeathTG status card",
+    usage=".info",
+    aliases=("me", "profile", "i", "инфо"),
+)
 async def info_cmd(event, args: list[str]) -> None:
-    started = time.perf_counter()
-    msg = await event.edit("<b>☠️ DeathTG:</b> checking status...", parse_mode="html")
-    ping = int((time.perf_counter() - started) * 1000)
+    status = await event.edit("<b>DeathTG:</b> building info card...", parse_mode="html")
     me = await event.client.get_me()
     cfg = load_config()
     settings = profile_settings()
-    
+
     total = await usage_total()
     days = await installed_days()
-    modules = await top_modules(3)
-    
-    level = total // 100 + 1
-    progress = total % 100
-    module_line = ", ".join(f"{m['module']}({m['count']})" for m in modules) or "no usage yet"
-    name = " ".join([me.first_name or "", me.last_name or ""]).strip() or me.username or "DeathTG User"
-    username = f"@{me.username}" if me.username else "no username"
+    level = await level_info()
+    modules = await top_modules(4)
+    usage_rows = await usage_by_day(30)
+
+    title = settings.get("profile_title") or "DeathTG Operator"
+    name = " ".join(filter(None, [getattr(me, "first_name", ""), getattr(me, "last_name", "")])).strip()
+    username = f"@{me.username}" if getattr(me, "username", None) else "@not_connected"
     description = settings.get("description") or "DeathTG userbot online."
-    text = (
-        "<b>☠️ DeathTG Operator</b>\n"
-        f"<b>{name}</b> · <code>{username}</code>\n"
-        f"<i>{description}</i>\n\n"
-        f"<b>Status:</b> online\n"
-        f"<b>Ping:</b> <code>{ping} ms</code>\n"
-        f"<b>Prefix:</b> <code>{cfg.command_prefix}</code>\n"
-        f"<b>Streak:</b> <code>{days} days</code>\n"
-        f"<b>Actions:</b> <code>{total}</code>\n"
-        f"<b>Level:</b> <code>{level}</code> [{_bar(progress)}] {progress}/100\n"
-        f"<b>Top modules:</b> <code>{module_line}</code>"
+    card_path = render_info_card(
+        title=title,
+        username=username,
+        description=description,
+        prefix=cfg.command_prefix,
+        uses=total,
+        days=days,
+        level=int(level["level"]),
+        level_current=int(level["current"]),
+        top_modules_text=_top_modules_text(modules),
+        usage_points=_usage_chart_points(usage_rows),
+        accent=settings.get("accent") or "blue",
     )
-    await msg.edit(text, parse_mode="html")
+    startup = _startup_status()
+    bot = startup.get("bot", {})
+    inline_missing = not (bot.get("username") and bot.get("valid_username"))
+
+    caption_lines = [
+        f"{title}",
+        f"{name or 'DeathTG User'} {username}",
+        "",
+        f"Role: {settings.get('role', 'admin')}",
+        f"Prefix: {cfg.command_prefix}",
+        f"Actions: {total}",
+        f"Level: {level['level']} ({level['current']}/100)",
+    ]
+    if inline_missing:
+        caption_lines.extend(["", "Inline bot missing. Open Profile in the panel and run sync."])
+    buttons = _build_buttons()
+    try:
+        await event.client.send_file(
+            event.chat_id,
+            file=str(card_path),
+            caption="\n".join(caption_lines),
+            buttons=buttons,
+        )
+        with contextlib.suppress(Exception):
+            await status.delete()
+    except Exception:
+        plain = (
+            f"<b>{title}</b>\n"
+            f"<code>{username}</code>\n"
+            f"{description}\n\n"
+            f"<b>Prefix:</b> <code>{cfg.command_prefix}</code>\n"
+            f"<b>Actions:</b> <code>{total}</code>\n"
+            f"<b>Level:</b> <code>{level['level']}</code> ({level['current']}/100)\n"
+            f"<b>Top modules:</b> <code>{_top_modules_text(modules)}</code>"
+        )
+        await status.edit(plain, parse_mode="html")

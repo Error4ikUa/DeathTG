@@ -1,1 +1,80 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DeathTG News</title><link rel="stylesheet" href="/static/clean.css"><link rel="stylesheet" href="/static/clean_patch.css"></head><body class="theme-main"><canvas id="matrix"></canvas><button class="menu-btn" id="menuToggle">{% if profile.avatar %}<img src="{{ profile.avatar }}">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}</button><aside class="mini-menu" id="drawer"><div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>News</span></div></div><nav><a class="active" href="/">News</a><a href="/profile">Profile</a><a href="/activity">Activity</a><a href="/browser">Modules</a><a href="/scanner">Scanner</a></nav><a class="logout" href="/logout">Logout</a></aside><div class="overlay" id="drawerBackdrop"></div><main class="page"><section class="hero card"><div><p class="eyebrow">DeathTG Core</p><h1>News</h1><p>Обновления ядра, состояние DTG и быстрые действия.</p></div><form method="post" action="/update"><button class="btn ghost" type="submit">Check update</button></form></section>{% if message %}<div class="toast ok">{{ message }}</div>{% endif %}{% if error %}<div class="toast bad">{{ error }}</div>{% endif %}<section class="stats"><article class="card stat"><span>Config</span><b>{{ 'OK' if status.config_ok else 'FAIL' }}</b></article><article class="card stat"><span>Session</span><b>{{ 'OK' if status.session_ok else 'BAD' }}</b></article><article class="card stat"><span>Modules</span><b>{{ status.modules_count }}</b></article><article class="card stat"><span>Commands</span><b>{{ status.commands_count }}</b></article><article class="card stat"><span>Streak</span><b>🔥 {{ status.days }}</b></article></section>{% if not status.session_ok %}<section class="toast bad">Session error · <a href="/reconnect">Reconnect</a></section>{% endif %}<section class="grid2"><article class="card panel"><p class="eyebrow">What's new</p><h2>Current build</h2><div class="news"><div><b>Runtime profile</b><p>Панель берёт профиль из runtime, не лочит Telegram session.</p></div><div><b>Full stack launcher</b><p><code>python dtg.py</code> запускает панель и юзербота.</p></div><div><b>Visual layer</b><p>Цвета вкладок, Matrix theme, crop avatar, activity line.</p></div></div></article><article class="card panel"><p class="eyebrow">Quick actions</p><h2>Actions</h2><div class="quick"><a href="/browser">Modules</a><a href="/scanner">Scanner</a><a href="/activity">Activity</a><a href="/profile">Profile</a></div></article></section></main><script src="/static/matrix.js"></script><script src="/static/clean.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DeathTG News</title>
+    <link rel="stylesheet" href="/static/clean.css">
+    <link rel="stylesheet" href="/static/clean_patch.css">
+    <link rel="stylesheet" href="/static/accent_fix.css">
+</head>
+<body class="theme-main" data-accent="{{ profile.accent or 'blue' }}">
+<canvas id="matrix"></canvas>
+<button class="menu-btn" id="menuToggle">
+    {% if profile.avatar %}<img src="{{ profile.avatar }}" alt="avatar">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}
+</button>
+
+<aside class="mini-menu" id="drawer">
+    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>News</span></div></div>
+    <nav>
+        <a class="active" href="/">News</a>
+        <a href="/profile">Profile</a>
+        <a href="/activity">Activity</a>
+        <a href="/browser">Modules</a>
+        <a href="/scanner">Scanner</a>
+    </nav>
+    <a class="logout" href="/logout">Logout</a>
+</aside>
+<div class="overlay" id="drawerBackdrop"></div>
+
+<main class="page">
+    <section class="hero card">
+        <div>
+            <p class="eyebrow">DeathTG Core</p>
+            <h1>News</h1>
+            <p>Core updates, DTG runtime status, module center, and quick actions in one clean panel.</p>
+        </div>
+        <form method="post" action="/update"><button class="btn ghost" type="submit">Check update</button></form>
+    </section>
+
+    {% if message %}<div class="toast ok">{{ message }}</div>{% endif %}
+    {% if error %}<div class="toast bad">{{ error }}</div>{% endif %}
+
+    <section class="stats">
+        <article class="card stat"><span>Config</span><b>{{ 'OK' if status.config_ok else 'FAIL' }}</b></article>
+        <article class="card stat"><span>Session</span><b>{{ 'OK' if status.session_ok else 'BAD' }}</b></article>
+        <article class="card stat"><span>Modules</span><b>{{ status.modules_count }}</b></article>
+        <article class="card stat"><span>Commands</span><b>{{ status.commands_count }}</b></article>
+        <article class="card stat"><span>Level</span><b>{{ status.level.level }}</b></article>
+        <article class="card stat"><span>Account age</span><b>{{ status.days }}d</b></article>
+    </section>
+
+    {% if not status.session_ok %}<section class="toast bad">Session error. <a href="/reconnect">Reconnect</a></section>{% endif %}
+
+    <section class="grid2">
+        <article class="card panel">
+            <p class="eyebrow">What's new</p>
+            <h2>Current build</h2>
+            <div class="news">
+                <div><b>Inline forms</b><p>Modules can show callback buttons in the original chat through the core inline bridge.</p></div>
+                <div><b>Module cards</b><p>Installed and repository modules now share verified badges, detail pages, and optional Image.png backgrounds.</p></div>
+                <div><b>Account level</b><p>Level is based on account age and runtime stability, not command spam.</p></div>
+            </div>
+        </article>
+        <article class="card panel">
+            <p class="eyebrow">Quick actions</p>
+            <h2>Actions</h2>
+            <div class="quick">
+                <a href="/browser">Modules</a>
+                <a href="/scanner">Scanner</a>
+                <a href="/activity">Activity</a>
+                <a href="/profile">Profile</a>
+            </div>
+        </article>
+    </section>
+</main>
+
+<script src="/static/matrix.js"></script>
+<script src="/static/clean.js"></script>
+</body>
+</html>

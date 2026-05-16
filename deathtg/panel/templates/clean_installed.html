@@ -1,1 +1,68 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DeathTG Installed</title><link rel="stylesheet" href="/static/clean.css"><link rel="stylesheet" href="/static/clean_patch.css"></head><body class="theme-modules"><canvas id="matrix"></canvas><button class="menu-btn" id="menuToggle">{% if profile.avatar %}<img src="{{ profile.avatar }}">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}</button><aside class="mini-menu" id="drawer"><div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>Installed</span></div></div><nav><a href="/">News</a><a href="/profile">Profile</a><a href="/activity">Activity</a><a class="active" href="/browser">Modules</a><a href="/scanner">Scanner</a></nav><a class="logout" href="/logout">Logout</a></aside><div class="overlay" id="drawerBackdrop"></div><main class="page"><section class="hero card"><div><p class="eyebrow">Modules</p><h1>Installed</h1><p>Установленные модули, обновления и управление.</p></div><div class="actions"><form method="post" action="/modules/update-all"><button class="btn ghost" type="submit">Update all</button></form><a class="btn ghost" href="/browser">Module center</a></div></section>{% if message %}<div class="toast ok">{{ message }}</div>{% endif %}{% if error %}<div class="toast bad">{{ error }}</div>{% endif %}<section class="card panel">{% for module, commands in grouped.items() %}<div class="module-row"><div><h2>{% if module in protected %}🛡{% else %}🧩{% endif %} {{ module }}</h2><p>{% for cmd in commands %}<code>.{{ cmd.name }}</code> {% endfor %}</p></div>{% if module not in protected %}<div class="actions"><form method="post" action="/modules/{{ module }}/update"><button class="small ghost" type="submit">Update</button></form><form method="post" action="/modules/{{ module }}/unload"><button class="small ghost" type="submit">Unload</button></form><form method="post" action="/modules/{{ module }}/delete"><button class="small danger" type="submit">Delete</button></form></div>{% else %}<code>protected</code>{% endif %}</div>{% endfor %}</section></main><script src="/static/matrix.js"></script><script src="/static/clean.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DeathTG Installed</title>
+    <link rel="stylesheet" href="/static/clean.css">
+    <link rel="stylesheet" href="/static/clean_patch.css">
+    <link rel="stylesheet" href="/static/accent_fix.css">
+    <link rel="stylesheet" href="/static/modules_center.css">
+</head>
+<body class="theme-modules" data-accent="{{ profile.accent or 'blue' }}">
+<canvas id="matrix"></canvas>
+<button class="menu-btn" id="menuToggle">{% if profile.avatar %}<img src="{{ profile.avatar }}" alt="avatar">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}</button>
+<aside class="mini-menu" id="drawer">
+    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>Installed</span></div></div>
+    <nav><a href="/">News</a><a href="/profile">Profile</a><a href="/activity">Activity</a><a class="active" href="/browser">Modules</a><a href="/scanner">Scanner</a></nav>
+    <a class="logout" href="/logout">Logout</a>
+</aside>
+<div class="overlay" id="drawerBackdrop"></div>
+<main class="page modules-page">
+    <section class="hero card">
+        <div>
+            <p class="eyebrow">Installed</p>
+            <h1>Installed Modules</h1>
+            <p>Click a module card to inspect metadata, commands, source status and actions.</p>
+        </div>
+        <div class="actions">
+            <form method="post" action="/modules/update-all"><input type="hidden" name="return_to" value="installed"><button class="btn ghost" type="submit">Update all</button></form>
+            <a class="btn ghost" href="/browser">Module center</a>
+        </div>
+    </section>
+    {% if message %}<div class="toast ok">{{ message }}</div>{% endif %}
+    {% if error %}<div class="toast bad">{{ error }}</div>{% endif %}
+    <section class="module-grid installed-grid">
+        {% for module, commands in grouped.items() %}
+        {% set meta = module_meta.get(module, {}) %}
+        <article class="module-card installed-card {% if meta.get('image') %}has-bg{% endif %}" {% if meta.get('image') %}style="--module-bg:url('{{ meta.get('image') }}')"{% endif %} data-name="{{ module }} {% for cmd in commands %}{{ cmd.name }} {% endfor %}">
+            <a class="module-card-link" href="/modules/{{ module }}" aria-label="Open {{ module }} details"></a>
+            <div class="module-card-glow"></div>
+            <div class="module-head">
+                <h2>{% if module in protected %}Core{% else %}Module{% endif %} {{ module }}</h2>
+                {% if meta.get('verified') %}<span class="verified-pill">verified</span>{% endif %}
+            </div>
+            <p class="module-note">{{ meta.get('description') or (commands|length ~ ' command(s) registered') }}</p>
+            <div class="module-command-cloud">
+                {% for cmd in commands[:8] %}<code>.{{ cmd.name }}</code>{% endfor %}
+                {% if commands|length > 8 %}<code>+{{ commands|length - 8 }}</code>{% endif %}
+            </div>
+            <div class="actions module-actions">
+                <a class="small ghost" href="/modules/{{ module }}">Info</a>
+                {% if module not in protected %}
+                <form method="post" action="/modules/{{ module }}/update"><input type="hidden" name="return_to" value="installed"><button class="small ghost" type="submit">Update</button></form>
+                <form method="post" action="/modules/{{ module }}/unload"><input type="hidden" name="return_to" value="installed"><button class="small ghost" type="submit">Unload</button></form>
+                <form method="post" action="/modules/{{ module }}/delete"><input type="hidden" name="return_to" value="installed"><button class="small danger" type="submit">Delete</button></form>
+                {% else %}
+                <span class="small lock-pill">protected</span>
+                {% endif %}
+            </div>
+        </article>
+        {% endfor %}
+        {% if not grouped %}<article class="module-empty"><h2>No modules loaded</h2><p>Install modules from Module Center.</p></article>{% endif %}
+    </section>
+</main>
+<script src="/static/matrix.js"></script>
+<script src="/static/clean.js"></script>
+</body>
+</html>

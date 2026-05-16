@@ -29,6 +29,7 @@ SESSION_NAME={session_name}
 COMMAND_PREFIX=.
 OWNER_ID=
 BOT_TOKEN={bot_token}
+BOT_TOKEN_HELPER=
 PANEL_PASSWORD={panel_key}
 PANEL_SECRET={panel_secret}
 PHONE={phone}

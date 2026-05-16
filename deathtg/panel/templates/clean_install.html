@@ -1,1 +1,58 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DeathTG InstallMod</title><link rel="stylesheet" href="/static/clean.css"><link rel="stylesheet" href="/static/clean_patch.css"></head><body class="theme-modules"><canvas id="matrix"></canvas><button class="menu-btn" id="menuToggle">{% if profile.avatar %}<img src="{{ profile.avatar }}">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}</button><aside class="mini-menu" id="drawer"><div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>InstallMod</span></div></div><nav><a href="/">News</a><a href="/profile">Profile</a><a href="/activity">Activity</a><a class="active" href="/browser">Modules</a><a href="/scanner">Scanner</a></nav><a class="logout" href="/logout">Logout</a></aside><div class="overlay" id="drawerBackdrop"></div><main class="page"><section class="hero card"><div><p class="eyebrow">Modules</p><h1>InstallMod</h1><p>Ручная установка модуля через URL или файл.</p></div><a class="btn ghost" href="/browser">Module center</a></section>{% if message %}<div class="toast ok">{{ message }}</div>{% endif %}{% if error %}<div class="toast bad">{{ error }}</div>{% endif %}<section class="section-tabs"><a href="/browser#browserPane">Browser</a><a href="/browser#installedPane">Installed</a><a href="/browser#installPane" class="active">InstallMod</a></section><section class="grid2"><article class="card panel"><h2>URL</h2><form class="stack" method="post" action="/modules/download"><label>Module URL</label><input type="text" name="link" placeholder="https://.../module.py" required><button type="submit">Install from URL</button></form></article><article class="card panel"><h2>File</h2><form class="stack" method="post" action="/modules/upload" enctype="multipart/form-data"><label class="file-drop">Choose .py file<input type="file" name="file" accept=".py" required></label><button type="submit">Upload module</button></form></article></section></main><script src="/static/matrix.js"></script><script src="/static/clean.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DeathTG InstallMod</title>
+    <link rel="stylesheet" href="/static/clean.css">
+    <link rel="stylesheet" href="/static/clean_patch.css">
+    <link rel="stylesheet" href="/static/accent_fix.css">
+    <link rel="stylesheet" href="/static/modules_center.css">
+</head>
+<body class="theme-modules" data-accent="{{ profile.accent or 'blue' }}">
+<canvas id="matrix"></canvas>
+<button class="menu-btn" id="menuToggle">{% if profile.avatar %}<img src="{{ profile.avatar }}" alt="avatar">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}</button>
+<aside class="mini-menu" id="drawer">
+    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>InstallMod</span></div></div>
+    <nav><a href="/">News</a><a href="/profile">Profile</a><a href="/activity">Activity</a><a class="active" href="/browser">Modules</a><a href="/scanner">Scanner</a></nav>
+    <a class="logout" href="/logout">Logout</a>
+</aside>
+<div class="overlay" id="drawerBackdrop"></div>
+<main class="page modules-page">
+    <section class="hero card">
+        <div>
+            <p class="eyebrow">Modules</p>
+            <h1>InstallMod</h1>
+            <p>Install an external DeathTG module from a raw GitHub URL or upload a local .py file.</p>
+        </div>
+        <a class="btn ghost" href="/browser#installPane">Module center</a>
+    </section>
+    {% if message %}<div class="toast ok">{{ message }}</div>{% endif %}
+    {% if error %}<div class="toast bad">{{ error }}</div>{% endif %}
+    <section class="section-tabs module-tabs"><a href="/browser#browserPane">Browser</a><a href="/browser#installedPane">Installed</a><a href="/browser#installPane" class="active">InstallMod</a></section>
+    <section class="grid2">
+        <article class="card panel install-box">
+            <p class="eyebrow">URL</p>
+            <h2>Install from URL</h2>
+            <form class="stack" method="post" action="/modules/download">
+                <label>Module URL</label>
+                <input type="text" name="link" placeholder="https://.../module.py" required>
+                <input type="hidden" name="return_to" value="install_tab">
+                <button type="submit">Install from URL</button>
+            </form>
+        </article>
+        <article class="card panel install-box">
+            <p class="eyebrow">File</p>
+            <h2>Upload module</h2>
+            <form class="stack" method="post" action="/modules/upload" enctype="multipart/form-data">
+                <label class="file-drop">Choose .py file<input type="file" name="file" accept=".py" required></label>
+                <input type="hidden" name="return_to" value="install_tab">
+                <button type="submit">Upload module</button>
+            </form>
+        </article>
+    </section>
+</main>
+<script src="/static/matrix.js"></script>
+<script src="/static/clean.js"></script>
+</body>
+</html>
