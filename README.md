@@ -12,7 +12,7 @@ DeathTG is a Telethon-based userbot framework with a local control panel and inl
 
 1. Create and activate a virtual environment.
 2. Install dependencies from `requirements.txt`.
-3. Configure `.env` (or open setup page first).
+3. Start and complete web setup (no manual `.env` editing required).
 4. Start DeathTG:
 
 ```bash
@@ -25,12 +25,14 @@ python dtg.py
   - `API_ID`
   - `API_HASH`
   - `PHONE`
-  - `PANEL_PASSWORD`
-  - `PANEL_SECRET`
+- Panel setup then asks Telegram login code and, if enabled, 2FA password.
+- Session file is created immediately after successful web login.
+- Userbot auto-starts after session creation (no restart required).
 - Panel login uses the password you set during setup.
 - Session cookie is persistent (remember device behavior).
 - After startup sync, the bot sends an owner-only shortcut message with an `Open Panel` button.
 - The button uses a one-time grant link (`/grant/<token>`) and connects the browser session automatically.
+- Shortcut message can also include `News`, `Support`, and `Local Panel` buttons.
 - Shortcut sending has cooldown via `PANEL_SHORTCUTS_MIN_INTERVAL` (seconds, default `21600`).
 
 Optional shortcut links from `.env`:

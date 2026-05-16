@@ -14,9 +14,10 @@
       <div class="brand-mark">DTG</div>
       <p class="eyebrow">First launch</p>
       <h1>DeathTG Setup</h1>
-      <p>Fill in API_ID, API_HASH and phone number. DeathTG can create the inline bot and helper bot automatically on startup; a token here is optional.</p>
-      <div class="alert success">After saving, restart the launcher, complete Telegram login/2FA, then open the panel again.</div>
+      <p>First run is fully web-based: API ID/HASH and phone, then Telegram code and optional 2FA password.</p>
+      <div class="alert success">No manual nano editing required. After successful login, session is created and userbot starts automatically.</div>
       {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
+      {% if step == "start" %}
       <form method="post" action="/setup/save" class="form-stack">
         <label>API ID</label>
         <input type="number" name="api_id" placeholder="123456" required>
@@ -28,13 +29,28 @@
         <input type="text" name="session_name" value="deathtg" required>
         <label>Panel password</label>
         <input type="text" name="panel_password_value" value="deathtg" required>
-        <label>Panel secret</label>
-        <input type="text" name="panel_secret" placeholder="long_random_secret" required>
+        <label>Panel secret (optional)</label>
+        <input type="text" name="panel_secret" placeholder="leave empty to auto-generate">
         <label>Inline bot token, optional</label>
         <input type="text" name="bot_token" placeholder="123456:ABC...">
-        <button type="submit">Save config</button>
+        <button type="submit">Send Telegram code</button>
       </form>
-      <small>Use the same panel password on login. After first startup sync, your bot will send an Open Panel shortcut button.</small>
+      <small>Use the same panel password on login. Bot token is optional.</small>
+      {% elif step == "pin" %}
+      <form method="post" action="/setup/pin" class="form-stack">
+        <label>Telegram code</label>
+        <input type="text" name="pin" placeholder="Code from Telegram" autofocus required>
+        <button type="submit">Confirm code</button>
+      </form>
+      <small>Enter the code sent by Telegram to your account.</small>
+      {% elif step == "secret" %}
+      <form method="post" action="/setup/secret" class="form-stack">
+        <label>2FA password</label>
+        <input type="password" name="secret_value" placeholder="Two-step verification password" autofocus required>
+        <button type="submit">Confirm 2FA</button>
+      </form>
+      <small>Only needed if two-step verification is enabled in Telegram.</small>
+      {% endif %}
     </section>
   </main>
   <script src="/static/matrix.js"></script>
