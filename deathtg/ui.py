@@ -1,18 +1,52 @@
 from __future__ import annotations
 
+import os
+import sys
+
 LOGO = """
-██████╗░███████╗░█████╗░████████╗██╗░░██╗  ████████╗░██████╗░
-██╔══██╗██╔════╝██╔══██╗╚══██╔══╝██║░░██║  ╚══██╔══╝██╔════╝░
-██║░░██║█████╗░░███████║░░░██║░░░███████║  ░░░██║░░░██║░░██╗░
-██║░░██║██╔══╝░░██╔══██║░░░██║░░░██╔══██║  ░░░██║░░░██║░░╚██╗
-██████╔╝███████╗██║░░██║░░░██║░░░██║░░██║  ░░░██║░░░╚██████╔╝
-╚═════╝░╚══════╝╚═╝░░╚═╝░░░╚═╝░░░╚═╝░░╚═╝  ░░░╚═╝░░░░╚═════╝░
+██████╗░███████╗░█████╗░████████╗██╗░░██╗  ████████╗░██████╗░
+██╔══██╗██╔════╝██╔══██╗╚══██╔══╝██║░░██║  ╚══██╔══╝██╔════╝░
+██║░░██║█████╗░░███████║░░░██║░░░███████║  ░░░██║░░░██║░░██╗░
+██║░░██║██╔══╝░░██╔══██║░░░██║░░░██╔══██║  ░░░██║░░░██║░░╚██╗
+██████╔╝███████╗██║░░██║░░░██║░░░██║░░██║  ░░░██║░░░╚██████╔╝
+╚═════╝░╚══════╝╚═╝░░╚═╝░░░╚═╝░░░╚═╝░░╚═╝  ░░░╚═╝░░░░╚═════╝░
 """.strip()
+
+RESET = "\033[0m"
+GREEN = "\033[92m"
+CYAN = "\033[96m"
+YELLOW = "\033[93m"
+MAGENTA = "\033[95m"
+WHITE = "\033[97m"
+BOLD = "\033[1m"
+
+
+def supports_color() -> bool:
+    if os.getenv("NO_COLOR"):
+        return False
+    return bool(getattr(sys.stdout, "isatty", lambda: False)())
+
+
+def colorize(text: str, *codes: str) -> str:
+    if not supports_color():
+        return text
+    prefix = "".join(codes)
+    return f"{prefix}{text}{RESET}"
+
+
+def welcome_block() -> str:
+    return "\n".join(
+        [
+            colorize("Welcome", BOLD, GREEN) + " to " + colorize("DeathTG", BOLD, MAGENTA),
+            colorize("Secure", CYAN) + " Telegram userbot " + colorize("platform", YELLOW),
+        ]
+    )
+
 
 CONSOLE_BANNER = f"""
 {LOGO}
 
-DeathTG secure userbot platform is starting...
+{welcome_block()}
 """.strip()
 
 

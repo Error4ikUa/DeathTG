@@ -28,12 +28,17 @@ def run(command: list[str], *, cwd: Path | None = None) -> None:
     subprocess.run(command, cwd=str(cwd or ROOT_DIR), check=True)
 
 
+def clear_console() -> None:
+    os.system("cls" if WINDOWS else "clear")
+
+
 def main() -> None:
     if in_termux():
         print("DeathTG does not support Termux or Android terminal environments.")
         print("Use Ubuntu/Debian VPS, Linux server, Windows PowerShell/CMD, or desktop Python.")
         raise SystemExit(1)
 
+    clear_console()
     print(CONSOLE_BANNER)
     print()
     print(f"DeathTG bootstrap on {platform.system()} {platform.release()}")
@@ -44,7 +49,12 @@ def main() -> None:
     python_bin = venv_python()
     run([str(python_bin), "-m", "pip", "install", "-U", "pip"])
     run([str(python_bin), "-m", "pip", "install", "-r", str(ROOT_DIR / "requirements.txt")])
-    run([str(python_bin), "dtg.py"])
+    try:
+        run([str(python_bin), "dtg.py"])
+    except KeyboardInterrupt:
+        print()
+        print("DeathTG bootstrap stopped by user.")
+        raise SystemExit(130)
 
 
 if __name__ == "__main__":
