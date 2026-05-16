@@ -35,14 +35,15 @@
     <section class="module-grid installed-grid">
         {% for module, commands in grouped.items() %}
         {% set meta = module_meta.get(module, {}) %}
-        <article class="module-card installed-card {% if meta.get('image') %}has-bg{% endif %}" {% if meta.get('image') %}style="--module-bg:url('{{ meta.get('image') }}')"{% endif %} data-name="{{ module }} {% for cmd in commands %}{{ cmd.name }} {% endfor %}">
+        {% set card = module_cards.get(module, {}) %}
+        <article class="module-card installed-card {% if card.get('image') %}has-bg{% endif %}" {% if card.get('image') %}style="--module-bg:url('{{ card.get('image') }}')"{% endif %} data-name="{{ module }} {% for cmd in commands %}{{ cmd.name }} {% endfor %}">
             <a class="module-card-link" href="/modules/{{ module }}" aria-label="Open {{ module }} details"></a>
             <div class="module-card-glow"></div>
             <div class="module-head">
                 <h2>{% if module in protected %}Core{% else %}Module{% endif %} {{ module }}</h2>
-                {% if meta.get('verified') %}<span class="verified-pill">verified</span>{% endif %}
+                {% if card.get('verified') %}<span class="verified-pill">verified</span>{% endif %}
             </div>
-            <p class="module-note">{{ meta.get('description') or (commands|length ~ ' command(s) registered') }}</p>
+            <p class="module-note">{{ card.get('description') or meta.get('description') or (commands|length ~ ' command(s) registered') }}</p>
             <div class="module-command-cloud">
                 {% for cmd in commands[:8] %}<code>.{{ cmd.name }}</code>{% endfor %}
                 {% if commands|length > 8 %}<code>+{{ commands|length - 8 }}</code>{% endif %}

@@ -13,6 +13,7 @@ DEFAULT_PROFILE_SETTINGS = {
     "accent": "blue",
     "profile_title": "DeathTG Operator",
     "role": "admin",
+    "info_text": "",
 }
 
 def profile_settings() -> dict[str, str]:

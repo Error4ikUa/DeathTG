@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import base64
-import secrets
 import json
 import re
+import secrets
+import shutil
 import subprocess
 import sys
 import time
@@ -263,6 +264,7 @@ async def save_profile(
     request: Request,
     profile_title: str = Form(""),
     description: str = Form(""),
+    info_text: str = Form(""),
     accent: str = Form("blue"),
     role: str = Form("admin"),
     command_prefix: str = Form("."),
@@ -274,6 +276,7 @@ async def save_profile(
     save_profile_settings(
         profile_title=profile_title,
         description=description,
+        info_text=info_text,
         accent=accent,
         role=role,
     )
@@ -435,11 +438,18 @@ async def delete_mod(request: Request, name: str, return_to: str = Form("browser
         module_name = _safe_module_name(name)
         if module_name in PROTECTED_MODULES:
             raise RuntimeError("Protected module cannot be deleted")
-        target = MODULES_DIR / f"{module_name}.py"
-        if not target.exists():
+        target = loader.module_path(module_name)
+        if not target or not target.exists():
             raise RuntimeError("Module file not found")
         loader.unload(module_name, silent=True)
-        target.unlink()
+        target = target.resolve()
+        modules_root = MODULES_DIR.resolve()
+        if modules_root not in target.parents and target != modules_root:
+            raise RuntimeError("Unsafe module path")
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
         _drop_module_meta(module_name)
         _queue_userbot_action("delete", module=module_name)
         await refresh_modules()
@@ -457,8 +467,8 @@ async def update_mod(request: Request, name: str, return_to: str = Form("browser
         module_name = _safe_module_name(name)
         if module_name in PROTECTED_MODULES:
             raise RuntimeError("Protected module cannot be updated from the panel")
-        path = MODULES_DIR / f"{module_name}.py"
-        if not path.exists():
+        path = loader.module_path(module_name)
+        if not path or not path.exists():
             raise RuntimeError("Update is not implemented for this module yet")
         meta = _load_module_meta().get(module_name, {})
         force = bool(meta.get("verified") or meta.get("security_override"))
@@ -514,8 +524,8 @@ async def install_module_requirements(request: Request, name: str):
         return blocked
     try:
         module_name = _safe_module_name(name)
-        path = MODULES_DIR / f"{module_name}.py"
-        if not path.exists():
+        path = loader.module_source_path(module_name)
+        if not path or not path.exists():
             path = ROOT_DIR / "deathtg" / "modules" / f"{module_name}.py"
         if not path.exists():
             raise RuntimeError("Module source was not found")

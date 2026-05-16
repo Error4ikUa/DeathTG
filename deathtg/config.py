@@ -31,7 +31,7 @@ def load_config() -> DeathTGConfig:
 
     if not api_id_raw or not api_hash:
         raise RuntimeError(
-            "API_ID/API_HASH are missing. Create .env from .env.example and add values from my.telegram.org"
+            "API_ID/API_HASH are missing. Open the web setup page or fill .env with values from my.telegram.org"
         )
 
     owner_id = int(owner_raw) if owner_raw else None

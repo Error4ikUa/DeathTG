@@ -36,6 +36,7 @@ import aiohttp
 from dotenv import load_dotenv
 from fastapi.templating import Jinja2Templates
 
+from deathtg.assets import IMAGES_DIR, MODULE_IMAGES_DIR, local_module_image_path, module_image_path, resolve_module_entry, shared_module_image_path
 from deathtg.config import MODULES_DIR, ROOT_DIR, RUNTIME_DIR, load_config
 from deathtg.loader import ModuleLoader
 from deathtg.metrics import installed_days, level_info, top_modules, usage_by_day, usage_total
@@ -93,8 +94,17 @@ def panel_password() -> str:
 
 
 def has_env() -> bool:
-    """Return True if the configuration file ``.env`` exists."""
-    return (ROOT_DIR / ".env").exists()
+    """Return True if the configuration file has the API credentials needed to start."""
+    env = ROOT_DIR / ".env"
+    if not env.exists():
+        return False
+    values: dict[str, str] = {}
+    for line in env.read_text(encoding="utf-8").splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+    return bool(values.get("API_ID") and values.get("API_HASH"))
 
 
 def has_session() -> bool:
@@ -217,6 +227,7 @@ async def profile_info() -> dict[str, str]:
                 "accent": settings.get("accent", "blue"),
                 "profile_title": settings.get("profile_title", "DeathTG Operator"),
                 "role": settings.get("role", "admin"),
+                "info_text": settings.get("info_text", ""),
             }
         except Exception:
             pass
@@ -231,6 +242,7 @@ async def profile_info() -> dict[str, str]:
         "accent": settings.get("accent", "blue"),
         "profile_title": settings.get("profile_title", "DeathTG Operator"),
         "role": settings.get("role", "admin"),
+        "info_text": settings.get("info_text", ""),
     }
 
 
@@ -302,6 +314,7 @@ async def _url_exists(session: aiohttp.ClientSession, url: str) -> bool:
 
 async def _discover_image(session: aiohttp.ClientSession, download_url: str, stem: str) -> str:
     candidates = [
+        _raw_sibling_url(download_url, "Module.png"),
         _raw_sibling_url(download_url, "Image.png"),
         _raw_sibling_url(download_url, "image.png"),
         _raw_sibling_url(download_url, f"{stem}.png"),
@@ -316,7 +329,7 @@ async def _discover_image(session: aiohttp.ClientSession, download_url: str, ste
 
 def _normalize_repo_item(item: dict) -> dict:
     link = str(item.get("link") or item.get("raw") or item.get("url") or item.get("download_url") or "")
-    image = str(item.get("image") or item.get("Image") or item.get("Image.png") or item.get("modul_png") or "")
+    image = str(item.get("image") or item.get("Image") or item.get("Module.png") or item.get("Image.png") or item.get("modul_png") or "")
     name = str(item.get("name") or Path(link).stem or "module")
     description = str(item.get("description") or f"{name} module from DTG_Modules")
     return {
@@ -366,7 +379,14 @@ async def _module_repo_from_github_contents(
             )
             if not py_item:
                 continue
-            image_item = next((sub for sub in sub_items if str(sub.get("name") or "").lower() == "image.png"), None)
+            image_item = next(
+                (
+                    sub
+                    for sub in sub_items
+                    if str(sub.get("name") or "").lower() in {"module.png", "image.png"}
+                ),
+                None,
+            )
             stem = Path(str(py_item.get("name") or name)).stem
             modules.append(
                 _normalize_repo_item(
@@ -431,11 +451,52 @@ async def activity_points() -> list[dict]:
     ]
 
 
+def module_image_url(module_name: str, meta_image: str = "") -> str:
+    if meta_image:
+        return meta_image
+    local = local_module_image_path(module_name)
+    if local and local.exists():
+        try:
+            stamp = int(local.stat().st_mtime)
+        except OSError:
+            stamp = 0
+        return f"/module-media/{module_name}?t={stamp}"
+    shared = shared_module_image_path(module_name)
+    if shared and shared.exists() and IMAGES_DIR in shared.parents:
+        try:
+            stamp = int(shared.stat().st_mtime)
+        except OSError:
+            stamp = 0
+        relative = shared.relative_to(IMAGES_DIR).as_posix()
+        return f"/images/{relative}?t={stamp}"
+    return ""
+
+
+def installed_module_cards(grouped: dict[str, list] | None = None) -> dict[str, dict]:
+    grouped = grouped or registry.by_module()
+    meta_map = load_module_meta()
+    cards: dict[str, dict] = {}
+    for module_name, commands in grouped.items():
+        meta = meta_map.get(module_name, {})
+        description = str(meta.get("description") or "")
+        if not description:
+            description = "Protected DeathTG module" if module_name in PROTECTED_BASE_MODULES else "Installed external module"
+        cards[module_name] = {
+            "name": module_name,
+            "description": description,
+            "image": module_image_url(module_name, str(meta.get("image") or "")),
+            "verified": bool(meta.get("verified")),
+            "protected": module_name in PROTECTED_BASE_MODULES,
+            "commands": commands,
+        }
+    return cards
+
+
 async def module_detail(module_name: str) -> dict:
     grouped = registry.by_module()
     commands = grouped.get(module_name, [])
     meta = load_module_meta().get(module_name, {})
-    path = MODULES_DIR / f"{module_name}.py"
+    path = loader.module_source_path(module_name) or (MODULES_DIR / f"{module_name}.py")
     if not path.exists():
         builtin_path = ROOT_DIR / "deathtg" / "modules" / f"{module_name}.py"
         if builtin_path.exists():
@@ -452,7 +513,7 @@ async def module_detail(module_name: str) -> dict:
         description = f"{module_name} provides {len(commands)} DeathTG command(s)."
     if not description:
         description = f"{module_name} core DeathTG module."
-    image = str(meta.get("image") or "")
+    image = module_image_url(module_name, str(meta.get("image") or ""))
     instances = loader.instances.get(module_name, [])
     config_values = []
     for inst in instances:
@@ -527,7 +588,7 @@ async def repo_module_detail(module_name: str) -> dict:
             "config_values": [],
         "handler_counts": {"watchers": 0, "raw": 0, "inline": 0, "callbacks": 0},
         "security": {"verdict": "REPO", "score": 0, "findings": [], "override": False},
-        "source_preview": "",
+            "source_preview": "",
             "path": "",
             "repo": True,
             "install_link": "",

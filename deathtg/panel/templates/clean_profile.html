@@ -214,6 +214,90 @@
                 </div>
             </article>
         </section>
+
+        <section class="profile-grid">
+            <article class="card profile-card">
+                <p class="eyebrow">Devices</p>
+                <div class="runtime-head">
+                    <h2>Trusted access</h2>
+                    <form method="post" action="/devices/link" style="display:flex;gap:8px;flex-wrap:wrap">
+                        <input type="text" name="device_name" placeholder="Phone, Laptop, iPad" style="min-width:220px">
+                        <button type="submit" class="ghost">Create secure link</button>
+                    </form>
+                </div>
+                {% if public_panel_enabled %}
+                <p class="helper" style="margin-bottom:12px">Public access is enabled. Remote devices should use one-time secure links, not the panel password.</p>
+                {% else %}
+                <p class="helper" style="margin-bottom:12px">Public URL is not configured yet. Secure links will point to the current panel base URL.</p>
+                {% endif %}
+                {% if device_link %}
+                <div class="item" style="margin-bottom:12px">
+                    <b>Fresh secure link</b>
+                    <p class="helper">Open this on the target device. It is signed, unique and one-time use.</p>
+                    <input type="text" value="{{ device_link }}" readonly onclick="this.select()" style="margin-top:10px">
+                </div>
+                {% endif %}
+                <div class="profile-list">
+                    {% for device in devices %}
+                    <div class="item">
+                        <div class="runtime-row" style="padding:0;border:0">
+                            <div>
+                                <b>{{ device.label or "Browser" }}{% if current_device and current_device.session_id == device.session_id %} · current{% endif %}</b>
+                                <p class="helper">{{ device.auth_method or "session" }} · {{ device.last_ip or "unknown ip" }}</p>
+                                <p class="helper">Last seen: {{ device.last_seen_at or device.created_at or "n/a" }}</p>
+                            </div>
+                            <div>
+                                {% if not current_device or current_device.session_id != device.session_id %}
+                                <form method="post" action="/devices/{{ device.session_id }}/revoke">
+                                    <button type="submit" class="ghost">Revoke</button>
+                                </form>
+                                {% else %}
+                                <span class="runtime-badge ok">active</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% if not devices %}
+                    <div class="item">
+                        <b>No trusted devices yet</b>
+                        <p>Create a secure link for your phone, laptop or another browser.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </article>
+
+            <article class="card profile-card">
+                <p class="eyebrow">System</p>
+                <div class="runtime-head">
+                    <h2>Update and restart</h2>
+                    <form method="post" action="/system/update/check"><button type="submit" class="ghost">Check update</button></form>
+                </div>
+                {% if update_info %}
+                <div class="profile-list">
+                    <div class="item">
+                        <b>{{ update_info.message }}</b>
+                        {% if update_info.ok %}
+                        <p class="helper">Branch: {{ update_info.branch }} · behind: {{ update_info.behind }} · ahead: {{ update_info.ahead }}</p>
+                        <p class="helper">Current: {{ (update_info.current or '')[:10] }}{% if update_info.upcoming %} · Remote: {{ (update_info.upcoming or '')[:10] }}{% endif %}</p>
+                        {% else %}
+                        <p class="helper">{{ update_info.message }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+                <div class="profile-list">
+                    <div class="item">
+                        <b>Safe update flow</b>
+                        <p class="helper">DeathTG checks remote git state, notifies you in Telegram when a new build appears, then lets you apply and restart only on demand.</p>
+                    </div>
+                </div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+                    <form method="post" action="/system/update/apply"><button type="submit">Apply update</button></form>
+                    <form method="post" action="/system/restart"><button type="submit" class="ghost">Restart DeathTG</button></form>
+                </div>
+            </article>
+        </section>
     </div>
 </main>
 
@@ -275,6 +359,10 @@
                         </div>
                         <label class="wide">Description
                             <textarea name="description">{{ profile.description or '' }}</textarea>
+                        </label>
+                        <label class="wide">Info text
+                            <textarea name="info_text" placeholder="Supports placeholders like {title}, {username}, {uses}, {level} and Telegram premium emoji HTML like <emoji id=&quot;123&quot;>⭐️</emoji>">{{ profile.info_text or '' }}</textarea>
+                            <span class="helper">This text is used by the `.info` card caption. Site saves it as-is, DeathTG uses it in Telegram output.</span>
                         </label>
                     </div>
                 </section>

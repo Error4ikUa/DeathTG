@@ -373,6 +373,56 @@ class InlineManager:
             **kwargs,
         )
 
+    async def push_form(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        reply_markup=None,
+        ttl: int = 3600,
+        parse_mode: str | None = "html",
+        link_preview: bool | None = False,
+        photo: str | None = None,
+    ):
+        if not self.ready or not self.bot_client:
+            return None
+        form_id = self._next_form_id()
+        buttons = self.markup(reply_markup, ttl=ttl, form_id=form_id)
+        self.forms[form_id] = FormEntry(
+            form_id=form_id,
+            text=text,
+            buttons=buttons,
+            parse_mode=parse_mode,
+            link_preview=link_preview,
+            original_chat_id=chat_id,
+            original_client=self.user_client,
+            original_message_id=None,
+            initiator_user_id=chat_id,
+            created_at=time.time(),
+            ttl=int(ttl or 3600),
+        )
+        try:
+            if photo:
+                sent = await self.bot_client.send_file(
+                    chat_id,
+                    file=photo,
+                    caption=text,
+                    buttons=buttons,
+                    parse_mode=parse_mode,
+                )
+            else:
+                sent = await self.bot_client.send_message(
+                    chat_id,
+                    text,
+                    buttons=buttons,
+                    parse_mode=parse_mode,
+                    link_preview=link_preview,
+                )
+        except Exception:
+            self.forms.pop(form_id, None)
+            raise
+        return sent
+
     async def _on_callback(self, event) -> None:
         self._cleanup()
         entry = self.registry.get(getattr(event, "data", b""))

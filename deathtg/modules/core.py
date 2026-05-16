@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import html
-import subprocess
 from pathlib import Path
 
 from deathtg.command import command
@@ -9,6 +8,7 @@ from deathtg.config import MODULES_DIR, ROOT_DIR
 from deathtg.loader import Module
 from deathtg.permissions import parse_security
 from deathtg.registry import PROTECTED_MODULES
+from deathtg.update_manager import apply_update
 
 
 HELP_PAGE_SIZE = 8
@@ -114,27 +114,25 @@ class CoreMod(Module):
     async def tdgup_cmd(self, event, args):
         msg = await event.edit("<b>Updating DeathTG...</b>", parse_mode="html")
         try:
-            result = subprocess.run(
-                ["git", "pull", "--ff-only"],
-                cwd=ROOT_DIR,
-                text=True,
-                capture_output=True,
-                timeout=120,
-            )
-            output = (result.stdout + "\n" + result.stderr).strip() or "Already up to date."
-            tail = output[-3000:]
-            if result.returncode != 0:
-                await msg.edit(f"<b>Update failed.</b>\n<pre>{html.escape(tail)}</pre>", parse_mode="html")
+            result = await self._run_update_job()
+            tail = html.escape(str(result.get("message") or "No output"))[-3000:]
+            if not result.get("ok"):
+                await msg.edit(f"<b>Update failed.</b>\n<pre>{tail}</pre>", parse_mode="html")
                 return
-            await msg.edit(
-                f"<b>DeathTG updated.</b>\n<pre>{html.escape(tail)}</pre>\nRestart DeathTG to apply changes.",
-                parse_mode="html",
-            )
+            if result.get("updated"):
+                await msg.edit(f"<b>DeathTG updated.</b>\n<pre>{tail}</pre>\nRun <code>.restart</code> to apply changes.", parse_mode="html")
+                return
+            await msg.edit(f"<b>Already up to date.</b>\n<pre>{tail}</pre>", parse_mode="html")
         except Exception as exc:
             await msg.edit(
                 f"<b>Update failed:</b>\n<code>{html.escape(type(exc).__name__ + ': ' + str(exc))}</code>",
                 parse_mode="html",
             )
+
+    async def _run_update_job(self) -> dict[str, object]:
+        import asyncio
+
+        return await asyncio.to_thread(apply_update)
 
     @command("dlmod", description="Download and load module by URL", usage=".dlmod https://.../module.py", security="owner")
     async def dlmod_cmd(self, event, args):
@@ -157,13 +155,17 @@ class CoreMod(Module):
                 parse_mode="html",
             )
 
-    @command("loadmod", description="Load local module from modules folder", usage=".loadmod filename.py", security="owner")
+    @command("loadmod", description="Load local module from modules folder", usage=".loadmod filename.py | ModuleFolder", security="owner")
     async def loadmod_cmd(self, event, args):
         if not args:
-            await event.edit("<b>Usage:</b> <code>.loadmod example.py</code>", parse_mode="html")
+            await event.edit("<b>Usage:</b> <code>.loadmod example.py</code> or <code>.loadmod MyModule</code>", parse_mode="html")
             return
         try:
             path = MODULES_DIR / Path(args[0]).name
+            if not path.exists():
+                folder = MODULES_DIR / args[0].strip()
+                if folder.exists():
+                    path = folder
             module_name = await self.app.loader.load_file(path)
             await event.edit(f"<b>Module loaded:</b> <code>{html.escape(module_name)}</code>", parse_mode="html")
         except Exception as exc:

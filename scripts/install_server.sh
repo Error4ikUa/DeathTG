@@ -1,6 +1,7 @@
-# DeathTG
+#!/usr/bin/env bash
+set -euo pipefail
 
-```text
+cat <<'EOF'
 █████████████████████████████████████████████████████████████████████████████████████████████████████████████
 █░░░░░░░░░░░░███░░░░░░░░░░░░░░█░░░░░░░░░░░░░░█░░░░░░░░░░░░░░█░░░░░░██░░░░░░████░░░░░░░░░░░░░░█░░░░░░░░░░░░░░█
 █░░▄▀▄▀▄▀▄▀░░░░█░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀░░██░░▄▀░░████░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀▄▀▄▀▄▀▄▀░░█
@@ -14,211 +15,97 @@
 █░░▄▀▄▀▄▀▄▀░░░░█░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀░░██░░▄▀░░█████░░▄▀░░█████░░▄▀░░██░░▄▀░░████████░░▄▀░░█████░░▄▀▄▀▄▀▄▀▄▀░░█
 █░░░░░░░░░░░░███░░░░░░░░░░░░░░█░░░░░░██░░░░░░█████░░░░░░█████░░░░░░██░░░░░░████████░░░░░░█████░░░░░░░░░░░░░░█
 █████████████████████████████████████████████████████████████████████████████████████████████████████████████
-```
+EOF
+echo
+echo "DeathTG secure server bootstrap"
+echo
 
-DeathTG is a secure Telegram userbot platform with:
+if [ -n "${TERMUX_VERSION:-}" ] || printf '%s' "${PREFIX:-}" | grep -qi "com.termux"; then
+  echo "DeathTG server install is not supported on Termux."
+  echo "Use Ubuntu/Debian on VPS, server, or desktop Linux."
+  exit 1
+fi
 
-- web-first setup
-- trusted multi-device panel access
-- Telegram-delivered secure links
-- update notifications in bot instead of silent auto-update
-- module cards with images on the website
-- folder-based module architecture
+REPO_URL="${DTG_REPO_URL:-https://github.com/Error4ikUa/DeathTG.git}"
+INSTALL_DIR="${DTG_INSTALL_DIR:-$HOME/DeathTG}"
+SERVICE_NAME="${DTG_SERVICE_NAME:-deathtg}"
+PANEL_PORT="${DTG_PANEL_PORT:-8080}"
+PUBLIC_HOST="${DTG_PUBLIC_HOST:-}"
+PUBLIC_URL="${DTG_PUBLIC_URL:-}"
 
-## One-Line Install
+if [ -n "${PUBLIC_HOST}" ] && [ -z "${PUBLIC_URL}" ]; then
+  PUBLIC_URL="https://${PUBLIC_HOST}"
+fi
 
-For Linux / VPS / Oracle Cloud:
+SUDO=""
+if command -v sudo >/dev/null 2>&1; then
+  SUDO="sudo"
+fi
 
-```bash
-clear && cd ~ && rm -rf DeathTG && git clone https://github.com/Error4ikUa/DeathTG.git && cd DeathTG && python3 bootstrap.py
-```
+if command -v apt-get >/dev/null 2>&1; then
+  ${SUDO} apt-get update
+  ${SUDO} apt-get install -y git python3 python3-venv python3-pip
+  if [ -n "${PUBLIC_HOST}" ]; then
+    ${SUDO} apt-get install -y caddy || true
+    ${SUDO} apt-get install -y nginx || true
+  fi
+fi
 
-What happens automatically:
+if [ -d "${INSTALL_DIR}/.git" ]; then
+  git -C "${INSTALL_DIR}" fetch --all --prune
+  git -C "${INSTALL_DIR}" pull --ff-only
+else
+  git clone "${REPO_URL}" "${INSTALL_DIR}"
+fi
 
-1. Creates `.venv`
-2. Installs `pip` updates
-3. Installs `requirements.txt`
-4. Starts `dtg.py`
-5. Prints your setup link in terminal
-6. Opens DeathTG web setup flow
+cd "${INSTALL_DIR}"
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -U pip
+python -m pip install -r requirements.txt
 
-## First Start Flow
+BOOTSTRAP_ARGS=(
+  -m deathtg.server_bootstrap
+  --write-env
+  --panel-host 127.0.0.1
+  --panel-port "${PANEL_PORT}"
+  --service-file "${INSTALL_DIR}/runtime/deploy/${SERVICE_NAME}.service"
+)
 
-You do not need manual `nano .env`.
+if [ -n "${PUBLIC_HOST}" ]; then
+  BOOTSTRAP_ARGS+=(--public-host "${PUBLIC_HOST}")
+  BOOTSTRAP_ARGS+=(--nginx-file "${INSTALL_DIR}/runtime/deploy/${SERVICE_NAME}.nginx.conf")
+  BOOTSTRAP_ARGS+=(--caddy-file "${INSTALL_DIR}/runtime/deploy/${SERVICE_NAME}.Caddyfile")
+  BOOTSTRAP_ARGS+=(--server-name "${PUBLIC_HOST}")
+fi
 
-On first start:
+if [ -n "${PUBLIC_URL}" ]; then
+  BOOTSTRAP_ARGS+=(--public-url "${PUBLIC_URL}")
+fi
 
-1. Open the setup link from terminal
-2. Enter `API_ID`
-3. Enter `API_HASH`
-4. Enter Telegram phone number
-5. Enter Telegram code
-6. Enter 2FA password if enabled
+python "${BOOTSTRAP_ARGS[@]}"
 
-After that DeathTG:
+if command -v systemctl >/dev/null 2>&1; then
+  ${SUDO} cp "${INSTALL_DIR}/runtime/deploy/${SERVICE_NAME}.service" "/etc/systemd/system/${SERVICE_NAME}.service"
+  ${SUDO} systemctl daemon-reload
+  ${SUDO} systemctl enable "${SERVICE_NAME}"
+  ${SUDO} systemctl restart "${SERVICE_NAME}"
+fi
 
-1. Creates Telegram session
-2. Starts userbot automatically
-3. Creates / syncs bots
-4. Sends welcome message in Telegram
-5. Sends your personal secure panel links
+if [ -n "${PUBLIC_HOST}" ] && command -v caddy >/dev/null 2>&1; then
+  ${SUDO} cp "${INSTALL_DIR}/runtime/deploy/${SERVICE_NAME}.Caddyfile" "/etc/caddy/Caddyfile"
+  ${SUDO} systemctl restart caddy
+elif [ -n "${PUBLIC_HOST}" ] && command -v nginx >/dev/null 2>&1; then
+  ${SUDO} cp "${INSTALL_DIR}/runtime/deploy/${SERVICE_NAME}.nginx.conf" "/etc/nginx/sites-available/${SERVICE_NAME}"
+  ${SUDO} ln -sf "/etc/nginx/sites-available/${SERVICE_NAME}" "/etc/nginx/sites-enabled/${SERVICE_NAME}"
+  ${SUDO} nginx -t
+  ${SUDO} systemctl reload nginx
+fi
 
-## Public Server Logic
-
-DeathTG is designed for normal environments:
-
-- Ubuntu / Debian VPS
-- Oracle Cloud free server
-- Linux desktop
-- Windows PowerShell
-- Windows CMD
-
-DeathTG blocks unsupported Android terminal environments like Termux.
-
-For public servers:
-
-- setup is protected with setup-token
-- remote password login is restricted
-- access for phone / PC / tablet goes through secure signed device links
-- multiple trusted devices can exist at once
-- each device can be revoked separately
-
-## Update Logic
-
-DeathTG does not auto-update from GitHub behind the user.
-
-Instead it:
-
-1. checks repository state
-2. detects when a new update exists
-3. sends update notification in Telegram
-4. shows buttons like `Update` / `Ignore`
-5. offers restart only after successful update
-
-## Module System
-
-DeathTG supports two local module formats.
-
-Single-file module:
-
-```text
-modules/MyModule.py
-```
-
-Folder module:
-
-```text
-modules/MyModule/
-modules/MyModule/MyModule.py
-modules/MyModule/main.py
-modules/MyModule/__init__.py
-modules/MyModule/Module.png
-```
-
-Rules:
-
-- module can be `.py` file or folder
-- module folder can contain `MyModule.py`, `main.py`, or `__init__.py`
-- module image should be `Module.png`
-- recommended image ratio is `16:9`
-
-Fallback image logic:
-
-- first: module local `Module.png`
-- second: `images/modules/<module_name>.png`
-- third: `images/modules/Module.png`
-
-## Image Contract
-
-Put your PNG assets in `images/` with these exact names:
-
-- `welcome_deathtg.png`
-- `update_available_deathtg.png`
-- `creating_backup.png`
-
-Module images:
-
-- `images/modules/Module.png`
-- `images/modules/<module_name>.png`
-
-## Profile / Info Text
-
-Profile editor supports:
-
-- Unicode text
-- custom info text
-- Telegram premium emoji HTML in info caption
-
-Example:
-
-```html
-<emoji id="1234567890123456789">⭐️</emoji> {title}
-```
-
-`info_text` can use placeholders like:
-
-- `{title}`
-- `{name}`
-- `{username}`
-- `{description}`
-- `{role}`
-- `{prefix}`
-- `{uses}`
-- `{days}`
-- `{level}`
-- `{level_current}`
-- `{top_modules}`
-- `{version}`
-- `{branch}`
-
-## Useful Commands
-
-Run directly:
-
-```bash
-python dtg.py
-```
-
-Cross-platform bootstrap:
-
-```bash
-python3 bootstrap.py
-```
-
-Windows PowerShell:
-
-```powershell
-.\bootstrap.ps1
-```
-
-Windows CMD:
-
-```cmd
-bootstrap.cmd
-```
-
-Server bootstrap:
-
-```bash
-bash scripts/install_server.sh
-```
-
-Public HTTPS-ready VPS bootstrap:
-
-```bash
-DTG_PUBLIC_HOST=panel.example.com DTG_PUBLIC_URL=https://panel.example.com bash scripts/install_server.sh
-```
-
-## Security Notes
-
-- keep `.env` private
-- keep `*.session` private
-- do not share your secure panel links
-- do not expose plain HTTP publicly
-- use HTTPS for public panel access
-- use trusted device links instead of sharing panel password
-
-## Docs
-
-- `docs/server_deploy.md`
-- `images/README.md`
+echo
+echo "DeathTG server bootstrap complete."
+echo "Panel local URL: http://127.0.0.1:${PANEL_PORT}"
+if [ -n "${PUBLIC_HOST}" ]; then
+  echo "Public host prepared for HTTPS access: ${PUBLIC_HOST}"
+fi
+echo "Next step: open the panel and finish Telegram web setup."
