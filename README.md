@@ -29,6 +29,15 @@ python dtg.py
   - `PANEL_SECRET`
 - Panel login uses the password you set during setup.
 - Session cookie is persistent (remember device behavior).
+- After startup sync, the bot sends an owner-only shortcut message with an `Open Panel` button.
+- The button uses a one-time grant link (`/grant/<token>`) and connects the browser session automatically.
+- Shortcut sending has cooldown via `PANEL_SHORTCUTS_MIN_INTERVAL` (seconds, default `21600`).
+
+Optional shortcut links from `.env`:
+
+- `PANEL_NEWS_URL`
+- `PANEL_SUPPORT_URL`
+- `PANEL_PERSONAL_URL`
 
 ## Module author contract
 
