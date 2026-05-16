@@ -60,6 +60,9 @@ def _userbot_ready() -> bool:
     if not ENV_PATH.exists():
         return False
     load_dotenv(ENV_PATH, override=True)
+    login_pending = (os.getenv("LOGIN_PENDING", "0").strip().lower() or "0") in {"1", "true", "yes", "on"}
+    if login_pending:
+        return False
     api_id = os.getenv("API_ID", "").strip()
     api_hash = os.getenv("API_HASH", "").strip()
     if not api_id or not api_hash:
