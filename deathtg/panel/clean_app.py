@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import subprocess
+import time
+import re
 
 import aiohttp
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -10,7 +13,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from deathtg.config import ROOT_DIR
+from deathtg.config import ROOT_DIR, RUNTIME_DIR
 from deathtg.metrics import init_metrics
 from deathtg.panel.auth_flow import write_env
 from deathtg.panel.clean_actions import load_pending_install, router as actions_router
@@ -40,6 +43,8 @@ from deathtg.security import is_trusted_module_link, scan_module_source
 
 
 env_load()
+PANEL_GRANTS_PATH = RUNTIME_DIR / "panel_grants.json"
+PANEL_GRANT_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 
 app = FastAPI(title="DeathTG Panel")
 app.add_middleware(
@@ -66,6 +71,21 @@ def _auth_guard(request: Request):
     if not request.session.get("auth"):
         return RedirectResponse("/login", status_code=303)
     return None
+
+
+def _load_panel_grants() -> dict:
+    if not PANEL_GRANTS_PATH.exists():
+        return {}
+    try:
+        data = json.loads(PANEL_GRANTS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_panel_grants(data: dict) -> None:
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    PANEL_GRANTS_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 async def _base_context(request: Request) -> dict:
@@ -120,7 +140,34 @@ async def setup_save(
 async def login_page(request: Request):
     if not has_env():
         return RedirectResponse("/setup", status_code=303)
-    return templates.TemplateResponse("clean_login.html", {"request": request, "error": None})
+    return templates.TemplateResponse(
+        "clean_login.html",
+        {"request": request, "error": request.query_params.get("error")},
+    )
+
+
+@app.get("/grant/{token}")
+async def grant_login(request: Request, token: str):
+    if not has_env():
+        return RedirectResponse("/setup", status_code=303)
+    if not PANEL_GRANT_TOKEN_RE.fullmatch(token or ""):
+        return RedirectResponse("/login?error=Invalid+grant+token", status_code=303)
+    data = _load_panel_grants()
+    entry = data.get(token)
+    if not isinstance(entry, dict):
+        return RedirectResponse("/login?error=Grant+token+not+found", status_code=303)
+    now = int(time.time())
+    expires_at = int(entry.get("expires_at", 0) or 0)
+    if bool(entry.get("used")):
+        return RedirectResponse("/login?error=Grant+token+already+used", status_code=303)
+    if expires_at and expires_at < now:
+        return RedirectResponse("/login?error=Grant+token+expired", status_code=303)
+    entry["used"] = True
+    entry["used_at"] = now
+    data[token] = entry
+    _save_panel_grants(data)
+    request.session["auth"] = True
+    return RedirectResponse("/?message=Connected+from+bot+link", status_code=303)
 
 
 @app.post("/login")

@@ -24,6 +24,7 @@ from deathtg.profile_store import update_env_value
 TARGET_CHANNELS = ("Death_Telega", "Death_TgOfftop")
 FOLDER_NAME = "DeathTG"
 STATUS_PATH = RUNTIME_DIR / "startup_status.json"
+PANEL_GRANTS_PATH = RUNTIME_DIR / "panel_grants.json"
 BOT_TOKEN_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b")
 BOT_AVATAR = ROOT_DIR / "deathtg" / "panel" / "static" / "user" / "avatar.png"
 
@@ -36,6 +37,115 @@ def _env(name: str) -> str:
 def _write_status(payload: dict) -> None:
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     STATUS_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _load_status() -> dict:
+    if not STATUS_PATH.exists():
+        return {}
+    try:
+        data = json.loads(STATUS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _load_panel_grants() -> dict:
+    if not PANEL_GRANTS_PATH.exists():
+        return {}
+    try:
+        data = json.loads(PANEL_GRANTS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_panel_grants(data: dict) -> None:
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    PANEL_GRANTS_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _cleanup_panel_grants(data: dict) -> dict:
+    now = int(time.time())
+    cleaned = {}
+    for token, item in data.items():
+        if not isinstance(item, dict):
+            continue
+        expires_at = int(item.get("expires_at", 0) or 0)
+        used = bool(item.get("used"))
+        if used:
+            continue
+        if expires_at and expires_at < now:
+            continue
+        cleaned[str(token)] = item
+    # Keep file bounded even on long-running hosts.
+    if len(cleaned) > 256:
+        items = sorted(
+            cleaned.items(),
+            key=lambda item: int((item[1] or {}).get("created_at", 0) or 0),
+            reverse=True,
+        )
+        return dict(items[:256])
+    return cleaned
+
+
+def _issue_panel_grant(owner_id: int, ttl_seconds: int = 60 * 60 * 24 * 7) -> str:
+    token = secrets.token_urlsafe(24)
+    now = int(time.time())
+    data = _cleanup_panel_grants(_load_panel_grants())
+    data[token] = {
+        "owner_id": int(owner_id),
+        "created_at": now,
+        "expires_at": now + int(ttl_seconds),
+        "used": False,
+    }
+    _save_panel_grants(data)
+    return token
+
+
+def _panel_base_url() -> str:
+    full = _env("PANEL_PUBLIC_URL")
+    if full:
+        return full.rstrip("/")
+    scheme = _env("PANEL_SCHEME") or "http"
+    host = _env("PANEL_PUBLIC_HOST") or _env("PANEL_HOST") or "127.0.0.1"
+    if host in {"0.0.0.0", "::"}:
+        host = "127.0.0.1"
+    port = _env("PANEL_PORT") or "8080"
+    if (scheme == "http" and port == "80") or (scheme == "https" and port == "443"):
+        return f"{scheme}://{host}"
+    return f"{scheme}://{host}:{port}"
+
+
+def _build_panel_grant_url(owner_id: int) -> str:
+    token = _issue_panel_grant(owner_id)
+    return f"{_panel_base_url()}/grant/{token}"
+
+
+def _shortcuts_interval_seconds() -> int:
+    raw = _env("PANEL_SHORTCUTS_MIN_INTERVAL")
+    if not raw:
+        return 60 * 60 * 6
+    try:
+        value = int(raw)
+    except Exception:
+        return 60 * 60 * 6
+    return max(0, min(value, 60 * 60 * 24 * 30))
+
+
+def _shortcuts_allowed_now() -> tuple[bool, str | None, int]:
+    interval = _shortcuts_interval_seconds()
+    if interval <= 0:
+        return True, None, interval
+    previous = _load_status()
+    shortcuts = previous.get("shortcuts", {}) if isinstance(previous, dict) else {}
+    if not isinstance(shortcuts, dict):
+        shortcuts = {}
+    last_sent_at = int(shortcuts.get("sent_at", 0) or 0)
+    now = int(time.time())
+    if not last_sent_at or now - last_sent_at >= interval:
+        return True, None, interval
+    wait_left = interval - (now - last_sent_at)
+    return False, f"cooldown active ({wait_left}s left)", interval
 
 
 def _expected_prefix(owner_id: int) -> str:
@@ -424,7 +534,11 @@ async def run_startup_sync(client) -> dict:
         },
         "last_sync_at": int(time.time()),
         "last_sync_error": None,
+        "shortcuts": {"sent": False, "error": None, "panel_url": "", "sent_at": 0, "interval_sec": 0},
     }
+    previous_status = _load_status()
+    previous_shortcuts = previous_status.get("shortcuts", {}) if isinstance(previous_status, dict) else {}
+    previous_sent_at = int(previous_shortcuts.get("sent_at", 0) or 0) if isinstance(previous_shortcuts, dict) else 0
 
     folder_peers: list = []
     include_usernames: list[str] = []
@@ -473,5 +587,54 @@ async def run_startup_sync(client) -> dict:
         or helper_status.get("error")
         or channel_error
     )
+
+    async def _send_owner_shortcuts() -> tuple[bool, str | None, str]:
+        if _env("PANEL_SHORTCUTS_ON_STARTUP") == "0":
+            return False, "disabled by PANEL_SHORTCUTS_ON_STARTUP=0", ""
+        allowed, cooldown_reason, _ = _shortcuts_allowed_now()
+        if not allowed:
+            return False, cooldown_reason, ""
+        token = helper_token or bot_token
+        if not token:
+            return False, "missing bot token", ""
+        panel_url = _build_panel_grant_url(owner_id)
+        news_url = _env("PANEL_NEWS_URL")
+        support_url = _env("PANEL_SUPPORT_URL")
+        personal_url = _env("PANEL_PERSONAL_URL")
+        buttons: list[list[dict]] = [[{"text": "Open Panel", "url": panel_url}]]
+        second_row: list[dict] = []
+        if news_url:
+            second_row.append({"text": "News", "url": news_url})
+        if support_url:
+            second_row.append({"text": "Support", "url": support_url})
+        if second_row:
+            buttons.append(second_row)
+        if personal_url:
+            buttons.append([{"text": "Personal Site", "url": personal_url}])
+        payload = {
+            "chat_id": owner_id,
+            "text": "DeathTG is connected. Open your control panel:",
+            "reply_markup": {"inline_keyboard": buttons},
+            "disable_web_page_preview": True,
+        }
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, timeout=12) as response:
+                    if response.status != 200:
+                        return False, f"sendMessage HTTP {response.status}", panel_url
+                    data = await response.json()
+            if not data.get("ok"):
+                return False, str(data.get("description") or "sendMessage failed"), panel_url
+            return True, None, panel_url
+        except Exception as exc:
+            return False, str(exc), panel_url
+
+    shortcuts_sent, shortcuts_error, panel_url = await _send_owner_shortcuts()
+    status["shortcuts"]["sent"] = shortcuts_sent
+    status["shortcuts"]["error"] = shortcuts_error
+    status["shortcuts"]["panel_url"] = panel_url
+    status["shortcuts"]["interval_sec"] = _shortcuts_interval_seconds()
+    status["shortcuts"]["sent_at"] = int(time.time()) if shortcuts_sent else previous_sent_at
     _write_status(status)
     return status
