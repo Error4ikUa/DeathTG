@@ -28,15 +28,9 @@
         <input type="text" name="phone" placeholder="+380..." required>
         <label>Session name</label>
         <input type="text" name="session_name" value="deathtg" required>
-        <label>Panel password (optional)</label>
-        <input type="text" name="panel_password_value" placeholder="leave empty to auto-generate">
-        <label>Panel secret (optional)</label>
-        <input type="text" name="panel_secret" placeholder="leave empty to auto-generate">
-        <label>Inline bot token, optional</label>
-        <input type="text" name="bot_token" placeholder="123456:ABC...">
         <button type="submit">Send Telegram code</button>
       </form>
-      <small>Bot link auth is preferred for daily use. Panel password works as a recovery login.</small>
+      <small>DeathTG will generate secure panel credentials automatically and continue setup through Telegram login.</small>
       {% elif step == "pin" %}
       <form method="post" action="/setup/pin" class="form-stack">
         <label>Telegram code</label>
