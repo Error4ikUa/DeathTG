@@ -131,15 +131,16 @@
         <div class="module-grid installed-grid">
             {% for module, commands in grouped.items() %}
             {% set meta = module_meta.get(module, {}) %}
-            {% set image = meta.get('image') or '' %}
+            {% set card = module_cards.get(module, {}) %}
+            {% set image = card.get('image') or '' %}
             <article class="module-card installed-card {% if image %}has-bg{% endif %}" data-name="{{ module }} {{ meta.get('description', '') }}" {% if image %}style="--module-bg:url('{{ image }}')"{% endif %}>
                 <a class="module-card-link" href="/modules/{{ module }}" aria-label="Open {{ module }} details"></a>
                 <div class="module-card-glow"></div>
                 <div class="module-head">
                     <h2>{% if module in protected %}[core]{% else %}[ext]{% endif %} {{ module }}</h2>
-                    {% if meta.get('verified') %}<span class="verified-pill">verified</span>{% endif %}
+                    {% if card.get('verified') %}<span class="verified-pill">verified</span>{% endif %}
                 </div>
-                <p class="module-note">{{ meta.get('description') or ('Protected DeathTG module' if module in protected else 'Installed external module') }}</p>
+                <p class="module-note">{{ card.get('description') or meta.get('description') or ('Protected DeathTG module' if module in protected else 'Installed external module') }}</p>
                 <div class="module-command-cloud compact">
                     {% for cmd in commands %}<span>.{{ cmd.name }}</span>{% endfor %}
                     {% if not commands %}<span>No commands</span>{% endif %}
@@ -180,6 +181,12 @@
                 <button type="submit">Upload module</button>
             </form>
         </div>
+        <article class="card panel" style="margin-top:16px">
+            <p class="eyebrow">Module contract</p>
+            <h2>Folder modules are supported</h2>
+            <p class="module-note">Local module can be a single <code>.py</code> file or a folder like <code>modules/MyModule/</code> with <code>MyModule.py</code>, <code>main.py</code> or <code>__init__.py</code> plus optional <code>Module.png</code> (16:9).</p>
+            <p class="module-note">If a module has no own image, DeathTG falls back to <code>images/modules/&lt;module_name&gt;.png</code> or shared <code>images/modules/Module.png</code>.</p>
+        </article>
     </section>
 </main>
 

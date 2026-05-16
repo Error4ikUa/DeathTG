@@ -10,6 +10,7 @@ from pathlib import Path
 
 import uvicorn
 from dotenv import load_dotenv
+from deathtg.setup_access import setup_link
 
 ROOT_DIR = Path(__file__).resolve().parent
 ENV_PATH = ROOT_DIR / ".env"
@@ -21,6 +22,11 @@ userbot_process = None
 supervisor_stop = threading.Event()
 last_start_attempt = 0.0
 MIN_RESTART_INTERVAL = 5.0
+
+
+def running_in_termux() -> bool:
+    prefix = os.getenv("PREFIX", "")
+    return "com.termux" in prefix.lower() or bool(os.getenv("TERMUX_VERSION"))
 
 
 def stop_userbot(timeout: float = 8.0) -> None:
@@ -92,6 +98,9 @@ def cleanup(signum, frame):
 
 
 def panel_url() -> str:
+    public = os.getenv("PANEL_PUBLIC_URL", "").strip()
+    if public:
+        return public.rstrip("/")
     host = os.getenv("PANEL_HOST", "127.0.0.1").strip() or "127.0.0.1"
     if host in {"0.0.0.0", "::"}:
         host = "127.0.0.1"
@@ -105,13 +114,20 @@ def run_panel() -> None:
     uvicorn.run("deathtg.panel.clean_app:app", host=host, port=port)
 
 if __name__ == "__main__":
+    if running_in_termux():
+        print("DeathTG does not support Termux.")
+        print("Use a normal Linux server, VPS, or desktop Python environment instead.")
+        sys.exit(1)
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
     
     print("DeathTG full stack is starting...")
     print(f"Panel: {panel_url()}")
-    print("First run: open /setup, enter API_ID/API_HASH/phone, then confirm code and 2FA in web UI.")
+    if not _userbot_ready():
+        print(f"First run setup link: {setup_link()}")
+    print("First run: open setup, enter API_ID/API_HASH/phone, then confirm code and 2FA in web UI.")
     print("Userbot: will auto-start after setup and session creation.")
+    print("Git updates are not auto-applied. DeathTG will notify you in Telegram when a new update appears.")
     supervisor_thread = threading.Thread(target=supervisor_loop, name="dtg-userbot-supervisor", daemon=True)
     supervisor_thread.start()
     try:

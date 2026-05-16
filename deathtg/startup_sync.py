@@ -18,13 +18,14 @@ from telethon.tl.functions.messages import GetDialogFiltersRequest, UpdateDialog
 from telethon.tl.types import DialogFilter, InputFolderPeer, TextWithEntities
 
 from deathtg.config import ENV_PATH, ROOT_DIR, RUNTIME_DIR
+from deathtg.assets import system_image
+from deathtg.panel_access import issue_device_grant, panel_base_url
 from deathtg.profile_store import update_env_value
 
 
 TARGET_CHANNELS = ("Death_Telega", "Death_TgOfftop")
 FOLDER_NAME = "DeathTG"
 STATUS_PATH = RUNTIME_DIR / "startup_status.json"
-PANEL_GRANTS_PATH = RUNTIME_DIR / "panel_grants.json"
 BOT_TOKEN_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b")
 BOT_AVATAR = ROOT_DIR / "deathtg" / "panel" / "static" / "user" / "avatar.png"
 
@@ -49,76 +50,13 @@ def _load_status() -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _load_panel_grants() -> dict:
-    if not PANEL_GRANTS_PATH.exists():
-        return {}
-    try:
-        data = json.loads(PANEL_GRANTS_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _save_panel_grants(data: dict) -> None:
-    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
-    PANEL_GRANTS_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def _cleanup_panel_grants(data: dict) -> dict:
-    now = int(time.time())
-    cleaned = {}
-    for token, item in data.items():
-        if not isinstance(item, dict):
-            continue
-        expires_at = int(item.get("expires_at", 0) or 0)
-        used = bool(item.get("used"))
-        if used:
-            continue
-        if expires_at and expires_at < now:
-            continue
-        cleaned[str(token)] = item
-    # Keep file bounded even on long-running hosts.
-    if len(cleaned) > 256:
-        items = sorted(
-            cleaned.items(),
-            key=lambda item: int((item[1] or {}).get("created_at", 0) or 0),
-            reverse=True,
-        )
-        return dict(items[:256])
-    return cleaned
-
-
 def _issue_panel_grant(owner_id: int, ttl_seconds: int = 60 * 60 * 24 * 7) -> str:
-    token = secrets.token_urlsafe(24)
-    now = int(time.time())
-    data = _cleanup_panel_grants(_load_panel_grants())
-    data[token] = {
-        "owner_id": int(owner_id),
-        "created_at": now,
-        "expires_at": now + int(ttl_seconds),
-        "used": False,
-    }
-    _save_panel_grants(data)
-    return token
-
-
-def _panel_base_url() -> str:
-    full = _env("PANEL_PUBLIC_URL")
-    if full:
-        return full.rstrip("/")
-    scheme = _env("PANEL_SCHEME") or "http"
-    host = _env("PANEL_PUBLIC_HOST") or _env("PANEL_HOST") or "127.0.0.1"
-    if host in {"0.0.0.0", "::"}:
-        host = "127.0.0.1"
-    port = _env("PANEL_PORT") or "8080"
-    if (scheme == "http" and port == "80") or (scheme == "https" and port == "443"):
-        return f"{scheme}://{host}"
-    return f"{scheme}://{host}:{port}"
+    device_label = f"Telegram shortcut {owner_id}"
+    return issue_device_grant(device_label, ttl_seconds=ttl_seconds, created_by="startup_sync")
 
 
 def _build_panel_grant_url(owner_id: int) -> str:
-    token = _issue_panel_grant(owner_id)
-    return f"{_panel_base_url()}/grant/{token}"
+    return _issue_panel_grant(owner_id)
 
 
 def _shortcuts_interval_seconds() -> int:
@@ -455,6 +393,7 @@ async def _ensure_bot(
 async def run_startup_sync(client) -> dict:
     me = await client.get_me()
     owner_id = int(getattr(me, "id", 0) or 0)
+    update_env_value("OWNER_ID", str(owner_id))
     bot_token = _env("BOT_TOKEN")
     helper_token = _env("BOT_TOKEN_HELPER")
 
@@ -598,37 +537,66 @@ async def run_startup_sync(client) -> dict:
         if not token:
             return False, "missing bot token", ""
         panel_url = _build_panel_grant_url(owner_id)
-        local_panel_url = _panel_base_url()
+        phone_url = issue_device_grant(f"Phone {owner_id}", created_by="startup_sync")
+        desktop_url = issue_device_grant(f"PC {owner_id}", created_by="startup_sync")
+        local_panel_url = panel_base_url()
         news_url = _env("PANEL_NEWS_URL")
         support_url = _env("PANEL_SUPPORT_URL")
         personal_url = _env("PANEL_PERSONAL_URL")
-        buttons: list[list[dict]] = [[{"text": "Open Panel", "url": panel_url}]]
+        buttons: list[list[dict]] = [
+            [{"text": "Open Panel", "url": panel_url}],
+            [{"text": "Phone Link", "url": phone_url}, {"text": "PC Link", "url": desktop_url}],
+        ]
         second_row: list[dict] = []
         if news_url:
             second_row.append({"text": "News", "url": news_url})
         if support_url:
             second_row.append({"text": "Support", "url": support_url})
         if local_panel_url:
-            second_row.append({"text": "Local Panel", "url": local_panel_url})
+            second_row.append({"text": "Panel Site", "url": local_panel_url})
         if second_row:
             buttons.append(second_row)
         if personal_url:
             buttons.append([{"text": "Personal Site", "url": personal_url}])
         payload = {
             "chat_id": owner_id,
-            "text": "DeathTG is connected. Open your control panel:",
+            "caption": (
+                "Welcome to DeathTG.\n\n"
+                "Your personal secure panel links are ready.\n"
+                "Do not share these links with anyone.\n"
+                "Use Phone Link for your phone and PC Link for your desktop or laptop.\n"
+                "If you need another device later, create a new secure link from the panel."
+            ),
             "reply_markup": {"inline_keyboard": buttons},
             "disable_web_page_preview": True,
         }
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        welcome_image = system_image("welcome")
+        if welcome_image and welcome_image.exists():
+            payload["photo"] = str(welcome_image)
+            url = f"https://api.telegram.org/bot{token}/sendPhoto"
+        else:
+            payload["text"] = payload.pop("caption")
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, timeout=12) as response:
-                    if response.status != 200:
-                        return False, f"sendMessage HTTP {response.status}", panel_url
-                    data = await response.json()
+                if payload.get("photo"):
+                    form_data = aiohttp.FormData()
+                    form_data.add_field("chat_id", str(owner_id))
+                    form_data.add_field("caption", str(payload.get("caption") or ""))
+                    form_data.add_field("reply_markup", json.dumps(payload["reply_markup"], ensure_ascii=False))
+                    form_data.add_field("disable_web_page_preview", "true")
+                    form_data.add_field("photo", welcome_image.read_bytes(), filename=welcome_image.name, content_type="image/png")
+                    async with session.post(url, data=form_data, timeout=20) as response:
+                        if response.status != 200:
+                            return False, f"sendPhoto HTTP {response.status}", panel_url
+                        data = await response.json()
+                else:
+                    async with session.post(url, json=payload, timeout=12) as response:
+                        if response.status != 200:
+                            return False, f"sendMessage HTTP {response.status}", panel_url
+                        data = await response.json()
             if not data.get("ok"):
-                return False, str(data.get("description") or "sendMessage failed"), panel_url
+                return False, str(data.get("description") or "bot send failed"), panel_url
             return True, None, panel_url
         except Exception as exc:
             return False, str(exc), panel_url

@@ -32,9 +32,9 @@
         <div>
             <p class="eyebrow">DeathTG Core</p>
             <h1>News</h1>
-            <p>Core updates, DTG runtime status, module center, and quick actions in one clean panel.</p>
+            <p>Core updates, Telegram update alerts, runtime status, module center, and quick actions in one clean panel.</p>
         </div>
-        <form method="post" action="/update"><button class="btn ghost" type="submit">Check update</button></form>
+        <form method="post" action="/system/update/check"><button class="btn ghost" type="submit">Check update</button></form>
     </section>
 
     {% if message %}<div class="toast ok">{{ message }}</div>{% endif %}
@@ -57,7 +57,7 @@
             <h2>Current build</h2>
             <div class="news">
                 <div><b>Inline forms</b><p>Modules can show callback buttons in the original chat through the core inline bridge.</p></div>
-                <div><b>Module cards</b><p>Installed and repository modules now share verified badges, detail pages, and optional Image.png backgrounds.</p></div>
+                <div><b>Module cards</b><p>Installed and repository modules now share verified badges, detail pages, and optional Module.png / Image.png backgrounds.</p></div>
                 <div><b>Account level</b><p>Level is based on account age and runtime stability, not command spam.</p></div>
             </div>
         </article>

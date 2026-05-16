@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import html
 import json
 import logging
 from pathlib import Path
 
 from telethon import TelegramClient, events
 
+from deathtg.assets import system_image
 from deathtg.config import DeathTGConfig, MODULES_DIR, RUNTIME_DIR
 from deathtg.inline import InlineManager
 from deathtg.loader import ModuleLoader
@@ -15,6 +17,17 @@ from deathtg.metrics import init_metrics, record_command
 from deathtg.permissions import SecurityManager
 from deathtg.registry import CommandRegistry, PROTECTED_MODULES
 from deathtg.startup_sync import run_startup_sync
+from deathtg.update_manager import (
+    apply_update,
+    ignore_update,
+    inspect_update,
+    mark_update_notified,
+    save_update_state,
+    schedule_restart,
+    should_notify_update,
+    update_notify_enabled,
+    update_notify_interval,
+)
 from deathtg.ui import CONSOLE_BANNER, fail
 
 log = logging.getLogger("deathtg")
@@ -36,6 +49,7 @@ class DeathTG:
         self._force_loaded_modules: set[str] = set()
         self._panel_action_pos = PANEL_ACTIONS_PATH.stat().st_size if PANEL_ACTIONS_PATH.exists() else 0
         self._panel_actions_task: asyncio.Task | None = None
+        self._update_watch_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         print(CONSOLE_BANNER)
@@ -58,6 +72,7 @@ class DeathTG:
 
         self._panel_action_pos = 0
         self._panel_actions_task = asyncio.create_task(self._panel_actions_loop())
+        self._update_watch_task = asyncio.create_task(self._update_watch_loop())
 
         self.client.add_event_handler(self._dispatch, events.NewMessage())
         self.client.add_event_handler(self._dispatch_watchers, events.NewMessage())
@@ -69,6 +84,10 @@ class DeathTG:
                 self._panel_actions_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await self._panel_actions_task
+            if self._update_watch_task:
+                self._update_watch_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._update_watch_task
             await self.inline.stop()
 
     def _write_runtime_profile(self, me) -> None:
@@ -144,6 +163,95 @@ class DeathTG:
                 log.exception("Panel action sync failed")
             await asyncio.sleep(1.0)
 
+    async def _update_watch_loop(self) -> None:
+        while True:
+            try:
+                await self._check_updates_once()
+            except Exception:
+                log.exception("Update watch failed")
+            await asyncio.sleep(update_notify_interval())
+
+    async def _check_updates_once(self) -> None:
+        if not update_notify_enabled() or not self.inline.ready or not self.config.owner_id:
+            return
+        info = await asyncio.to_thread(inspect_update)
+        save_update_state(info)
+        if should_notify_update(info):
+            await self._send_update_notification(info)
+            mark_update_notified(info)
+
+    async def _send_update_notification(self, info: dict[str, object]) -> None:
+        if not self.config.owner_id:
+            return
+        current = str(info.get("current") or "")[:10]
+        upcoming = str(info.get("upcoming") or "")[:10]
+        text = (
+            "<b>Доступно обновление DeathTG</b>\n\n"
+            f"Ветка: <code>{info.get('branch') or 'main'}</code>\n"
+            f"Текущий билд: <code>{current}</code>\n"
+            f"Новый билд: <code>{upcoming}</code>\n"
+            f"Коммитов позади: <code>{info.get('behind') or 0}</code>\n\n"
+            "Обновить сейчас или напомнить позже?"
+        )
+        photo = system_image("update_available")
+        await self.inline.push_form(
+            int(self.config.owner_id),
+            text,
+            reply_markup=[
+                [{"text": "Обновить", "callback": self._update_apply_callback, "args": (str(info.get("upcoming") or ""),)}],
+                [{"text": "Игнорировать", "callback": self._update_ignore_callback, "args": (str(info.get("upcoming") or ""),)}],
+            ],
+            ttl=60 * 60 * 24 * 7,
+            parse_mode="html",
+            photo=str(photo) if photo else None,
+        )
+
+    async def _update_apply_callback(self, call, expected_upcoming: str) -> None:
+        await call.edit("<b>Обновляю DeathTG...</b>", reply_markup=None, parse_mode="html")
+        result = await asyncio.to_thread(apply_update)
+        message = html.escape(str(result.get("message") or "No output")[-3000:])
+        if not result.get("ok"):
+            await call.edit(
+                f"<b>Обновление не удалось.</b>\n<pre>{message}</pre>",
+                reply_markup=[[{"text": "Закрыть", "callback": self._close_callback, "args": ()}]],
+                parse_mode="html",
+            )
+            return
+        if result.get("updated"):
+            await call.edit(
+                f"<b>DeathTG обновлён.</b>\n<pre>{message}</pre>\nНажми перезагрузку, чтобы применить изменения.",
+                reply_markup=[
+                    [{"text": "Перезагрузить", "callback": self._restart_after_update_callback, "args": ()}],
+                    [{"text": "Закрыть", "callback": self._close_callback, "args": ()}],
+                ],
+                parse_mode="html",
+            )
+            return
+        await call.edit(
+            f"<b>Уже актуально.</b>\n<pre>{message}</pre>",
+            reply_markup=[[{"text": "Закрыть", "callback": self._close_callback, "args": ()}]],
+            parse_mode="html",
+        )
+
+    async def _update_ignore_callback(self, call, expected_upcoming: str) -> None:
+        await asyncio.to_thread(ignore_update, {"upcoming": expected_upcoming})
+        await call.edit(
+            "<b>Обновление скрыто.</b>\nDeathTG снова пришлёт уведомление, когда в репозитории появится уже другой билд.",
+            reply_markup=None,
+            parse_mode="html",
+        )
+
+    async def _restart_after_update_callback(self, call) -> None:
+        schedule_restart()
+        await call.edit(
+            "<b>Перезагрузка запущена.</b>\nDeathTG поднимется снова через несколько секунд.",
+            reply_markup=None,
+            parse_mode="html",
+        )
+
+    async def _close_callback(self, call) -> None:
+        await call.edit("Closed.", reply_markup=None)
+
     async def _read_panel_actions(self) -> None:
         if not PANEL_ACTIONS_PATH.exists():
             return
@@ -168,11 +276,11 @@ class DeathTG:
         if action == "install":
             raw_path = str(payload.get("path") or "")
             path = Path(raw_path)
-            if path.exists() and path.suffix == ".py":
+            if path.exists():
                 force = bool(payload.get("force"))
                 await self.loader.load_file(path, force=force)
                 if force:
-                    self._force_loaded_modules.add(path.stem)
+                    self._force_loaded_modules.add(path.stem if path.is_file() else path.name)
                 log.info("Panel sync installed: %s", path.name)
             return
         if action == "unload":
@@ -232,6 +340,10 @@ class DeathTG:
 
 def run_async(config: DeathTGConfig) -> None:
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(name)s: %(message)s")
+    logging.getLogger("telethon").setLevel(logging.WARNING)
+    logging.getLogger("telethon.network").setLevel(logging.WARNING)
+    logging.getLogger("telethon.client.updates").setLevel(logging.WARNING)
+    logging.getLogger("telethon.client.uploads").setLevel(logging.WARNING)
     bot = DeathTG(config)
     try:
         asyncio.run(bot.start())

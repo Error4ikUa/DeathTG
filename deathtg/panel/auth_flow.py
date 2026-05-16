@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import os
+import stat
 from dataclasses import dataclass
-from pathlib import Path
 
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 
-from deathtg.config import ENV_PATH, ROOT_DIR
+from deathtg.config import ROOT_DIR
+from deathtg.server_bootstrap import secure_panel_password, secure_panel_secret, update_env_values
 
 
 @dataclass
@@ -23,18 +25,18 @@ PENDING: dict[str, PendingLogin] = {}
 
 
 def write_env(api_id: int, api_hash: str, session_name: str, phone: str, panel_key: str, panel_secret: str, bot_token: str = "") -> None:
-    content = f"""API_ID={api_id}
-API_HASH={api_hash}
-SESSION_NAME={session_name}
-COMMAND_PREFIX=.
-OWNER_ID=
-BOT_TOKEN={bot_token}
-BOT_TOKEN_HELPER=
-PANEL_PASSWORD={panel_key}
-PANEL_SECRET={panel_secret}
-PHONE={phone}
-"""
-    ENV_PATH.write_text(content, encoding="utf-8")
+    update_env_values(
+        {
+            "API_ID": str(api_id),
+            "API_HASH": api_hash.strip(),
+            "SESSION_NAME": session_name.strip() or "deathtg",
+            "COMMAND_PREFIX": ".",
+            "BOT_TOKEN": bot_token.strip(),
+            "PANEL_PASSWORD": secure_panel_password(panel_key),
+            "PANEL_SECRET": secure_panel_secret(panel_secret),
+            "PHONE": phone.strip(),
+        }
+    )
 
 
 async def begin_login(flow_id: str, api_id: int, api_hash: str, phone: str, session_name: str) -> None:
@@ -74,6 +76,11 @@ async def finish_login(flow_id: str) -> dict[str, str]:
     pending = PENDING.pop(flow_id)
     me = await pending.client.get_me()
     await pending.client.disconnect()
+    for path in ROOT_DIR.glob(f"{pending.session_name}.session*"):
+        try:
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+        except Exception:
+            pass
     return {
         "id": str(me.id),
         "first_name": me.first_name or "",

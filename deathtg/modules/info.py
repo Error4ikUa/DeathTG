@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -47,6 +48,37 @@ def _usage_chart_points(rows: list[dict[str, object]]) -> list[dict]:
     return [{"day": day, "count": grouped.get(day, 0)} for day in days]
 
 
+class _InfoFormatMap(dict):
+    def __missing__(self, key: str) -> str:
+        return ""
+
+
+def _git_identity() -> tuple[str, str]:
+    try:
+        version = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True, timeout=4).strip()
+    except Exception:
+        version = "local"
+    try:
+        branch = subprocess.check_output(["git", "branch", "--show-current"], text=True, timeout=4).strip()
+    except Exception:
+        branch = "main"
+    return version, branch
+
+
+def _info_caption(settings: dict[str, str], payload: dict[str, object]) -> str:
+    template = (settings.get("info_text") or "").strip()
+    if template:
+        return template.format_map(_InfoFormatMap(payload))
+    return (
+        f"{payload['title']}\n"
+        f"{payload['name']} {payload['username']}\n\n"
+        f"Role: {payload['role']}\n"
+        f"Prefix: {payload['prefix']}\n"
+        f"Actions: {payload['uses']}\n"
+        f"Level: {payload['level']} ({payload['level_current']}/100)"
+    )
+
+
 def _build_buttons() -> list[list[Button]] | None:
     startup = _startup_status()
     buttons: list[Button] = [
@@ -86,6 +118,7 @@ async def info_cmd(event, args: list[str]) -> None:
     name = " ".join(filter(None, [getattr(me, "first_name", ""), getattr(me, "last_name", "")])).strip()
     username = f"@{me.username}" if getattr(me, "username", None) else "@not_connected"
     description = settings.get("description") or "DeathTG userbot online."
+    version, branch = _git_identity()
     card_path = render_info_card(
         title=title,
         username=username,
@@ -103,15 +136,22 @@ async def info_cmd(event, args: list[str]) -> None:
     bot = startup.get("bot", {})
     inline_missing = not (bot.get("username") and bot.get("valid_username"))
 
-    caption_lines = [
-        f"{title}",
-        f"{name or 'DeathTG User'} {username}",
-        "",
-        f"Role: {settings.get('role', 'admin')}",
-        f"Prefix: {cfg.command_prefix}",
-        f"Actions: {total}",
-        f"Level: {level['level']} ({level['current']}/100)",
-    ]
+    payload = {
+        "title": title,
+        "name": name or "DeathTG User",
+        "username": username,
+        "description": description,
+        "role": settings.get("role", "admin"),
+        "prefix": cfg.command_prefix,
+        "uses": total,
+        "days": days,
+        "level": level["level"],
+        "level_current": level["current"],
+        "top_modules": _top_modules_text(modules),
+        "version": version,
+        "branch": branch,
+    }
+    caption_lines = [_info_caption(settings, payload)]
     if inline_missing:
         caption_lines.extend(["", "Inline bot missing. Open Profile in the panel and run sync."])
     buttons = _build_buttons()

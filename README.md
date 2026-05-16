@@ -1,76 +1,224 @@
 # DeathTG
 
-DeathTG is a Telethon-based userbot framework with a local control panel and inline module API.
+```text
+█████████████████████████████████████████████████████████████████████████████████████████████████████████████
+█░░░░░░░░░░░░███░░░░░░░░░░░░░░█░░░░░░░░░░░░░░█░░░░░░░░░░░░░░█░░░░░░██░░░░░░████░░░░░░░░░░░░░░█░░░░░░░░░░░░░░█
+█░░▄▀▄▀▄▀▄▀░░░░█░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀░░██░░▄▀░░████░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀▄▀▄▀▄▀▄▀░░█
+█░░▄▀░░░░▄▀▄▀░░█░░▄▀░░░░░░░░░░█░░▄▀░░░░░░▄▀░░█░░░░░░▄▀░░░░░░█░░▄▀░░██░░▄▀░░████░░░░░░▄▀░░░░░░█░░▄▀░░░░░░░░░░█
+█░░▄▀░░██░░▄▀░░█░░▄▀░░█████████░░▄▀░░██░░▄▀░░█████░░▄▀░░█████░░▄▀░░██░░▄▀░░████████░░▄▀░░█████░░▄▀░░█████████
+█░░▄▀░░██░░▄▀░░█░░▄▀░░░░░░░░░░█░░▄▀░░░░░░▄▀░░█████░░▄▀░░█████░░▄▀░░░░░░▄▀░░████████░░▄▀░░█████░░▄▀░░█████████
+█░░▄▀░░██░░▄▀░░█░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀▄▀▄▀▄▀▄▀░░█████░░▄▀░░█████░░▄▀▄▀▄▀▄▀▄▀░░████████░░▄▀░░█████░░▄▀░░██░░░░░░█
+█░░▄▀░░██░░▄▀░░█░░▄▀░░░░░░░░░░█░░▄▀░░░░░░▄▀░░█████░░▄▀░░█████░░▄▀░░░░░░▄▀░░████████░░▄▀░░█████░░▄▀░░██░░▄▀░░█
+█░░▄▀░░██░░▄▀░░█░░▄▀░░█████████░░▄▀░░██░░▄▀░░█████░░▄▀░░█████░░▄▀░░██░░▄▀░░████████░░▄▀░░█████░░▄▀░░██░░▄▀░░█
+█░░▄▀░░░░▄▀▄▀░░█░░▄▀░░░░░░░░░░█░░▄▀░░██░░▄▀░░█████░░▄▀░░█████░░▄▀░░██░░▄▀░░████████░░▄▀░░█████░░▄▀░░░░░░▄▀░░█
+█░░▄▀▄▀▄▀▄▀░░░░█░░▄▀▄▀▄▀▄▀▄▀░░█░░▄▀░░██░░▄▀░░█████░░▄▀░░█████░░▄▀░░██░░▄▀░░████████░░▄▀░░█████░░▄▀▄▀▄▀▄▀▄▀░░█
+█░░░░░░░░░░░░███░░░░░░░░░░░░░░█░░░░░░██░░░░░░█████░░░░░░█████░░░░░░██░░░░░░████████░░░░░░█████░░░░░░░░░░░░░░█
+█████████████████████████████████████████████████████████████████████████████████████████████████████████████
+```
 
-## Current status
+DeathTG is a secure Telegram userbot platform with:
 
-- Runtime control is terminal-first.
-- Web panel is available, but currently intended for one trusted device/session at a time.
-- Core modules and external modules use the same `Module` API.
+- web-first setup
+- trusted multi-device panel access
+- Telegram-delivered secure links
+- update notifications in bot instead of silent auto-update
+- module cards with images on the website
+- folder-based module architecture
 
-## Quick start
+## One-Line Install
 
-1. Create and activate a virtual environment.
-2. Install dependencies from `requirements.txt`.
-3. Start and complete web setup (no manual `.env` editing required).
-4. Start DeathTG:
+For Linux / VPS / Oracle Cloud:
+
+```bash
+clear && cd ~ && rm -rf DeathTG && git clone https://github.com/Error4ikUa/DeathTG.git && cd DeathTG && python3 bootstrap.py
+```
+
+What happens automatically:
+
+1. Creates `.venv`
+2. Installs `pip` updates
+3. Installs `requirements.txt`
+4. Starts `dtg.py`
+5. Prints your setup link in terminal
+6. Opens DeathTG web setup flow
+
+## First Start Flow
+
+You do not need manual `nano .env`.
+
+On first start:
+
+1. Open the setup link from terminal
+2. Enter `API_ID`
+3. Enter `API_HASH`
+4. Enter Telegram phone number
+5. Enter Telegram code
+6. Enter 2FA password if enabled
+
+After that DeathTG:
+
+1. Creates Telegram session
+2. Starts userbot automatically
+3. Creates / syncs bots
+4. Sends welcome message in Telegram
+5. Sends your personal secure panel links
+
+## Public Server Logic
+
+DeathTG is designed for normal environments:
+
+- Ubuntu / Debian VPS
+- Oracle Cloud free server
+- Linux desktop
+- Windows PowerShell
+- Windows CMD
+
+DeathTG blocks unsupported Android terminal environments like Termux.
+
+For public servers:
+
+- setup is protected with setup-token
+- remote password login is restricted
+- access for phone / PC / tablet goes through secure signed device links
+- multiple trusted devices can exist at once
+- each device can be revoked separately
+
+## Update Logic
+
+DeathTG does not auto-update from GitHub behind the user.
+
+Instead it:
+
+1. checks repository state
+2. detects when a new update exists
+3. sends update notification in Telegram
+4. shows buttons like `Update` / `Ignore`
+5. offers restart only after successful update
+
+## Module System
+
+DeathTG supports two local module formats.
+
+Single-file module:
+
+```text
+modules/MyModule.py
+```
+
+Folder module:
+
+```text
+modules/MyModule/
+modules/MyModule/MyModule.py
+modules/MyModule/main.py
+modules/MyModule/__init__.py
+modules/MyModule/Module.png
+```
+
+Rules:
+
+- module can be `.py` file or folder
+- module folder can contain `MyModule.py`, `main.py`, or `__init__.py`
+- module image should be `Module.png`
+- recommended image ratio is `16:9`
+
+Fallback image logic:
+
+- first: module local `Module.png`
+- second: `images/modules/<module_name>.png`
+- third: `images/modules/Module.png`
+
+## Image Contract
+
+Put your PNG assets in `images/` with these exact names:
+
+- `welcome_deathtg.png`
+- `update_available_deathtg.png`
+- `creating_backup.png`
+
+Module images:
+
+- `images/modules/Module.png`
+- `images/modules/<module_name>.png`
+
+## Profile / Info Text
+
+Profile editor supports:
+
+- Unicode text
+- custom info text
+- Telegram premium emoji HTML in info caption
+
+Example:
+
+```html
+<emoji id="1234567890123456789">⭐️</emoji> {title}
+```
+
+`info_text` can use placeholders like:
+
+- `{title}`
+- `{name}`
+- `{username}`
+- `{description}`
+- `{role}`
+- `{prefix}`
+- `{uses}`
+- `{days}`
+- `{level}`
+- `{level_current}`
+- `{top_modules}`
+- `{version}`
+- `{branch}`
+
+## Useful Commands
+
+Run directly:
 
 ```bash
 python dtg.py
 ```
 
-## Setup and login
+Cross-platform bootstrap:
 
-- On first run open `/setup` and set:
-  - `API_ID`
-  - `API_HASH`
-  - `PHONE`
-- Panel setup then asks Telegram login code and, if enabled, 2FA password.
-- Session file is created immediately after successful web login.
-- Userbot auto-starts after session creation (no restart required).
-- Panel login uses the password you set during setup.
-- Session cookie is persistent (remember device behavior).
-- After startup sync, the bot sends an owner-only shortcut message with an `Open Panel` button.
-- The button uses a one-time grant link (`/grant/<token>`) and connects the browser session automatically.
-- Shortcut message can also include `News`, `Support`, and `Local Panel` buttons.
-- Shortcut sending has cooldown via `PANEL_SHORTCUTS_MIN_INTERVAL` (seconds, default `21600`).
+```bash
+python3 bootstrap.py
+```
 
-Optional shortcut links from `.env`:
+Windows PowerShell:
 
-- `PANEL_NEWS_URL`
-- `PANEL_SUPPORT_URL`
-- `PANEL_PERSONAL_URL`
+```powershell
+.\bootstrap.ps1
+```
 
-## Module author contract
+Windows CMD:
 
-Use:
+```cmd
+bootstrap.cmd
+```
 
-- `from deathtg.loader import Module`
-- `from deathtg.command import command`
+Server bootstrap:
 
-Inline UI:
+```bash
+bash scripts/install_server.sh
+```
 
-- `self.inline_send(...)`
-- `self.inline_buttons(...)`
-- `self.inline_form(...)`
-- `self.inline_list(...)`
-- `self.inline_gallery(...)`
+Public HTTPS-ready VPS bootstrap:
 
-Do not:
+```bash
+DTG_PUBLIC_HOST=panel.example.com DTG_PUBLIC_URL=https://panel.example.com bash scripts/install_server.sh
+```
 
-- read `BOT_TOKEN` from module code
-- create your own bot client
-- call `Button.inline` / `Button.url` directly
-- register your own callback router
+## Security Notes
 
-See docs:
+- keep `.env` private
+- keep `*.session` private
+- do not share your secure panel links
+- do not expose plain HTTP publicly
+- use HTTPS for public panel access
+- use trusted device links instead of sharing panel password
 
-- `docs/module_authoring.md`
-- `docs/module_prompt_for_devs.md`
+## Docs
 
-## Security notes
-
-- Keep `.env` and `*.session` files private.
-- Use a strong `PANEL_SECRET`.
-- Keep `PANEL_PASSWORD` private.
-- Do not expose panel publicly without HTTPS and network protection.
+- `docs/server_deploy.md`
+- `images/README.md`

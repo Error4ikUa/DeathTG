@@ -39,6 +39,7 @@ from types import ModuleType
 from urllib.parse import urlparse
 
 import aiohttp
+from deathtg.assets import resolve_module_entry
 from deathtg.command import Command, command
 from deathtg.module_config import ConfigValue, ModuleConfig, ValidationError, validators
 from deathtg.module_db import ModuleDatabase
@@ -354,6 +355,8 @@ class ModuleLoader:
         self.registry = registry
         self.modules_dir = modules_dir
         self.loaded: dict[str, ModuleType] = {}
+        self.import_names: dict[str, str] = {}
+        self.source_paths: dict[str, Path] = {}
         self.instances: dict[str, list[Module]] = {}
         self.watchers: dict[str, list] = {}
         self.raw_handlers: dict[str, list] = {}
@@ -398,11 +401,13 @@ class ModuleLoader:
 
     async def load_all_local(self, *, force_modules: set[str] | None = None) -> None:
         force_modules = force_modules or set()
-        for path in sorted(self.modules_dir.glob("*.py")):
+        entries = self._local_entries()
+        for module_name in sorted(entries):
+            path = entries[module_name]
             if path.name.startswith("_"):
                 continue
             try:
-                await self.load_file(path, force=path.stem in force_modules)
+                await self.load_file(path, force=module_name in force_modules, module_name=module_name)
             except Exception as exc:
                 print(f"[DeathTG] skip module {path.name}: {exc}")
 
@@ -435,32 +440,79 @@ class ModuleLoader:
             sys.modules.setdefault("deathtg.utils", utils)
             setattr(core_pkg, "utils", utils)
 
-    async def load_file(self, path: Path, *, force: bool = False) -> str:
-        if not path.exists() or path.suffix != ".py":
-            raise FileNotFoundError("Expected an existing .py module file")
-        source = path.read_text(encoding="utf-8")
+    def _local_entries(self) -> dict[str, Path]:
+        entries: dict[str, Path] = {}
+        for path in sorted(self.modules_dir.iterdir(), key=lambda item: (item.is_file(), item.name.lower())):
+            if path.name.startswith("_"):
+                continue
+            if path.is_file() and path.suffix.lower() != ".py":
+                continue
+            entry = resolve_module_entry(path)
+            if not entry:
+                continue
+            module_name = path.stem if path.is_file() else path.name
+            current = entries.get(module_name)
+            if current is None or path.is_dir():
+                entries[module_name] = entry
+        return entries
+
+    def module_path(self, module_name: str) -> Path | None:
+        folder = self.modules_dir / module_name
+        if folder.is_dir():
+            return folder
+        file_path = self.modules_dir / f"{module_name}.py"
+        if file_path.exists():
+            return file_path
+        return None
+
+    def module_source_path(self, module_name: str) -> Path | None:
+        cached = self.source_paths.get(module_name)
+        if cached is not None:
+            return cached
+        path = self.module_path(module_name)
+        if path is None:
+            return None
+        return resolve_module_entry(path, module_name)
+
+    async def load_file(self, path: Path, *, force: bool = False, module_name: str | None = None) -> str:
+        entry = resolve_module_entry(path, module_name)
+        if not entry or not entry.exists() or entry.suffix.lower() != ".py":
+            raise FileNotFoundError("Expected an existing module file or module folder")
+        source = entry.read_text(encoding="utf-8")
         report = scan_module_source(source, trusted=force)
         if not report.allowed and not force:
             raise RuntimeError("Module was blocked by security scan:\n" + report.pretty())
         self._install_compat_aliases()
-        module_name = path.stem
-        import_name = f"deathtg.modules_external.{module_name}"
-        self.unload(module_name, silent=True, force=True)
-        spec = importlib.util.spec_from_file_location(import_name, path)
+        final_name = module_name or (path.stem if path.is_file() else path.name)
+        import_name = f"deathtg.modules_external.{final_name}"
+        self.unload(final_name, silent=True, force=True)
+        package_dir = entry.parent if entry.parent != self.modules_dir else None
+        if package_dir is not None:
+            spec = importlib.util.spec_from_file_location(
+                import_name,
+                entry,
+                submodule_search_locations=[str(package_dir)],
+            )
+        else:
+            spec = importlib.util.spec_from_file_location(import_name, entry)
         if spec is None or spec.loader is None:
-            raise RuntimeError(f"Cannot load module file: {path}")
+            raise RuntimeError(f"Cannot load module file: {entry}")
         module = importlib.util.module_from_spec(spec)
-        module.__package__ = "deathtg.modules_external"
+        module.__package__ = import_name if package_dir is not None else "deathtg.modules_external"
         try:
             sys.modules[import_name] = module
             spec.loader.exec_module(module)
-            await self._register_module(module, module_name)
+            await self._register_module(module, final_name)
+            self.import_names[final_name] = import_name
+            self.source_paths[final_name] = entry
         except Exception:
-            self.registry.remove_module(module_name, force=True)
-            self.loaded.pop(module_name, None)
+            self.registry.remove_module(final_name, force=True)
+            self.loaded.pop(final_name, None)
+            self.import_names.pop(final_name, None)
+            self.source_paths.pop(final_name, None)
             sys.modules.pop(import_name, None)
             raise
-        return module_name
+        return final_name
 
     async def download_module(self, link: str, *, force: bool = False) -> Path:
         url = self._normalize_github_url(link)
@@ -491,10 +543,12 @@ class ModuleLoader:
         for inst in self.instances.get(module_name, []):
             self._schedule_hook(inst, "on_unload")
         self.loaded.pop(module_name, None)
+        import_name = self.import_names.pop(module_name, None) or f"deathtg.modules_external.{module_name}"
+        self.source_paths.pop(module_name, None)
         self.instances.pop(module_name, None)
         self._forget_module_handlers(module_name)
         for key in list(sys.modules):
-            if key.endswith(f".{module_name}"):
+            if key == import_name or key.startswith(import_name + "."):
                 sys.modules.pop(key, None)
         if not removed and not silent:
             raise RuntimeError(f"Module not found: {module_name}")
