@@ -24,6 +24,10 @@ class PendingLogin:
 PENDING: dict[str, PendingLogin] = {}
 
 
+def _set_login_pending(value: bool) -> None:
+    update_env_values({"LOGIN_PENDING": "1" if value else "0"})
+
+
 def write_env(api_id: int, api_hash: str, session_name: str, phone: str, panel_key: str, panel_secret: str, bot_token: str = "") -> None:
     update_env_values(
         {
@@ -35,11 +39,13 @@ def write_env(api_id: int, api_hash: str, session_name: str, phone: str, panel_k
             "PANEL_PASSWORD": secure_panel_password(panel_key),
             "PANEL_SECRET": secure_panel_secret(panel_secret),
             "PHONE": phone.strip(),
+            "LOGIN_PENDING": "1",
         }
     )
 
 
 async def begin_login(flow_id: str, api_id: int, api_hash: str, phone: str, session_name: str) -> None:
+    _set_login_pending(True)
     session_path = str(ROOT_DIR / session_name)
     client = TelegramClient(session_path, api_id, api_hash)
     await client.connect()
@@ -76,6 +82,7 @@ async def finish_login(flow_id: str) -> dict[str, str]:
     pending = PENDING.pop(flow_id)
     me = await pending.client.get_me()
     await pending.client.disconnect()
+    _set_login_pending(False)
     for path in ROOT_DIR.glob(f"{pending.session_name}.session*"):
         try:
             os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
@@ -93,3 +100,5 @@ async def cancel_login(flow_id: str) -> None:
     pending = PENDING.pop(flow_id, None)
     if pending:
         await pending.client.disconnect()
+    if not PENDING:
+        _set_login_pending(False)
