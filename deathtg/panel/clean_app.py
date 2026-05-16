@@ -15,7 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from deathtg.config import ROOT_DIR, RUNTIME_DIR
 from deathtg.metrics import init_metrics
-from deathtg.panel.auth_flow import write_env
+from deathtg.panel.auth_flow import begin_login, confirm_2fa, confirm_code, finish_login, write_env
 from deathtg.panel.clean_actions import load_pending_install, router as actions_router
 from deathtg.panel.clean_core import (
     STATIC_DIR,
@@ -105,8 +105,10 @@ async def _base_context(request: Request) -> dict:
 
 @app.get("/setup", response_class=HTMLResponse)
 async def setup_page(request: Request):
-    if has_env() and request.session.get("auth"):
+    if has_env() and has_session() and request.session.get("auth"):
         return RedirectResponse("/", status_code=303)
+    if has_env() and has_session():
+        return RedirectResponse("/login", status_code=303)
     return templates.TemplateResponse("setup.html", {"request": request, "step": "start", "error": None})
 
 
@@ -123,16 +125,57 @@ async def setup_save(
 ):
     try:
         panel_key = (panel_password_value or "").strip() or "deathtg"
-        write_env(api_id, api_hash, session_name, phone, panel_key, panel_secret, bot_token)
+        secret_value = (panel_secret or "").strip() or secrets.token_urlsafe(32)
+        write_env(api_id, api_hash, session_name, phone, panel_key, secret_value, bot_token)
         os.environ["PANEL_PASSWORD"] = panel_key
-        os.environ["PANEL_SECRET"] = panel_secret
+        os.environ["PANEL_SECRET"] = secret_value
         panel_password.cache_clear()
-        request.session["auth"] = True
-        return RedirectResponse("/reconnect?message=Config saved", status_code=303)
+        flow_id = secrets.token_urlsafe(16)
+        request.session["setup_flow_id"] = flow_id
+        await begin_login(flow_id, api_id, api_hash, phone, session_name)
+        return templates.TemplateResponse("setup.html", {"request": request, "step": "pin", "error": None})
     except Exception as exc:
         return templates.TemplateResponse(
             "setup.html",
             {"request": request, "step": "start", "error": f"{type(exc).__name__}: {exc}"},
+        )
+
+
+@app.post("/setup/pin")
+async def setup_pin(request: Request, pin: str = Form(...)):
+    flow_id = request.session.get("setup_flow_id")
+    if not flow_id:
+        return RedirectResponse("/setup", status_code=303)
+    try:
+        state = await confirm_code(flow_id, pin)
+        if state == "2fa":
+            return templates.TemplateResponse("setup.html", {"request": request, "step": "secret", "error": None})
+        await finish_login(flow_id)
+        request.session.pop("setup_flow_id", None)
+        request.session["auth"] = True
+        return RedirectResponse("/?message=Telegram+connected.+Userbot+will+start+automatically", status_code=303)
+    except Exception as exc:
+        return templates.TemplateResponse(
+            "setup.html",
+            {"request": request, "step": "pin", "error": f"{type(exc).__name__}: {exc}"},
+        )
+
+
+@app.post("/setup/secret")
+async def setup_secret(request: Request, secret_value: str = Form(...)):
+    flow_id = request.session.get("setup_flow_id")
+    if not flow_id:
+        return RedirectResponse("/setup", status_code=303)
+    try:
+        await confirm_2fa(flow_id, secret_value)
+        await finish_login(flow_id)
+        request.session.pop("setup_flow_id", None)
+        request.session["auth"] = True
+        return RedirectResponse("/?message=Telegram+connected.+Userbot+will+start+automatically", status_code=303)
+    except Exception as exc:
+        return templates.TemplateResponse(
+            "setup.html",
+            {"request": request, "step": "secret", "error": f"{type(exc).__name__}: {exc}"},
         )
 
 

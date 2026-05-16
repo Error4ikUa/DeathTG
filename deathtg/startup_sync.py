@@ -598,6 +598,7 @@ async def run_startup_sync(client) -> dict:
         if not token:
             return False, "missing bot token", ""
         panel_url = _build_panel_grant_url(owner_id)
+        local_panel_url = _panel_base_url()
         news_url = _env("PANEL_NEWS_URL")
         support_url = _env("PANEL_SUPPORT_URL")
         personal_url = _env("PANEL_PERSONAL_URL")
@@ -607,6 +608,8 @@ async def run_startup_sync(client) -> dict:
             second_row.append({"text": "News", "url": news_url})
         if support_url:
             second_row.append({"text": "Support", "url": support_url})
+        if local_panel_url:
+            second_row.append({"text": "Local Panel", "url": local_panel_url})
         if second_row:
             buttons.append(second_row)
         if personal_url:
