@@ -1,17 +1,65 @@
-This archive contains patched versions of key files from the DeathTG project.
+# DeathTG
 
-## Что входит
+DeathTG is a Telethon-based userbot framework with a local control panel and inline module API.
 
-В папке `deathtg/panel` находятся файлы `clean_app.py`, `clean_actions.py` и `clean_core.py`.  Эти модули заменяют старые `server_v2.py` и `pages.py` и обеспечивают корректную работу маршрутов панели с учётом асинхронных функций.
+## Current status
 
-В корне модуля `deathtg` находятся файлы `metrics.py` и `loader.py`.  Они здесь без изменений, чтобы можно было обновить эти компоненты в своём проекте.
+- Runtime control is terminal-first.
+- Web panel is available, but currently intended for one trusted device/session at a time.
+- Core modules and external modules use the same `Module` API.
 
-## Как применить
+## Quick start
 
-1. Скопируйте содержимое папки `deathtg/panel` из этого архива в соответствующую папку вашего репозитория (`deathtg/panel`).
-2. Удалите устаревшие файлы `deathtg/panel/pages.py` и `deathtg/panel/server_v2.py` — они больше не используются и могут вызывать конфликты маршрутов.
-3. Перезапустите панель (`python dtg.py`) и убедитесь, что маршруты работают корректно.  Все асинхронные вызовы метрик (`usage_total`, `installed_days` и т. д.) должны выполняться через `await`.
+1. Create and activate a virtual environment.
+2. Install dependencies from `requirements.txt`.
+3. Configure `.env` (or open setup page first).
+4. Start DeathTG:
 
-## Примечание
+```bash
+python dtg.py
+```
 
-Проект поддерживает асинхронное взаимодействие с базой данных `sqlite3` посредством библиотеки `aiosqlite`.  Поэтому все функции из `deathtg/metrics.py` возвращают корутины.  Не забывайте использовать `await` при их вызове.
+## Setup and login
+
+- On first run open `/setup` and set:
+  - `API_ID`
+  - `API_HASH`
+  - `PHONE`
+  - `PANEL_PASSWORD`
+  - `PANEL_SECRET`
+- Panel login uses the password you set during setup.
+- Session cookie is persistent (remember device behavior).
+
+## Module author contract
+
+Use:
+
+- `from deathtg.loader import Module`
+- `from deathtg.command import command`
+
+Inline UI:
+
+- `self.inline_send(...)`
+- `self.inline_buttons(...)`
+- `self.inline_form(...)`
+- `self.inline_list(...)`
+- `self.inline_gallery(...)`
+
+Do not:
+
+- read `BOT_TOKEN` from module code
+- create your own bot client
+- call `Button.inline` / `Button.url` directly
+- register your own callback router
+
+See docs:
+
+- `docs/module_authoring.md`
+- `docs/module_prompt_for_devs.md`
+
+## Security notes
+
+- Keep `.env` and `*.session` files private.
+- Use a strong `PANEL_SECRET`.
+- Keep `PANEL_PASSWORD` private.
+- Do not expose panel publicly without HTTPS and network protection.

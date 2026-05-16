@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -14,8 +14,8 @@
       <div class="brand-mark">DTG</div>
       <p class="eyebrow">First launch</p>
       <h1>DeathTG Setup</h1>
-      <p>Заполни API_ID, API_HASH и номер. После нажатия <code>Save config</code> конфиг сохранится, но меню откроется только после создания Telegram session.</p>
-      <div class="alert success">После сохранения останови панель через <code>CTRL+C</code>, запусти <code>python main.py</code>, введи код Telegram/2FA, потом снова <code>python panel.py</code>.</div>
+      <p>Fill in API_ID, API_HASH and phone number. DeathTG can create the inline bot and helper bot automatically on startup; a token here is optional.</p>
+      <div class="alert success">After saving, restart the launcher, complete Telegram login/2FA, then open the panel again.</div>
       {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
       <form method="post" action="/setup/save" class="form-stack">
         <label>API ID</label>
@@ -26,13 +26,15 @@
         <input type="text" name="phone" placeholder="+380..." required>
         <label>Session name</label>
         <input type="text" name="session_name" value="deathtg" required>
+        <label>Panel password</label>
+        <input type="text" name="panel_password_value" value="deathtg" required>
         <label>Panel secret</label>
         <input type="text" name="panel_secret" placeholder="long_random_secret" required>
-        <label>Bot token, optional</label>
+        <label>Inline bot token, optional</label>
         <input type="text" name="bot_token" placeholder="123456:ABC...">
         <button type="submit">Save config</button>
       </form>
-      <small>Ключ входа в панель создаётся автоматически в файле <code>.env</code> как <code>PANEL_PASSWORD</code>.</small>
+      <small>Use the same panel password on login. You can change it later in <code>.env</code> (<code>PANEL_PASSWORD</code>).</small>
     </section>
   </main>
   <script src="/static/matrix.js"></script>

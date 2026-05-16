@@ -1,170 +1,320 @@
-<!DOCTYPE html>
-<html lang="ru">
+<!doctype html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DeathTG - Profile & Matrix</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DeathTG Profile</title>
     <link rel="stylesheet" href="/static/clean.css">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/clean_patch.css">
+    <link rel="stylesheet" href="/static/accent_fix.css">
     <style>
-        body { background: #000; color: #fff; font-family: 'Consolas', monospace; margin: 0; overflow-x: hidden; }
-        #matrix-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; opacity: 0.15; }
-        
-        /* Кнопка меню слева сверху */
-        .nav-toggle { position: fixed; top: 20px; left: 20px; z-index: 1000; background: rgba(0, 240, 255, 0.1); border: 1px solid #00f0ff; color: #00f0ff; padding: 10px; border-radius: 5px; cursor: pointer; text-transform: uppercase; font-weight: bold; font-size: 12px; }
-        .nav-toggle:hover { background: #00f0ff; color: #000; }
-
-        .container { max-width: 700px; margin: 60px auto; padding: 30px; background: rgba(10, 10, 12, 0.85); border-radius: 12px; border: 1px solid #1a1a1a; backdrop-filter: blur(10px); }
-        
-        /* Аватар с кроппером */
-        .avatar-section { display: flex; flex-direction: column; align-items: center; margin-bottom: 40px; }
-        .avatar-box { width: 120px; height: 120px; border-radius: 50%; border: 3px solid #00f0ff; position: relative; overflow: hidden; box-shadow: 0 0 20px rgba(0, 240, 255, 0.3); cursor: pointer; }
-        .avatar-box img { width: 100%; height: 100%; object-fit: cover; }
-        .avatar-box:hover::after { content: "EDIT"; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; color: #00f0ff; font-weight: bold; }
-
-        .tabs { display: flex; gap: 10px; margin-bottom: 30px; border-bottom: 1px solid #222; }
-        .tab-btn { background: none; border: none; color: #555; padding: 10px 20px; cursor: pointer; font-size: 14px; transition: 0.3s; }
-        .tab-btn.active { color: #00f0ff; border-bottom: 2px solid #00f0ff; }
-
-        .form-group { margin-bottom: 20px; }
-        .form-group label { display: block; color: #00f0ff; font-size: 11px; margin-bottom: 8px; text-transform: uppercase; }
-        .form-control { width: 100%; background: #050505; border: 1px solid #222; color: #fff; padding: 12px; border-radius: 5px; box-sizing: border-box; }
-        .form-control:focus { border-color: #00f0ff; outline: none; }
-
-        .btn-action { background: #00f0ff; color: #000; border: none; padding: 15px; border-radius: 5px; width: 100%; font-weight: bold; cursor: pointer; text-transform: uppercase; }
-
-        /* Модалка Кроппера */
-        .crop-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 2000; align-items: center; justify-content: center; }
-        .crop-container { background: #111; padding: 20px; border-radius: 10px; width: 90%; max-width: 500px; border: 1px solid #00f0ff; }
-        .crop-wrap { width: 100%; height: 350px; background: #000; margin-bottom: 20px; }
+        .profile-shell{display:grid;gap:16px}
+        .profile-hero{padding:24px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:20px;align-items:center}
+        .hero-avatar{width:128px;height:128px;border-radius:28px;display:block;object-fit:cover;object-position:center;background:rgba(var(--accent-rgb),.08);border:1px solid var(--line2)}
+        .empty-avatar{display:grid;place-items:center;color:#fff1bd;background:linear-gradient(135deg,rgba(var(--accent-rgb),.18),rgba(2,16,9,.9))}
+        .hero-copy{min-width:0}
+        .hero-title{font-size:clamp(42px,5vw,74px);line-height:.9;margin:4px 0 8px;letter-spacing:-2px}
+        .hero-sub{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+        .hero-sub .profile-meta{margin:0;color:var(--muted)}
+        .role-pill{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;border:1px solid var(--line2);background:rgba(var(--accent-rgb),.08);font-size:12px;font-weight:900;letter-spacing:1px;text-transform:uppercase;color:#fff1bd}
+        .role-pill.developer{box-shadow:0 0 16px rgba(var(--accent-rgb),.34),0 0 36px rgba(var(--accent-rgb),.15);animation:rolePulse 1.8s ease-in-out infinite}
+        .hero-actions{display:flex;align-items:center;justify-content:flex-end}
+        .hero-actions button{min-width:164px}
+        .stat-ribbon{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+        .stat-card,.meta-chip,.profile-list .item,.editor-panel{padding:14px 15px;border-radius:16px;background:rgba(0,0,0,.2);border:1px solid rgba(var(--accent-rgb),.14)}
+        .stat-card span,.meta-chip span,.helper{display:block;color:var(--muted);font-size:12px}
+        .stat-card b{display:block;font-size:26px;color:#fff1bd}
+        .profile-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}
+        .profile-card{padding:22px}
+        .profile-card h2{margin:0 0 10px;font-size:28px}
+        .profile-card p{margin:0}
+        .meta-grid,.editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+        .meta-chip b{font-size:18px}
+        .profile-list{display:grid;gap:10px}
+        .profile-list .item b{display:block;margin-bottom:4px}
+        .profile-list .item p{margin:4px 0 0;color:var(--muted)}
+        .editor-modal .modal-card{width:min(980px,100%);padding:22px}
+        .editor-shell{display:grid;grid-template-columns:320px minmax(0,1fr);gap:18px;margin-top:14px}
+        .avatar-box{width:100%;aspect-ratio:1/1;border-radius:24px;border:1px solid var(--line2);background:rgba(var(--accent-rgb),.08);overflow:hidden}
+        .avatar-box img{width:100%;height:100%;display:block;object-fit:cover;object-position:center}
+        .editor-panel h3{margin:0 0 12px;font-size:18px}
+        .editor-panel p{margin:0}
+        .editor-form{display:grid;gap:14px}
+        .editor-grid .wide{grid-column:1/-1}
+        .editor-form label{display:grid;gap:7px;font-size:13px;color:#f2deb0}
+        .editor-form input,.editor-form textarea,.editor-form select{width:100%;border:1px solid var(--line);border-radius:14px;background:rgba(0,0,0,.28);color:var(--text);padding:13px 14px;outline:none}
+        .editor-form textarea{min-height:152px;resize:vertical;font-family:ui-monospace,Consolas,monospace}
+        .editor-submit{display:flex;justify-content:flex-end}
+        .editor-submit button{min-width:180px}
+        .runtime-list{display:grid;gap:10px}
+        .runtime-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+        .runtime-head h2{margin:0}
+        .runtime-head button{min-height:40px;padding:9px 12px}
+        .runtime-row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(var(--accent-rgb),.10)}
+        .runtime-row:last-child{border-bottom:0;padding-bottom:0}
+        .runtime-row b{font-size:15px}
+        .runtime-badge{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.6px;text-transform:uppercase}
+        .runtime-badge.ok{background:rgba(82,255,139,.10);border:1px solid rgba(82,255,139,.22);color:#dfffe8}
+        .runtime-badge.bad{background:rgba(255,79,117,.12);border:1px solid rgba(255,79,117,.34);color:#ffe2e9}
+        .runtime-badge.warn{background:rgba(255,184,107,.12);border:1px solid rgba(255,184,107,.34);color:#ffebb9}
+        .accent-set{display:grid;gap:9px}
+        .accent-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+        .accent-item{position:relative}
+        .accent-item input{position:absolute;opacity:0;pointer-events:none}
+        .accent-item label{display:flex;align-items:center;gap:8px;padding:10px 11px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.03);cursor:pointer}
+        .accent-dot{width:15px;height:15px;border-radius:50%}
+        .accent-blue{background:linear-gradient(135deg,#30d5ff,#7ee8ff)}
+        .accent-red{background:linear-gradient(135deg,#ff4f75,#ff8a4c)}
+        .accent-gold{background:linear-gradient(135deg,#ffd166,#f59e0b)}
+        .accent-item input:checked + label{border-color:var(--line2);box-shadow:0 0 0 1px rgba(var(--accent-rgb),.45),0 8px 25px rgba(0,0,0,.25)}
+        .crop-placeholder{position:absolute;inset:0;display:grid;place-items:center;padding:16px;text-align:center;color:#c9b2d9;font-size:14px}
+        .crop-frame.has-image .crop-placeholder{display:none}
+        .crop-frame:not(.has-image) #cropBox{display:none}
+        .crop-frame:not(.has-image) #cropImage{display:none}
+        .upload-wide{width:min(92vw,680px);max-width:100%;min-height:52px}
+        .crop-actions{width:min(92vw,680px);max-width:100%}
+        .crop-actions button[disabled]{opacity:.45;cursor:not-allowed}
+        .crop-box{position:absolute;z-index:8;cursor:move}
+        .crop-box .handle{position:absolute;z-index:10}
+        @keyframes rolePulse{0%{box-shadow:0 0 14px rgba(var(--accent-rgb),.28)}50%{box-shadow:0 0 26px rgba(var(--accent-rgb),.58),0 0 48px rgba(var(--accent-rgb),.18)}100%{box-shadow:0 0 14px rgba(var(--accent-rgb),.28)}}
+        @media (max-width: 980px){.profile-hero{grid-template-columns:1fr}.hero-actions{justify-content:flex-start}.stat-ribbon{grid-template-columns:repeat(2,minmax(0,1fr))}.profile-grid,.editor-shell{grid-template-columns:1fr}}
+        @media (max-width: 680px){.hero-avatar{width:96px;height:96px;border-radius:22px}.editor-grid,.meta-grid,.accent-grid{grid-template-columns:1fr}}
     </style>
 </head>
-<body>
-    <canvas id="matrix-canvas"></canvas>
-    
-    <button class="nav-toggle" onclick="window.location.href='/'">Меню</button>
+<body class="theme-profile" data-accent="{{ profile.accent or 'blue' }}">
+<canvas id="matrix"></canvas>
+<button class="menu-btn" id="menuToggle">
+    {% if profile.avatar %}
+    <img data-avatar-img src="{{ profile.avatar }}" alt="avatar">
+    {% else %}
+    {{ (profile.name or 'D')[0] }}
+    {% endif %}
+</button>
+<aside class="mini-menu" id="drawer">
+    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>Profile</span></div></div>
+    <nav><a href="/">News</a><a class="active" href="/profile">Profile</a><a href="/activity">Activity</a><a href="/browser">Modules</a><a href="/scanner">Scanner</a></nav>
+    <a class="logout" href="/logout">Logout</a>
+</aside>
+<div class="overlay" id="drawerBackdrop"></div>
 
-    <div class="container">
-        <div class="avatar-section">
-            <div class="avatar-box" onclick="document.getElementById('ava-input').click()">
-                <img src="{{ profile.avatar or '/static/user/avatar.png' }}" id="current-ava">
+<main class="page">
+    <div class="profile-shell">
+        <section class="card profile-hero">
+            {% if profile.avatar %}
+            <img class="hero-avatar" data-avatar-img src="{{ profile.avatar }}" alt="avatar">
+            {% else %}
+            <div class="hero-avatar empty-avatar">{{ (profile.name or "D")[0] }}</div>
+            {% endif %}
+            <div class="hero-copy">
+                <p class="eyebrow">Profile</p>
+                <h1 class="hero-title">{{ profile.profile_title or "DeathTG Operator" }}</h1>
+                <div class="hero-sub">
+                    <p class="profile-meta">@{{ profile.username or "not connected" }}</p>
+                    <span class="role-pill {% if profile.role == 'developer' %}developer{% endif %}">{{ profile.role or "admin" }}</span>
+                </div>
             </div>
-            <h2 style="margin-top: 15px;">{{ profile.profile_title or 'Operator' }}</h2>
-            <p style="color: #666; font-size: 12px;">@{{ profile.username or 'unknown' }}</p>
+            <div class="hero-actions">
+                <button type="button" class="ghost" data-modal-open="editorModal">Edit profile</button>
+            </div>
+        </section>
+
+        {% if message %}<div class="toast ok">{{ message }}</div>{% endif %}
+        {% if error %}<div class="toast bad">{{ error }}</div>{% endif %}
+
+        <section class="stat-ribbon">
+            <article class="stat-card"><span>Prefix</span><b>{{ status.prefix }}</b></article>
+            <article class="stat-card"><span>Role</span><b>{{ profile.role or "admin" }}</b></article>
+            <article class="stat-card"><span>Modules</span><b>{{ status.modules_count }}</b></article>
+            <article class="stat-card"><span>Commands</span><b>{{ status.commands_count }}</b></article>
+            <article class="stat-card"><span>Level</span><b>{{ status.level.level }}</b></article>
+            <article class="stat-card"><span>Age</span><b>{{ status.days }}d</b></article>
+        </section>
+
+        <section class="profile-grid">
+            <article class="card profile-card">
+                <p class="eyebrow">About</p>
+                <h2>{{ profile.profile_title or "DeathTG Operator" }}</h2>
+                <p>{{ profile.description or "DeathTG userbot online. Configure profile, role, prefix, bot sync, and modules from one panel." }}</p>
+            </article>
+            <article class="card profile-card">
+                <p class="eyebrow">Identity</p>
+                <div class="meta-grid">
+                    <div class="meta-chip"><span>Username</span><b>@{{ profile.username or "not connected" }}</b></div>
+                    <div class="meta-chip"><span>ID</span><b>{{ profile.id }}</b></div>
+                    <div class="meta-chip"><span>Session</span><b>{{ "OK" if status.session_ok else "BAD" }}</b></div>
+                    <div class="meta-chip"><span>Accent</span><b>{{ profile.accent or "blue" }}</b></div>
+                </div>
+            </article>
+        </section>
+
+        <section class="profile-grid">
+            <article class="card profile-card">
+                <p class="eyebrow">Runtime</p>
+                <div class="runtime-head">
+                    <h2>Inline and channels</h2>
+                    <form method="post" action="/runtime/sync"><button type="submit" class="ghost">Run sync now</button></form>
+                </div>
+                <div class="runtime-list">
+                    {% for bot in startup.bots %}
+                    <div class="runtime-row">
+                        <div>
+                            <b>{{ "Inline bot" if bot.role == "inline" else "Helper bot" }}</b>
+                            <p class="helper">@{{ bot.username or "not set" }}{% if bot.error %} &middot; {{ bot.error }}{% endif %}</p>
+                            <p class="helper">Expected: {{ bot.expected_prefix or "n/a" }}*_bot</p>
+                            <p class="helper">Commands: {{ "ok" if bot.commands_synced else "pending" }} &middot; Avatar: {{ "ok" if bot.avatar_synced else "pending" }}{% if bot.role == "inline" %} &middot; Inline: {{ "ok" if bot.inline_synced else "pending" }}{% endif %}</p>
+                        </div>
+                        <span class="runtime-badge {{ 'ok' if bot.configured and bot.username and bot.valid_username else 'bad' }}">{{ 'ready' if bot.configured and bot.username and bot.valid_username else 'missing' }}</span>
+                    </div>
+                    {% endfor %}
+                    {% for channel in startup.channels %}
+                    <div class="runtime-row">
+                        <div><b>{{ channel.title or ('@' ~ channel.username) }}</b><p class="helper">@{{ channel.username }}</p></div>
+                        <span class="runtime-badge {{ 'ok' if channel.joined else 'warn' }}">{{ 'joined' if channel.joined else 'check' }}</span>
+                    </div>
+                    {% endfor %}
+                    {% if not startup.channels %}
+                    <div class="runtime-row">
+                        <div><b>Channels</b><p class="helper">Startup sync has not collected channel status yet.</p></div>
+                        <span class="runtime-badge warn">pending</span>
+                    </div>
+                    {% endif %}
+                    <div class="runtime-row">
+                        <div>
+                            <b>Folder {{ startup.folder.name }}</b>
+                            <p class="helper">{{ startup.folder.error or "Dialog folder in Telegram" }}</p>
+                            {% if startup.folder.include_usernames %}
+                            <p class="helper">Targets: {{ startup.folder.include_usernames|join(', ') }}</p>
+                            {% endif %}
+                        </div>
+                        <span class="runtime-badge {{ 'ok' if startup.folder.ok else 'warn' }}">{{ 'ready' if startup.folder.ok else 'check' }}</span>
+                    </div>
+                    <div class="runtime-row">
+                        <div><b>Last sync</b><p class="helper">{{ startup.last_sync_error or "No runtime sync error" }}</p></div>
+                        <span class="runtime-badge {{ 'ok' if not startup.last_sync_error else 'warn' }}">{{ startup.last_sync_at or "pending" }}</span>
+                    </div>
+                </div>
+            </article>
+
+            <article class="card profile-card">
+                <p class="eyebrow">Stats</p>
+                <h2>Top modules</h2>
+                <div class="profile-list">
+                    {% for mod in top_modules[:4] %}
+                    <div class="item">
+                        <b>{{ mod.module }}</b>
+                        <span class="helper">{{ mod.count }} uses</span>
+                    </div>
+                    {% endfor %}
+                    {% if not top_modules %}
+                    <div class="item">
+                        <b>No usage data yet</b>
+                        <p>Start using commands and this list will fill automatically.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </article>
+        </section>
+    </div>
+</main>
+
+<div class="modal editor-modal" id="editorModal">
+    <div class="card modal-card">
+        <button class="modal-close" type="button" data-modal-close>x</button>
+        <p class="eyebrow">Edit profile</p>
+        <h2 style="margin:0">Avatar, role and prefix</h2>
+        <div class="editor-shell">
+            <section class="editor-panel">
+                <h3>Avatar</h3>
+                <div class="avatar-box">
+                    {% if profile.avatar %}
+                    <img data-avatar-img src="{{ profile.avatar }}" alt="avatar">
+                    {% else %}
+                    <div class="hero-avatar empty-avatar" style="width:100%;height:100%;border-radius:0">{{ (profile.name or "D")[0] }}</div>
+                    {% endif %}
+                </div>
+                <p class="helper" style="margin-top:12px">Preview uses the exact crop selection.</p>
+                <div style="margin-top:12px">
+                    <button type="button" class="ghost" data-modal-open="cropModal">Open crop studio</button>
+                </div>
+            </section>
+
+            <form class="editor-form" action="/profile/save" method="post">
+                <section class="editor-panel">
+                    <h3 style="margin:0 0 12px">Identity</h3>
+                    <div class="editor-grid">
+                        <label class="wide">Profile title
+                            <input type="text" name="profile_title" value="{{ profile.profile_title or '' }}">
+                        </label>
+                        <label>Role
+                            <select name="role">
+                                <option value="user" {% if profile.role == "user" %}selected{% endif %}>User</option>
+                                <option value="admin" {% if profile.role == "admin" %}selected{% endif %}>Admin</option>
+                                <option value="developer" {% if profile.role == "developer" %}selected{% endif %}>Developer</option>
+                            </select>
+                        </label>
+                        <label>Command prefix
+                            <input type="text" name="command_prefix" value="{{ status.prefix or '.' }}" maxlength="4">
+                        </label>
+                        <div class="wide accent-set">
+                            <span>Accent</span>
+                            <div class="accent-grid">
+                                <div class="accent-item">
+                                    <input id="accent-blue" type="radio" name="accent" value="blue" {% if profile.accent == "blue" %}checked{% endif %}>
+                                    <label for="accent-blue"><span class="accent-dot accent-blue"></span>Blue</label>
+                                </div>
+                                <div class="accent-item">
+                                    <input id="accent-red" type="radio" name="accent" value="red" {% if profile.accent == "red" %}checked{% endif %}>
+                                    <label for="accent-red"><span class="accent-dot accent-red"></span>Red</label>
+                                </div>
+                                <div class="accent-item">
+                                    <input id="accent-gold" type="radio" name="accent" value="gold" {% if profile.accent == "gold" %}checked{% endif %}>
+                                    <label for="accent-gold"><span class="accent-dot accent-gold"></span>Gold</label>
+                                </div>
+                            </div>
+                            <span class="helper">Accent changes profile card and panel highlight color.</span>
+                        </div>
+                        <label class="wide">Description
+                            <textarea name="description">{{ profile.description or '' }}</textarea>
+                        </label>
+                    </div>
+                </section>
+                <div class="editor-submit"><button type="submit">Save profile</button></div>
+            </form>
         </div>
+    </div>
+</div>
 
-        <div class="tabs">
-            <button class="tab-btn active" onclick="showTab('main-set')">Настройки</button>
-            <button class="tab-btn" onclick="showTab('sys-set')">Система</button>
-        </div>
-
-        <form action="/profile/save" method="POST">
-            <div id="main-set" class="tab-page">
-                <div class="form-group">
-                    <label>Заголовок профиля</label>
-                    <input type="text" name="profile_title" class="form-control" value="{{ profile.profile_title }}">
-                </div>
-                <div class="form-group">
-                    <label>Описание (.info)</label>
-                    <textarea name="description" class="form-control" rows="3">{{ profile.description }}</textarea>
-                </div>
-            </div>
-
-            <div id="sys-set" class="tab-page" style="display:none;">
-                <div class="form-group">
-                    <label>Префикс команд</label>
-                    <input type="text" name="command_prefix" class="form-control" value="{{ status.prefix }}">
-                </div>
-                <div class="form-group">
-                    <label>Цвет акцента</label>
-                    <select name="accent" class="form-control">
-                        <option value="blue" {% if profile.accent == 'blue' %}selected{% endif %}>Cyan Neon</option>
-                        <option value="red" {% if profile.accent == 'red' %}selected{% endif %}>Deadly Red</option>
-                    </select>
+<div class="modal" id="cropModal">
+    <div class="card modal-card crop-modal">
+        <button class="modal-close" type="button" data-modal-close>x</button>
+        <h2>Crop image</h2>
+        <form id="avatarForm" action="/profile/avatar" method="post" enctype="multipart/form-data" class="crop-workspace">
+            <label class="file-drop compact-drop upload-wide crop-picker">Choose image
+                <input id="avatarInput" type="file" name="avatar_file" accept="image/*" required>
+            </label>
+            <div class="crop-frame">
+                <div id="cropPlaceholder" class="crop-placeholder">Choose image to start</div>
+                <img id="cropImage" alt="crop target">
+                <div id="cropBox" class="crop-box">
+                    <span class="handle nw"></span>
+                    <span class="handle ne"></span>
+                    <span class="handle sw"></span>
+                    <span class="handle se"></span>
+                    <span class="handle n"></span>
+                    <span class="handle e"></span>
+                    <span class="handle s"></span>
+                    <span class="handle w"></span>
                 </div>
             </div>
-
-            <button type="submit" class="btn-action">Сохранить изменения</button>
+            <div class="crop-actions">
+                <button type="button" class="ghost" id="avatarReset">Reset</button>
+                <button id="avatarSave" type="submit" disabled>Save avatar</button>
+            </div>
         </form>
     </div>
+</div>
 
-    <input type="file" id="ava-input" style="display:none" accept="image/*">
-    <div class="crop-modal" id="crop-modal">
-        <div class="crop-container">
-            <div class="crop-wrap"><img id="crop-target"></div>
-            <div style="display:flex; gap:10px;">
-                <button class="btn-action" style="background:#222; color:#fff;" onclick="closeCrop()">Отмена</button>
-                <button class="btn-action" onclick="applyCrop()">Готово</button>
-            </div>
-        </div>
-    </div>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
-    <script>
-        // Matrix Effect
-        const canvas = document.getElementById('matrix-canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-        const chars = "DEATHTG01XYZ#@";
-        const fontSize = 14;
-        const columns = canvas.width / fontSize;
-        const drops = Array(Math.floor(columns)).fill(1);
-        function drawMatrix() {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#00f0ff';
-            ctx.font = fontSize + 'px monospace';
-            for (let i = 0; i < drops.length; i++) {
-                const text = chars[Math.floor(Math.random() * chars.length)];
-                ctx.fillText(text, i * fontSize, drops[i] * fontSize);
-                if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
-                drops[i]++;
-            }
-        }
-        setInterval(drawMatrix, 50);
-
-        // Tabs
-        function showTab(id) {
-            document.querySelectorAll('.tab-page').forEach(p => p.style.display = 'none');
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById(id).style.display = 'block';
-            event.target.classList.add('active');
-        }
-
-        // Cropper
-        let cropper;
-        const avaInput = document.getElementById('ava-input');
-        const cropTarget = document.getElementById('crop-target');
-        const cropModal = document.getElementById('crop-modal');
-
-        avaInput.onchange = (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = () => {
-                cropTarget.src = reader.result;
-                cropModal.style.display = 'flex';
-                if (cropper) cropper.destroy();
-                cropper = new Cropper(cropTarget, { aspectRatio: 1, viewMode: 1 });
-            };
-            reader.readAsDataURL(file);
-        };
-
-        function closeCrop() { cropModal.style.display = 'none'; }
-        
-        async function applyCrop() {
-            const base64 = cropper.getCroppedCanvas({ width: 256, height: 256 }).toDataURL();
-            const res = await fetch('/profile/avatar', {
-                method: 'POST',
-                body: new URLSearchParams({ avatar_base64: base64 })
-            });
-            const data = await res.json();
-            if (data.status === 'ok') {
-                document.getElementById('current-ava').src = data.avatar;
-                closeCrop();
-            }
-        }
-    </script>
+<script src="/static/matrix.js"></script>
+<script src="/static/clean.js"></script>
 </body>
 </html>

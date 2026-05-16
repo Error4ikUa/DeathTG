@@ -13,4 +13,4 @@ if ENV_PATH.exists():
 if __name__ == "__main__":
     host = os.getenv("PANEL_HOST", "127.0.0.1")
     port = int(os.getenv("PANEL_PORT", "8080"))
-    uvicorn.run("deathtg.panel.server_multi:app", host=host, port=port)
+    uvicorn.run("deathtg.panel.clean_app:app", host=host, port=port)

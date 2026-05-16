@@ -1,1 +1,189 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DeathTG Modules</title><link rel="stylesheet" href="/static/clean.css"><link rel="stylesheet" href="/static/clean_patch.css"><link rel="stylesheet" href="/static/modules_center.css"></head><body class="theme-modules"><canvas id="matrix"></canvas><button class="menu-btn" id="menuToggle">{% if profile.avatar %}<img src="{{ profile.avatar }}">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}</button><aside class="mini-menu" id="drawer"><div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>Modules</span></div></div><nav><a href="/">News</a><a href="/profile">Profile</a><a href="/activity">Activity</a><a class="active" href="/browser">Modules</a><a href="/scanner">Scanner</a></nav><a class="logout" href="/logout">Logout</a></aside><div class="overlay" id="drawerBackdrop"></div><main class="page modules-page"><section class="module-top card"><div><p class="eyebrow">Modules</p><h1>Module Center</h1><p>Browser · Installed · InstallMod</p></div><input id="moduleSearch" placeholder="Search module..."></section><section class="section-tabs module-tabs"><button type="button" class="active" data-tab="browserPane">Browser</button><button type="button" data-tab="installedPane">Installed</button><button type="button" data-tab="installPane">InstallMod</button></section><section id="browserPane" class="module-pane active"><div class="module-grid">{% for mod in browser_modules %}<article class="module-card" data-name="{{ mod.name }} {{ mod.description }}"><img src="{{ mod.image or mod.modul_png or '' }}" onerror="this.style.display='none'"><h2>{{ mod.name }}</h2><p>{{ mod.description }}</p><form method="post" action="/modules/download"><input type="hidden" name="link" value="{{ mod.link or mod.raw or mod.url }}"><button type="submit">Install</button></form></article>{% endfor %}{% if not browser_modules %}<article class="module-empty"><h2>DTG_Modules empty</h2><p>index.json ещё не найден.</p></article>{% endif %}</div></section><section id="installedPane" class="module-pane"><div class="pane-head"><div><p class="eyebrow">Installed</p><h2>Installed modules</h2></div><form method="post" action="/modules/update-all"><button class="ghost" type="submit">Update all</button></form></div>{% for module, commands in grouped.items() %}<div class="module-row"><div><h2>{% if module in protected %}🛡{% else %}🧩{% endif %} {{ module }}</h2><p>{% for cmd in commands %}<code>.{{ cmd.name }}</code> {% endfor %}</p></div>{% if module not in protected %}<div class="actions"><form method="post" action="/modules/{{ module }}/update"><button class="small ghost" type="submit">Update</button></form><form method="post" action="/modules/{{ module }}/unload"><button class="small ghost" type="submit">Unload</button></form><form method="post" action="/modules/{{ module }}/delete"><button class="small danger" type="submit">Delete</button></form></div>{% else %}<code>protected</code>{% endif %}</div>{% endfor %}</section><section id="installPane" class="module-pane"><div class="pane-head"><div><p class="eyebrow">InstallMod</p><h2>Add module</h2></div><a class="btn ghost" href="/scanner">Scanner</a></div><div class="grid2"><form class="stack" method="post" action="/modules/download"><label>Module URL</label><input type="text" name="link" placeholder="https://.../module.py" required><button type="submit">Install from URL</button></form><form class="stack" method="post" action="/modules/upload" enctype="multipart/form-data"><label class="file-drop">Choose .py file<input type="file" name="file" accept=".py" required></label><button type="submit">Upload module</button></form></div></section></main><script src="/static/matrix.js"></script><script src="/static/clean.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DeathTG Modules</title>
+    <link rel="stylesheet" href="/static/clean.css">
+    <link rel="stylesheet" href="/static/clean_patch.css">
+    <link rel="stylesheet" href="/static/accent_fix.css">
+    <link rel="stylesheet" href="/static/modules_center.css">
+</head>
+<body class="theme-modules" data-accent="{{ profile.accent or 'blue' }}">
+<canvas id="matrix"></canvas>
+<button class="menu-btn" id="menuToggle">
+    {% if profile.avatar %}<img src="{{ profile.avatar }}" alt="avatar">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}
+</button>
+<aside class="mini-menu" id="drawer">
+    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>Modules</span></div></div>
+    <nav>
+        <a href="/">News</a>
+        <a href="/profile">Profile</a>
+        <a href="/activity">Activity</a>
+        <a class="active" href="/browser">Modules</a>
+        <a href="/scanner">Scanner</a>
+    </nav>
+    <a class="logout" href="/logout">Logout</a>
+</aside>
+<div class="overlay" id="drawerBackdrop"></div>
+
+<main class="page modules-page">
+    <section class="module-top card">
+        <div>
+            <p class="eyebrow">Modules</p>
+            <h1>Module Center</h1>
+            <p>Browser &middot; Installed &middot; InstallMod</p>
+        </div>
+        <input id="moduleSearch" placeholder="Search module...">
+    </section>
+
+    {% if message %}<div class="toast ok">{{ message }}</div>{% endif %}
+    {% if error %}<div class="toast bad">{{ error }}</div>{% endif %}
+    {% if pending_warning %}
+    <section class="security-warning">
+        <p class="eyebrow">Security scan</p>
+        <h2>Cannot install: dangerous code was found</h2>
+        <p>Module <b>{{ pending_warning.filename }}</b> was stopped by the scanner. Review lines before deciding.</p>
+        <div class="finding-list">
+            {% for finding in pending_warning.report.findings %}
+            <div class="finding-line">
+                <b>Line {{ finding.line }} &middot; {{ finding.reason }}</b>
+                {% if finding.code %}<code>{{ finding.code }}</code>{% endif %}
+            </div>
+            {% endfor %}
+            {% if not pending_warning.report.findings %}<div class="finding-line"><b>{{ pending_warning.report.pretty }}</b></div>{% endif %}
+        </div>
+        <div class="actions">
+            <form method="post" action="/modules/pending/{{ pending_warning.token }}/delete">
+                <input type="hidden" name="return_to" value="browser">
+                <button class="small danger" type="submit">Delete</button>
+            </form>
+            <form method="post" action="/modules/pending/{{ pending_warning.token }}/continue">
+                <input type="hidden" name="return_to" value="browser">
+                <button class="small ghost" type="submit">Continue install</button>
+            </form>
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="section-tabs module-tabs">
+        <button type="button" class="active" data-tab="browserPane">Browser</button>
+        <button type="button" data-tab="installedPane">Installed</button>
+        <button type="button" data-tab="installPane">InstallMod</button>
+    </section>
+
+    <section id="browserPane" class="module-pane active">
+        <div class="module-grid">
+            {% for mod in browser_modules %}
+            {% set image = mod.image or mod.modul_png or '' %}
+            <article class="module-card repo-card {% if image %}has-bg{% endif %}" data-name="{{ mod.name }} {{ mod.description }}" {% if image %}style="--module-bg:url('{{ image }}')"{% endif %}>
+                <div class="module-card-glow"></div>
+                <div class="module-head">
+                    <h2>{{ mod.name }}</h2>
+                    {% if mod.verified %}<span class="verified-pill">verified</span>{% endif %}
+                </div>
+                <p class="module-note">{{ mod.source_label or 'External source' }}</p>
+                <p>{{ mod.description }}</p>
+                <div class="module-actions repo-actions">
+                    <a class="small ghost info-link" href="/repo-modules/{{ mod.name }}">Info</a>
+                    <form method="post" action="/modules/download">
+                        <input type="hidden" name="link" value="{{ mod.link or mod.raw or mod.url }}">
+                        <input type="hidden" name="image" value="{{ image }}">
+                        <input type="hidden" name="description" value="{{ mod.description }}">
+                        <input type="hidden" name="author" value="{{ mod.author or 'DTG' }}">
+                        <input type="hidden" name="version" value="{{ mod.version or 'latest' }}">
+                        <input type="hidden" name="return_to" value="browser">
+                        <button class="small" type="submit">Install</button>
+                    </form>
+                </div>
+            </article>
+            {% endfor %}
+            {% if not browser_modules %}
+            <article class="module-empty">
+                <h2>DTG_Modules unavailable</h2>
+                <p>Module index is not available yet.</p>
+            </article>
+            {% endif %}
+        </div>
+        <article class="card panel inline-bridge-card">
+            <p class="eyebrow">Inline bridge</p>
+            <h2>Module connector</h2>
+            <div class="bot-grid">
+                {% for bot in startup.bots %}
+                <p class="module-note"><b>{{ bot.role or 'bot' }}</b>: <code>@{{ bot.username or 'missing' }}</code> <span>{{ 'ready' if bot.username and bot.valid_username else 'not configured' }}</span></p>
+                {% endfor %}
+            </div>
+            <p class="module-note">Modules use <code>self.inline_send(...)</code>. The inline bot stays a technical layer and never leaks to module code.</p>
+        </article>
+    </section>
+
+    <section id="installedPane" class="module-pane">
+        <div class="pane-head">
+            <div>
+                <p class="eyebrow">Installed</p>
+                <h2>Installed modules</h2>
+            </div>
+            <form method="post" action="/modules/update-all">
+                <input type="hidden" name="return_to" value="installed_tab">
+                <button class="ghost" type="submit">Update all</button>
+            </form>
+        </div>
+        <div class="module-grid installed-grid">
+            {% for module, commands in grouped.items() %}
+            {% set meta = module_meta.get(module, {}) %}
+            {% set image = meta.get('image') or '' %}
+            <article class="module-card installed-card {% if image %}has-bg{% endif %}" data-name="{{ module }} {{ meta.get('description', '') }}" {% if image %}style="--module-bg:url('{{ image }}')"{% endif %}>
+                <a class="module-card-link" href="/modules/{{ module }}" aria-label="Open {{ module }} details"></a>
+                <div class="module-card-glow"></div>
+                <div class="module-head">
+                    <h2>{% if module in protected %}[core]{% else %}[ext]{% endif %} {{ module }}</h2>
+                    {% if meta.get('verified') %}<span class="verified-pill">verified</span>{% endif %}
+                </div>
+                <p class="module-note">{{ meta.get('description') or ('Protected DeathTG module' if module in protected else 'Installed external module') }}</p>
+                <div class="module-command-cloud compact">
+                    {% for cmd in commands %}<span>.{{ cmd.name }}</span>{% endfor %}
+                    {% if not commands %}<span>No commands</span>{% endif %}
+                </div>
+                <div class="module-actions">
+                    <a class="small ghost info-link" href="/modules/{{ module }}">Info</a>
+                    {% if module not in protected %}
+                    <form method="post" action="/modules/{{ module }}/update"><input type="hidden" name="return_to" value="installed_tab"><button class="small ghost" type="submit">Update</button></form>
+                    <form method="post" action="/modules/{{ module }}/unload"><input type="hidden" name="return_to" value="installed_tab"><button class="small ghost" type="submit">Unload</button></form>
+                    <form method="post" action="/modules/{{ module }}/delete"><input type="hidden" name="return_to" value="installed_tab"><button class="small danger" type="submit">Delete</button></form>
+                    {% else %}
+                    <span class="lock-pill">protected</span>
+                    {% endif %}
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section id="installPane" class="module-pane">
+        <div class="pane-head">
+            <div>
+                <p class="eyebrow">InstallMod</p>
+                <h2>Add module</h2>
+            </div>
+            <a class="btn ghost" href="/scanner">Scanner</a>
+        </div>
+        <div class="grid2">
+            <form class="stack" method="post" action="/modules/download">
+                <label>Module URL</label>
+                <input type="text" name="link" placeholder="https://.../module.py" required>
+                <input type="hidden" name="return_to" value="install_tab">
+                <button type="submit">Install from URL</button>
+            </form>
+            <form class="stack" method="post" action="/modules/upload" enctype="multipart/form-data">
+                <label class="file-drop">Choose .py file<input type="file" name="file" accept=".py" required></label>
+                <input type="hidden" name="return_to" value="install_tab">
+                <button type="submit">Upload module</button>
+            </form>
+        </div>
+    </section>
+</main>
+
+<script src="/static/matrix.js"></script>
+<script src="/static/clean.js"></script>
+</body>
+</html>

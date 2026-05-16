@@ -1,0 +1,77 @@
+body[data-accent="blue"]{
+  --accent:#30d5ff !important;
+  --accent2:#7ee8ff !important;
+  --accent-rgb:48,213,255 !important;
+  --line:rgba(48,213,255,.20) !important;
+  --line2:rgba(48,213,255,.38) !important;
+}
+
+body[data-accent="red"]{
+  --accent:#ff4f75 !important;
+  --accent2:#ff8a4c !important;
+  --accent-rgb:255,79,117 !important;
+  --line:rgba(255,79,117,.20) !important;
+  --line2:rgba(255,79,117,.38) !important;
+}
+
+body[data-accent="gold"]{
+  --accent:#ffd166 !important;
+  --accent2:#f59e0b !important;
+  --accent-rgb:255,209,102 !important;
+  --line:rgba(255,209,102,.20) !important;
+  --line2:rgba(255,209,102,.40) !important;
+}
+
+.card{
+  border-color:rgba(var(--accent-rgb),.28)!important;
+  box-shadow:0 18px 70px rgba(0,0,0,.32),inset 0 0 34px rgba(var(--accent-rgb),.06)!important;
+}
+
+.news div,
+.module-row,
+.module-card,
+.stat,
+.panel{
+  border-color:rgba(var(--accent-rgb),.24)!important;
+}
+
+.hero.card,
+.panel,
+.stat,
+.module-row,
+.module-card{
+  background:
+    radial-gradient(120% 160% at 100% 0%, rgba(var(--accent-rgb),.10), rgba(0,0,0,0) 60%),
+    linear-gradient(180deg, rgba(var(--accent-rgb),.05), rgba(0,0,0,.22)) !important;
+}
+
+.news div{
+  background:linear-gradient(180deg,rgba(var(--accent-rgb),.07),rgba(0,0,0,.22))!important;
+}
+
+.stat b{
+  color:color-mix(in srgb, var(--accent) 42%, #ffffff)!important;
+}
+
+.line-chart .line{
+  stroke:var(--accent) !important;
+  stroke-width:2.6!important;
+}
+
+.line-chart .area{
+  fill:rgba(var(--accent-rgb),.18) !important;
+}
+
+.line-chart .dot{
+  fill:var(--accent2) !important;
+  stroke:rgba(255,255,255,.55)!important;
+}
+
+.line-chart{
+  border-color:rgba(var(--accent-rgb),.35)!important;
+  background:linear-gradient(180deg,rgba(var(--accent-rgb),.08),rgba(0,0,0,.24))!important;
+}
+
+.dtg-tooltip b{
+  color:var(--accent) !important;
+}

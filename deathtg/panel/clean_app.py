@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import secrets
 import subprocess
-from pathlib import Path
 
 import aiohttp
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -13,25 +12,31 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from deathtg.config import ROOT_DIR
 from deathtg.metrics import init_metrics
-from deathtg.panel.clean_actions import router as actions_router
+from deathtg.panel.auth_flow import write_env
+from deathtg.panel.clean_actions import load_pending_install, router as actions_router
 from deathtg.panel.clean_core import (
     STATIC_DIR,
     activity_points,
     env_load,
     has_env,
+    has_session,
+    load_module_meta,
+    loader,
     module_repo,
+    module_detail,
+    repo_module_detail,
     panel_password,
     profile_info,
     refresh_modules,
     registry,
+    startup_status,
     status,
     templates,
     top_modules,
 )
 from deathtg.panel.re_auth import router as reconnect_router
 from deathtg.registry import PROTECTED_MODULES
-from deathtg.security import scan_module_source
-from deathtg.panel.auth_flow import write_env
+from deathtg.security import is_trusted_module_link, scan_module_source
 
 
 env_load()
@@ -40,8 +45,9 @@ app = FastAPI(title="DeathTG Panel")
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("PANEL_SECRET", secrets.token_hex(32)),
-    same_site="lax",
+    same_site="strict",
     https_only=False,
+    max_age=60 * 60 * 24 * 90,
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(actions_router)
@@ -69,6 +75,9 @@ async def _base_context(request: Request) -> dict:
         "request": request,
         "profile": profile,
         "status": st,
+        "startup": startup_status(),
+        "module_meta": load_module_meta(),
+        "pending_warning": load_pending_install(request.query_params.get("warning")),
         "message": request.query_params.get("message"),
         "error": request.query_params.get("error"),
     }
@@ -88,11 +97,12 @@ async def setup_save(
     api_hash: str = Form(...),
     phone: str = Form(...),
     session_name: str = Form("deathtg"),
+    panel_password_value: str = Form("deathtg"),
     panel_secret: str = Form("change_me_long_secret"),
     bot_token: str = Form(""),
 ):
     try:
-        panel_key = secrets.token_urlsafe(18)
+        panel_key = (panel_password_value or "").strip() or "deathtg"
         write_env(api_id, api_hash, session_name, phone, panel_key, panel_secret, bot_token)
         os.environ["PANEL_PASSWORD"] = panel_key
         os.environ["PANEL_SECRET"] = panel_secret
@@ -110,7 +120,7 @@ async def setup_save(
 async def login_page(request: Request):
     if not has_env():
         return RedirectResponse("/setup", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse("clean_login.html", {"request": request, "error": None})
 
 
 @app.post("/login")
@@ -118,7 +128,7 @@ async def login(request: Request, key: str = Form(...)):
     if secrets.compare_digest(key, panel_password()):
         request.session["auth"] = True
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный ключ"})
+    return templates.TemplateResponse("clean_login.html", {"request": request, "error": "Invalid panel password"})
 
 
 @app.get("/logout")
@@ -142,7 +152,9 @@ async def profile_page(request: Request):
     blocked = _auth_guard(request)
     if blocked:
         return blocked
-    return templates.TemplateResponse("clean_profile.html", await _base_context(request))
+    ctx = await _base_context(request)
+    ctx["top_modules"] = await top_modules()
+    return templates.TemplateResponse("clean_profile.html", ctx)
 
 
 @app.get("/activity", response_class=HTMLResponse)
@@ -188,6 +200,27 @@ async def installed_page(request: Request):
     return templates.TemplateResponse("clean_installed.html", ctx)
 
 
+@app.get("/repo-modules/{name}", response_class=HTMLResponse)
+async def repo_module_detail_page(request: Request, name: str):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    ctx = await _base_context(request)
+    ctx.update({"module": await repo_module_detail(name), "protected": PROTECTED_MODULES})
+    return templates.TemplateResponse("clean_module_detail.html", ctx)
+
+
+@app.get("/modules/{name}", response_class=HTMLResponse)
+async def module_detail_page(request: Request, name: str):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    await refresh_modules()
+    ctx = await _base_context(request)
+    ctx.update({"module": await module_detail(name), "protected": PROTECTED_MODULES})
+    return templates.TemplateResponse("clean_module_detail.html", ctx)
+
+
 @app.get("/scanner", response_class=HTMLResponse)
 async def scanner_page(request: Request):
     blocked = _auth_guard(request)
@@ -213,13 +246,19 @@ async def scanner_check(
         if file and file.filename:
             text = (await file.read()).decode("utf-8", errors="replace")
         if link and not text.strip():
+            url = loader._normalize_github_url(link)
             async with aiohttp.ClientSession() as session:
-                async with session.get(link, timeout=20) as response:
+                async with session.get(url, timeout=20) as response:
+                    if response.status != 200:
+                        raise RuntimeError(f"Download failed, HTTP {response.status}")
                     text = await response.text()
+            if loader._looks_like_html(text):
+                raise RuntimeError("URL returned HTML, not Python code. Use raw/blob .py link.")
         if not text.strip():
-            raise RuntimeError("Нечего проверять: вставь ссылку, файл или код")
-        report = scan_module_source(text)
-        verdict = "ALLOWED" if report.allowed else "BLOCKED"
+            raise RuntimeError("Nothing to scan. Paste code, upload a file, or provide a module link.")
+        trusted = is_trusted_module_link(link) if link else False
+        report = scan_module_source(text, trusted=trusted)
+        verdict = report.verdict
         ctx = await _base_context(request)
         ctx.update({"report": report, "verdict": verdict})
         return templates.TemplateResponse("clean_scanner.html", ctx)
