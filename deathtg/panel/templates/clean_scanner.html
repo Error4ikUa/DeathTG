@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ lang or 'en' }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DeathTG Scanner</title>
+    <title>{{ tr('scanner.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
     <link rel="stylesheet" href="/static/clean_patch.css">
     <link rel="stylesheet" href="/static/accent_fix.css">
@@ -27,20 +27,20 @@
 <canvas id="matrix"></canvas>
 <button class="menu-btn" id="menuToggle">{% if profile.avatar %}<img src="{{ profile.avatar }}">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}</button>
 <aside class="mini-menu" id="drawer">
-    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>Scanner</span></div></div>
-    <nav><a href="/">News</a><a href="/profile">Profile</a><a href="/activity">Activity</a><a href="/browser">Modules</a><a class="active" href="/scanner">Scanner</a></nav>
-    <a class="logout" href="/logout">Logout</a>
+    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>{{ tr('scanner.page_label') }}</span></div></div>
+    <nav><a href="/">{{ tr('nav.news') }}</a><a href="/profile">{{ tr('nav.profile') }}</a><a href="/activity">{{ tr('nav.activity') }}</a><a href="/browser">{{ tr('nav.modules') }}</a><a class="active" href="/scanner">{{ tr('nav.scanner') }}</a></nav>
+    <a class="logout" href="/logout">{{ tr('nav.logout') }}</a>
 </aside>
 <div class="overlay" id="drawerBackdrop"></div>
 
 <main class="page">
     <section class="hero card">
         <div>
-            <p class="eyebrow">Security</p>
-            <h1>Scanner</h1>
-            <p>Scan module code from URL, file upload, or pasted source.</p>
+            <p class="eyebrow">{{ tr('scanner.eyebrow') }}</p>
+            <h1>{{ tr('scanner.hero_title') }}</h1>
+            <p>{{ tr('scanner.hero_desc') }}</p>
         </div>
-        <a class="btn ghost" href="/browser">Modules</a>
+        <a class="btn ghost" href="/browser">{{ tr('nav.modules') }}</a>
     </section>
 
     {% if message %}<div class="toast ok">{{ message }}</div>{% endif %}
@@ -48,29 +48,29 @@
 
     <section class="card panel">
         <form method="post" action="/scanner/check" enctype="multipart/form-data" class="stack">
-            <label>URL</label>
-            <input type="text" name="link" placeholder="Module URL">
-            <label class="file-drop">Choose .py file<input type="file" name="file" accept=".py"></label>
-            <label>Code</label>
-            <textarea name="source" placeholder="Paste module code"></textarea>
-            <button type="submit">Scan</button>
+            <label>{{ tr('scanner.url') }}</label>
+            <input type="text" name="link" placeholder="{{ tr('scanner.url_placeholder') }}">
+            <label class="file-drop">{{ tr('browser.choose_py') }}<input type="file" name="file" accept=".py"></label>
+            <label>{{ tr('scanner.code') }}</label>
+            <textarea name="source" placeholder="{{ tr('scanner.code_placeholder') }}"></textarea>
+            <button type="submit">{{ tr('scanner.scan') }}</button>
         </form>
 
         {% if report %}
         <div class="scan-result">
             <div class="scan-meta">
                 <span class="scan-chip {{ report.severity }}">{{ verdict }}</span>
-                <span class="helper">score {{ report.score }}</span>
-                {% if report.trusted %}<span class="helper">official DTG source · informational risk only, not blocked</span>{% endif %}
+                <span class="helper">{{ tr('scanner.score', score=report.score) }}</span>
+                {% if report.trusted %}<span class="helper">{{ tr('scanner.official_source') }}</span>{% endif %}
             </div>
             {% if report.trusted and report.findings %}
-            <div class="trusted-note">Official DTG module: admin APIs are shown below for transparency, but trusted sources are not blocked.</div>
+            <div class="trusted-note">{{ tr('scanner.trusted_desc') }}</div>
             {% endif %}
             <div class="scan-card">
                 <ul>
                     {% for finding in report.findings %}
                     <li>
-                        line {{ finding.line }} · {{ finding.reason }}
+                        {{ tr('scanner.line_prefix', line=finding.line, reason=finding.reason) }}
                         {% if finding.code %}<code class="scan-code">{{ finding.code }}</code>{% endif %}
                     </li>
                     {% endfor %}

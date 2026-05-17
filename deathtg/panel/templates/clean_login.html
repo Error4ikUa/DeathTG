@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ lang or 'en' }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DeathTG Login</title>
+    <title>{{ tr('login.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
 </head>
 <body>
@@ -11,15 +11,15 @@
 <main class="auth">
     <section class="card auth-card">
         <div class="mark big">DTG</div>
-        <h1>DeathTG Control</h1>
-        <p>Sign in to the local control panel.</p>
+        <h1>{{ tr('login.heading') }}</h1>
+        <p>{{ tr('login.intro') }}</p>
         {% if error %}<div class="toast bad">{{ error }}</div>{% endif %}
         <form method="post" action="/login" class="stack">
-            <label>Panel password</label>
-            <input type="text" name="key" placeholder="Password set during setup" required autofocus>
-            <button type="submit">Enter</button>
+            <label>{{ tr('login.password_label') }}</label>
+            <input type="text" name="key" placeholder="{{ tr('login.password_placeholder') }}" required autofocus>
+            <button type="submit">{{ tr('login.submit') }}</button>
         </form>
-        <small>This is the panel password, not your Telegram password.</small>
+        <small>{{ tr('login.note') }}</small>
     </section>
 </main>
 <script src="/static/matrix.js"></script>

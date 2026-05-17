@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ lang or 'en' }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ module.name }} &middot; DeathTG Module</title>
+    <title>{{ module.name }} &middot; {{ tr('module.details') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
     <link rel="stylesheet" href="/static/clean_patch.css">
     <link rel="stylesheet" href="/static/accent_fix.css">
@@ -16,15 +16,15 @@
     {% if profile.avatar %}<img src="{{ profile.avatar }}" alt="avatar">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}
 </button>
 <aside class="mini-menu" id="drawer">
-    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>Module</span></div></div>
+    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>{{ tr('nav.modules') }}</span></div></div>
     <nav>
-        <a href="/">News</a>
-        <a href="/profile">Profile</a>
-        <a href="/activity">Activity</a>
-        <a class="active" href="/browser#installedPane">Modules</a>
-        <a href="/scanner">Scanner</a>
+        <a href="/">{{ tr('nav.news') }}</a>
+        <a href="/profile">{{ tr('nav.profile') }}</a>
+        <a href="/activity">{{ tr('nav.activity') }}</a>
+        <a class="active" href="/browser#installedPane">{{ tr('nav.modules') }}</a>
+        <a href="/scanner">{{ tr('nav.scanner') }}</a>
     </nav>
-    <a class="logout" href="/logout">Logout</a>
+    <a class="logout" href="/logout">{{ tr('nav.logout') }}</a>
 </aside>
 <div class="overlay" id="drawerBackdrop"></div>
 
@@ -32,18 +32,18 @@
     <section class="module-detail-hero card {% if module.image %}has-bg{% endif %}" {% if module.image %}style="--module-bg:url('{{ module.image }}')"{% endif %}>
         <div class="module-card-glow"></div>
         <div class="detail-copy">
-            <p class="eyebrow">Module details</p>
+            <p class="eyebrow">{{ tr('module.details') }}</p>
             <h1>{{ module.name }}</h1>
             <p>{{ module.description }}</p>
             <div class="detail-badges">
-                {% if module.protected %}<span class="lock-pill">core protected</span>{% elif module.repo %}<span class="lock-pill external">repository</span>{% else %}<span class="lock-pill external">external</span>{% endif %}
-                {% if module.meta.get('verified') %}<span class="verified-pill">verified</span>{% endif %}
+                {% if module.protected %}<span class="lock-pill">{{ tr('browser.protected') }}</span>{% elif module.repo %}<span class="lock-pill external">{{ tr('module.repository') }}</span>{% else %}<span class="lock-pill external">{{ tr('module.external') }}</span>{% endif %}
+                {% if module.meta.get('verified') %}<span class="verified-pill">{{ tr('browser.verified') }}</span>{% endif %}
                 {% if module.meta.get('version') %}<span class="lock-pill">v{{ module.meta.get('version') }}</span>{% endif %}
                 {% if module.scopes %}<span class="lock-pill">{{ module.scopes|join(', ') }}</span>{% endif %}
             </div>
         </div>
         <div class="detail-actions">
-            <a class="btn ghost" href="/browser{% if not module.repo %}#installedPane{% endif %}">Back to modules</a>
+            <a class="btn ghost" href="/browser{% if not module.repo %}#installedPane{% endif %}">{{ tr('module.back') }}</a>
             {% if module.install_link %}
             <form method="post" action="/modules/download">
                 <input type="hidden" name="link" value="{{ module.install_link }}">
@@ -52,45 +52,45 @@
                 <input type="hidden" name="author" value="{{ module.hikka_meta.get('developer') or module.meta.get('author') or 'DTG' }}">
                 <input type="hidden" name="version" value="{{ module.meta.get('version') or 'latest' }}">
                 <input type="hidden" name="return_to" value="browser">
-                <button type="submit">Install</button>
+                <button type="submit">{{ tr('browser.install') }}</button>
             </form>
             {% elif not module.protected %}
-            <form method="post" action="/modules/{{ module.name }}/update"><input type="hidden" name="return_to" value="installed_tab"><button type="submit">Update</button></form>
+            <form method="post" action="/modules/{{ module.name }}/update"><input type="hidden" name="return_to" value="installed_tab"><button type="submit">{{ tr('browser.update') }}</button></form>
             {% endif %}
         </div>
     </section>
 
     <section class="module-stats-strip">
-        <article class="mini-stat"><span>Commands</span><b>{{ module.commands|length }}</b></article>
-        <article class="mini-stat"><span>Watchers</span><b>{{ module.handler_counts.watchers }}</b></article>
-        <article class="mini-stat"><span>Callbacks</span><b>{{ module.handler_counts.callbacks }}</b></article>
-        <article class="mini-stat"><span>Config</span><b>{{ module.config_values|length }}</b></article>
+        <article class="mini-stat"><span>{{ tr('module.commands') }}</span><b>{{ module.commands|length }}</b></article>
+        <article class="mini-stat"><span>{{ tr('module.watchers') }}</span><b>{{ module.handler_counts.watchers }}</b></article>
+        <article class="mini-stat"><span>{{ tr('module.callbacks') }}</span><b>{{ module.handler_counts.callbacks }}</b></article>
+        <article class="mini-stat"><span>{{ tr('module.config') }}</span><b>{{ module.config_values|length }}</b></article>
     </section>
 
     <section class="detail-grid">
         <article class="card profile-card">
-            <p class="eyebrow">Commands</p>
-            <h2>Available commands</h2>
+            <p class="eyebrow">{{ tr('module.commands') }}</p>
+            <h2>{{ tr('module.available_commands') }}</h2>
             <div class="module-command-cloud command-list">
                 {% for cmd in module.commands %}
                 <span><b>.{{ cmd.name }}</b>{% if cmd.description %}<em>{{ cmd.description }}</em>{% endif %}</span>
                 {% endfor %}
-                {% if not module.commands %}<span>No public commands registered.</span>{% endif %}
+                {% if not module.commands %}<span>{{ tr('module.no_public_commands') }}</span>{% endif %}
             </div>
         </article>
         <article class="card profile-card">
-            <p class="eyebrow">Passport</p>
-            <h2>Source info</h2>
+            <p class="eyebrow">{{ tr('module.passport') }}</p>
+            <h2>{{ tr('module.source_info') }}</h2>
             <div class="meta-list">
-                <p><b>Author</b><span>{{ module.hikka_meta.get('developer') or module.meta.get('author') or 'DeathTG' }}</span></p>
-                <p><b>Version</b><span>{{ module.meta.get('version') or 'local' }}</span></p>
-                <p><b>Requires</b><span>{{ module.requires|join(', ') if module.requires else 'none' }}</span></p>
-                <p><b>Source</b><span>{% if module.meta.get('source_url') or module.meta.get('source_link') %}<a href="{{ module.meta.get('source_url') or module.meta.get('source_link') }}" target="_blank" rel="noreferrer">Open source</a>{% else %}local/core{% endif %}</span></p>
-                <p><b>Location</b><span>{{ module.path or 'built-in module' }}</span></p>
+                <p><b>{{ tr('module.author') }}</b><span>{{ module.hikka_meta.get('developer') or module.meta.get('author') or 'DeathTG' }}</span></p>
+                <p><b>{{ tr('module.version') }}</b><span>{{ module.meta.get('version') or tr('module.local') }}</span></p>
+                <p><b>{{ tr('module.requires') }}</b><span>{{ module.requires|join(', ') if module.requires else tr('module.none') }}</span></p>
+                <p><b>{{ tr('module.source') }}</b><span>{% if module.meta.get('source_url') or module.meta.get('source_link') %}<a href="{{ module.meta.get('source_url') or module.meta.get('source_link') }}" target="_blank" rel="noreferrer">{{ tr('module.open_source') }}</a>{% else %}{{ tr('module.local_core') }}{% endif %}</span></p>
+                <p><b>{{ tr('module.location') }}</b><span>{{ module.path or tr('module.built_in') }}</span></p>
             </div>
             {% if module.requires and not module.repo %}
             <form class="module-inline-form" method="post" action="/modules/{{ module.name }}/requirements">
-                <button class="ghost" type="submit">Install requirements</button>
+                <button class="ghost" type="submit">{{ tr('module.install_requirements') }}</button>
             </form>
             {% endif %}
         </article>
@@ -98,8 +98,8 @@
 
     {% if module.config_values %}
     <section class="card profile-card compact-section">
-        <p class="eyebrow">Config</p>
-        <h2>Module settings</h2>
+        <p class="eyebrow">{{ tr('module.config') }}</p>
+        <h2>{{ tr('module.settings') }}</h2>
         <form class="config-form" method="post" action="/modules/{{ module.name }}/config">
             <input type="hidden" name="return_to" value="module">
             <div class="config-grid">
@@ -108,9 +108,9 @@
                 <b>{{ item.name }}</b>
                 {% if item.type == "Boolean" or item.type == "bool" %}
                 <input type="hidden" name="{{ item.name }}" value="false">
-                <span class="switch-row"><input type="checkbox" name="{{ item.name }}" value="true" {% if item.value %}checked{% endif %}> Enabled</span>
+                <span class="switch-row"><input type="checkbox" name="{{ item.name }}" value="true" {% if item.value %}checked{% endif %}> {{ tr('module.enabled') }}</span>
                 {% elif item.secret %}
-                <input type="password" name="{{ item.name }}" placeholder="leave empty to keep secret">
+                <input type="password" name="{{ item.name }}" placeholder="{{ tr('module.keep_secret') }}">
                 {% else %}
                 <input type="text" name="{{ item.name }}" value="{{ item.value }}">
                 {% endif %}
@@ -118,43 +118,43 @@
             </label>
             {% endfor %}
             </div>
-            <div class="config-actions"><button class="ghost" type="submit">Save config</button></div>
+            <div class="config-actions"><button class="ghost" type="submit">{{ tr('module.save_config') }}</button></div>
         </form>
     </section>
     {% endif %}
 
     <section class="card profile-card compact-section">
-        <p class="eyebrow">Security</p>
-        <h2>Scanner verdict</h2>
+        <p class="eyebrow">{{ tr('module.security') }}</p>
+        <h2>{{ tr('module.scanner_verdict') }}</h2>
         <div class="security-passport">
             <span class="scan-pill">{{ module.security.verdict }}</span>
-            <span>Score: <b>{{ module.security.score }}</b></span>
-            {% if module.security.override %}<span class="scan-pill warn">manual override</span>{% endif %}
+            <span>{{ tr('module.score') }}: <b>{{ module.security.score }}</b></span>
+            {% if module.security.override %}<span class="scan-pill warn">{{ tr('module.manual_override') }}</span>{% endif %}
         </div>
         {% if module.security.findings %}
         <div class="finding-list">
             {% for finding in module.security.findings %}
             <div class="finding-line">
-                <b>Line {{ finding.line }} &middot; {{ finding.reason }}</b>
+                <b>{{ tr('browser.line_reason', line=finding.line, reason=finding.reason) }}</b>
                 {% if finding.code %}<code>{{ finding.code }}</code>{% endif %}
             </div>
             {% endfor %}
         </div>
         {% else %}
-        <p class="module-note">No scanner findings stored for this module.</p>
+        <p class="module-note">{{ tr('module.no_findings') }}</p>
         {% endif %}
     </section>
 
     <section class="card profile-card compact-section">
-        <p class="eyebrow">Preview</p>
-        <h2>Source snapshot</h2>
+        <p class="eyebrow">{{ tr('module.preview') }}</p>
+        <h2>{{ tr('module.source_snapshot') }}</h2>
         {% if module.source_preview %}
         <details class="source-accordion">
-            <summary>Open source snapshot</summary>
+            <summary>{{ tr('module.open_snapshot') }}</summary>
             <pre class="source-preview"><code>{{ module.source_preview }}</code></pre>
         </details>
         {% else %}
-        <p class="module-note">Source preview is unavailable for this module.</p>
+        <p class="module-note">{{ tr('module.no_preview') }}</p>
         {% endif %}
     </section>
 </main>

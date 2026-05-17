@@ -53,6 +53,7 @@ from deathtg.panel_access import (
     revoke_device_session,
     touch_device_session,
 )
+from deathtg.i18n import translate
 from deathtg.registry import PROTECTED_MODULES
 from deathtg.security import is_trusted_module_link, scan_module_source
 from deathtg.server_bootstrap import (
@@ -93,6 +94,16 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/images", StaticFiles(directory=IMAGES_DIR), name="images")
 app.include_router(actions_router)
 app.include_router(reconnect_router)
+
+
+def _request_lang(request: Request) -> str:
+    session_lang = str(request.session.get("lang") or "").lower()
+    if session_lang in {"en", "ru"}:
+        return session_lang
+    header = (request.headers.get("accept-language") or "").lower()
+    if header.startswith("ru") or header.startswith("uk") or ",ru" in header or ",uk" in header:
+        return "ru"
+    return "en"
 
 
 @app.on_event("startup")
@@ -172,8 +183,10 @@ async def _base_context(request: Request) -> dict:
     profile = await profile_info()
     st = await status(profile)
     session_id = str(request.session.get("device_session_id") or "")
+    lang = str(profile.get("language") or _request_lang(request) or "en")
     return {
         "request": request,
+        "lang": lang,
         "profile": profile,
         "status": st,
         "startup": startup_status(),
@@ -210,8 +223,10 @@ def _request_origin_url(request: Request) -> str:
 
 
 def _setup_context(request: Request, step: str, *, error: str | None = None, message: str | None = None, **extra) -> dict:
+    lang = _request_lang(request)
     return {
         "request": request,
+        "lang": lang,
         "step": step,
         "error": error,
         "message": message,
@@ -424,7 +439,7 @@ async def login_page(request: Request):
         return RedirectResponse("/setup", status_code=303)
     return templates.TemplateResponse(
         "clean_login.html",
-        {"request": request, "error": request.query_params.get("error")},
+        {"request": request, "error": request.query_params.get("error"), "lang": _request_lang(request)},
     )
 
 
@@ -461,13 +476,21 @@ async def login(request: Request, key: str = Form(...)):
     if _is_rate_limited("login", request):
         return templates.TemplateResponse(
             "clean_login.html",
-            {"request": request, "error": "Too many login attempts. Wait a few minutes and try again."},
+            {
+                "request": request,
+                "error": "Too many login attempts. Wait a few minutes and try again.",
+                "lang": _request_lang(request),
+            },
             status_code=429,
         )
     if panel_remote_access_ready() and not _is_local_request(request):
         return templates.TemplateResponse(
             "clean_login.html",
-            {"request": request, "error": "Remote password login is disabled. Use a secure device link from Telegram or from an already trusted device."},
+            {
+                "request": request,
+                "error": "Remote password login is disabled. Use a secure device link from Telegram or from an already trusted device.",
+                "lang": _request_lang(request),
+            },
             status_code=403,
         )
     if secrets.compare_digest(key, panel_password()):
@@ -484,7 +507,10 @@ async def login(request: Request, key: str = Form(...)):
         _clear_auth_failures("login", request)
         return RedirectResponse("/", status_code=303)
     _mark_auth_failure("login", request)
-    return templates.TemplateResponse("clean_login.html", {"request": request, "error": "Invalid panel password"})
+    return templates.TemplateResponse(
+        "clean_login.html",
+        {"request": request, "error": "Invalid panel password", "lang": _request_lang(request)},
+    )
 
 
 @app.get("/healthz")

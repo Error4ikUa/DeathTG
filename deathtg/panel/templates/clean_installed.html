@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ lang or 'en' }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DeathTG Installed</title>
+    <title>{{ tr('installed.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
     <link rel="stylesheet" href="/static/clean_patch.css">
     <link rel="stylesheet" href="/static/accent_fix.css">
@@ -14,21 +14,21 @@
 <canvas id="matrix"></canvas>
 <button class="menu-btn" id="menuToggle">{% if profile.avatar %}<img src="{{ profile.avatar }}" alt="avatar">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}</button>
 <aside class="mini-menu" id="drawer">
-    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>Installed</span></div></div>
-    <nav><a href="/">News</a><a href="/profile">Profile</a><a href="/activity">Activity</a><a class="active" href="/browser">Modules</a><a href="/scanner">Scanner</a></nav>
-    <a class="logout" href="/logout">Logout</a>
+    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>{{ tr('installed.page_label') }}</span></div></div>
+    <nav><a href="/">{{ tr('nav.news') }}</a><a href="/profile">{{ tr('nav.profile') }}</a><a href="/activity">{{ tr('nav.activity') }}</a><a class="active" href="/browser">{{ tr('nav.modules') }}</a><a href="/scanner">{{ tr('nav.scanner') }}</a></nav>
+    <a class="logout" href="/logout">{{ tr('nav.logout') }}</a>
 </aside>
 <div class="overlay" id="drawerBackdrop"></div>
 <main class="page modules-page">
     <section class="hero card">
         <div>
-            <p class="eyebrow">Installed</p>
-            <h1>Installed Modules</h1>
-            <p>Click a module card to inspect metadata, commands, source status and actions.</p>
+            <p class="eyebrow">{{ tr('installed.hero_eyebrow') }}</p>
+            <h1>{{ tr('installed.hero_title') }}</h1>
+            <p>{{ tr('installed.hero_desc') }}</p>
         </div>
         <div class="actions">
-            <form method="post" action="/modules/update-all"><input type="hidden" name="return_to" value="installed"><button class="btn ghost" type="submit">Update all</button></form>
-            <a class="btn ghost" href="/browser">Module center</a>
+            <form method="post" action="/modules/update-all"><input type="hidden" name="return_to" value="installed"><button class="btn ghost" type="submit">{{ tr('browser.update_all') }}</button></form>
+            <a class="btn ghost" href="/browser">{{ tr('installed.module_center') }}</a>
         </div>
     </section>
     {% if message %}<div class="toast ok">{{ message }}</div>{% endif %}
@@ -41,27 +41,27 @@
             <a class="module-card-link" href="/modules/{{ module }}" aria-label="Open {{ module }} details"></a>
             <div class="module-card-glow"></div>
             <div class="module-head">
-                <h2>{% if module in protected %}Core{% else %}Module{% endif %} {{ module }}</h2>
-                {% if card.get('verified') %}<span class="verified-pill">verified</span>{% endif %}
+                <h2>{% if module in protected %}{{ tr('installed.core_module', module=module) }}{% else %}{{ tr('installed.module', module=module) }}{% endif %}</h2>
+                {% if card.get('verified') %}<span class="verified-pill">{{ tr('browser.verified') }}</span>{% endif %}
             </div>
-            <p class="module-note">{{ card.get('description') or meta.get('description') or (commands|length ~ ' command(s) registered') }}</p>
+            <p class="module-note">{{ card.get('description') or meta.get('description') or tr('installed.commands_registered', count=commands|length) }}</p>
             <div class="module-command-cloud">
                 {% for cmd in commands[:8] %}<code>.{{ cmd.name }}</code>{% endfor %}
                 {% if commands|length > 8 %}<code>+{{ commands|length - 8 }}</code>{% endif %}
             </div>
             <div class="actions module-actions">
-                <a class="small ghost" href="/modules/{{ module }}">Info</a>
+                <a class="small ghost" href="/modules/{{ module }}">{{ tr('browser.info') }}</a>
                 {% if module not in protected %}
-                <form method="post" action="/modules/{{ module }}/update"><input type="hidden" name="return_to" value="installed"><button class="small ghost" type="submit">Update</button></form>
-                <form method="post" action="/modules/{{ module }}/unload"><input type="hidden" name="return_to" value="installed"><button class="small ghost" type="submit">Unload</button></form>
-                <form method="post" action="/modules/{{ module }}/delete"><input type="hidden" name="return_to" value="installed"><button class="small danger" type="submit">Delete</button></form>
+                <form method="post" action="/modules/{{ module }}/update"><input type="hidden" name="return_to" value="installed"><button class="small ghost" type="submit">{{ tr('browser.update') }}</button></form>
+                <form method="post" action="/modules/{{ module }}/unload"><input type="hidden" name="return_to" value="installed"><button class="small ghost" type="submit">{{ tr('browser.unload') }}</button></form>
+                <form method="post" action="/modules/{{ module }}/delete"><input type="hidden" name="return_to" value="installed"><button class="small danger" type="submit">{{ tr('browser.delete') }}</button></form>
                 {% else %}
-                <span class="small lock-pill">protected</span>
+                <span class="small lock-pill">{{ tr('browser.protected') }}</span>
                 {% endif %}
             </div>
         </article>
         {% endfor %}
-        {% if not grouped %}<article class="module-empty"><h2>No modules loaded</h2><p>Install modules from Module Center.</p></article>{% endif %}
+        {% if not grouped %}<article class="module-empty"><h2>{{ tr('installed.no_modules') }}</h2><p>{{ tr('installed.no_modules_desc') }}</p></article>{% endif %}
     </section>
 </main>
 <script src="/static/matrix.js"></script>

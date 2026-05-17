@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ lang or 'en' }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DeathTG Activity</title>
+    <title>{{ tr('activity.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
     <link rel="stylesheet" href="/static/clean_patch.css">
     <link rel="stylesheet" href="/static/accent_fix.css">
@@ -31,35 +31,35 @@
     {% if profile.avatar %}<img src="{{ profile.avatar }}">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}
 </button>
 <aside class="mini-menu" id="drawer">
-    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>Activity</span></div></div>
-    <nav><a href="/">News</a><a href="/profile">Profile</a><a class="active" href="/activity">Activity</a><a href="/browser">Modules</a><a href="/scanner">Scanner</a></nav>
-    <a class="logout" href="/logout">Logout</a>
+    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>{{ tr('activity.page_label') }}</span></div></div>
+    <nav><a href="/">{{ tr('nav.news') }}</a><a href="/profile">{{ tr('nav.profile') }}</a><a class="active" href="/activity">{{ tr('nav.activity') }}</a><a href="/browser">{{ tr('nav.modules') }}</a><a href="/scanner">{{ tr('nav.scanner') }}</a></nav>
+    <a class="logout" href="/logout">{{ tr('nav.logout') }}</a>
 </aside>
 <div class="overlay" id="drawerBackdrop"></div>
 
 <main class="page">
     <section class="hero card">
         <div>
-            <p class="eyebrow">Activity</p>
-            <h1>Usage</h1>
-            <p>Daily unique modules, command totals, and recent module momentum.</p>
+            <p class="eyebrow">{{ tr('activity.eyebrow') }}</p>
+            <h1>{{ tr('activity.hero_title') }}</h1>
+            <p>{{ tr('activity.hero_desc') }}</p>
         </div>
-        <a class="btn ghost" href="/browser">Modules</a>
+        <a class="btn ghost" href="/browser">{{ tr('nav.modules') }}</a>
     </section>
 
     <section class="stats">
-        <article class="stat card"><span>Total uses</span><b>{{ status.uses }}</b></article>
-        <article class="stat card"><span>Commands</span><b>{{ status.commands_count }}</b></article>
-        <article class="stat card"><span>Active days</span><b>{{ status.days }}</b></article>
-        <article class="stat card"><span>Top module</span><b>{{ (top_modules[0].module if top_modules else 'None') }}</b></article>
-        <article class="stat card"><span>Loaded modules</span><b>{{ status.modules_count }}</b></article>
+        <article class="stat card"><span>{{ tr('activity.total_uses') }}</span><b>{{ status.uses }}</b></article>
+        <article class="stat card"><span>{{ tr('home.commands') }}</span><b>{{ status.commands_count }}</b></article>
+        <article class="stat card"><span>{{ tr('activity.active_days') }}</span><b>{{ status.days }}</b></article>
+        <article class="stat card"><span>{{ tr('activity.top_module') }}</span><b>{{ (top_modules[0].module if top_modules else tr('activity.none')) }}</b></article>
+        <article class="stat card"><span>{{ tr('activity.loaded_modules') }}</span><b>{{ status.modules_count }}</b></article>
     </section>
 
     <section class="card chart-card">
         <div class="section-line">
             <div>
-                <p class="eyebrow">Chart</p>
-                <h2 style="margin:0">Daily modules</h2>
+                <p class="eyebrow">{{ tr('activity.chart') }}</p>
+                <h2 style="margin:0">{{ tr('activity.daily_modules') }}</h2>
             </div>
         </div>
         <div id="lineChart" class="line-chart"></div>
@@ -72,8 +72,8 @@
 
     <section class="activity-grid">
         <article class="card panel">
-            <p class="eyebrow">Top modules</p>
-            <h2 style="margin:0 0 12px">Ranked usage</h2>
+            <p class="eyebrow">{{ tr('activity.top_modules') }}</p>
+            <h2 style="margin:0 0 12px">{{ tr('activity.ranked_usage') }}</h2>
             {% set max_count = (top_modules[0].count if top_modules else 1) %}
             <div class="rank-list">
                 {% for item in top_modules %}
@@ -86,23 +86,23 @@
                 </div>
                 {% endfor %}
                 {% if not top_modules %}
-                <div class="mini-empty">No activity yet.</div>
+                <div class="mini-empty">{{ tr('activity.no_activity') }}</div>
                 {% endif %}
             </div>
         </article>
 
         <article class="card panel">
-            <p class="eyebrow">Recent days</p>
-            <h2 style="margin:0 0 12px">Modules per day</h2>
+            <p class="eyebrow">{{ tr('activity.recent_days') }}</p>
+            <h2 style="margin:0 0 12px">{{ tr('activity.modules_per_day') }}</h2>
             <div class="recent-list">
                 {% for point in activity_points[-7:]|reverse %}
                 <div class="recent-item">
                     <b>{{ point.day }}</b>
-                    <p>{{ point.count }} unique modules{% if point.modules %} &middot; {{ point.modules|join(', ') }}{% endif %}</p>
+                    <p>{{ tr('activity.unique_modules', count=point.count) }}{% if point.modules %} &middot; {{ point.modules|join(', ') }}{% endif %}</p>
                 </div>
                 {% endfor %}
                 {% if not activity_points %}
-                <div class="mini-empty">Run a few commands to see recent activity here.</div>
+                <div class="mini-empty">{{ tr('activity.run_commands') }}</div>
                 {% endif %}
             </div>
         </article>
