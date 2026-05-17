@@ -15,7 +15,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from deathtg.assets import IMAGES_DIR, module_image_path
 from deathtg.metrics import init_metrics
-from deathtg.panel.auth_flow import begin_login, confirm_2fa, confirm_code, finish_login, write_env
+from deathtg.panel.auth_flow import begin_login, confirm_2fa, confirm_code, finish_login, login_hint, resend_code, write_env
 from deathtg.panel.clean_actions import load_pending_install, router as actions_router
 from deathtg.panel.clean_core import (
     STATIC_DIR,
@@ -283,7 +283,15 @@ async def setup_save(
             _clear_auth_failures("setup_save", request)
             return RedirectResponse("/setup/done", status_code=303)
         _clear_auth_failures("setup_save", request)
-        return templates.TemplateResponse("setup.html", {"request": request, "step": "pin", "error": None})
+        return templates.TemplateResponse(
+            "setup.html",
+            {
+                "request": request,
+                "step": "pin",
+                "error": None,
+                **login_hint(flow_id),
+            },
+        )
     except Exception as exc:
         _mark_auth_failure("setup_save", request)
         return templates.TemplateResponse(
@@ -326,7 +334,12 @@ async def setup_pin(request: Request, pin: str = Form(...)):
         _mark_auth_failure("setup_pin", request)
         return templates.TemplateResponse(
             "setup.html",
-            {"request": request, "step": "pin", "error": f"{type(exc).__name__}: {exc}"},
+            {
+                "request": request,
+                "step": "pin",
+                "error": f"{type(exc).__name__}: {exc}",
+                **login_hint(flow_id),
+            },
         )
 
 
@@ -362,6 +375,35 @@ async def setup_secret(request: Request, secret_value: str = Form(...)):
         return templates.TemplateResponse(
             "setup.html",
             {"request": request, "step": "secret", "error": f"{type(exc).__name__}: {exc}"},
+        )
+
+
+@app.post("/setup/resend")
+async def setup_resend(request: Request):
+    flow_id = request.session.get("setup_flow_id")
+    if not flow_id:
+        return RedirectResponse("/setup", status_code=303)
+    try:
+        hint = await resend_code(flow_id)
+        return templates.TemplateResponse(
+            "setup.html",
+            {
+                "request": request,
+                "step": "pin",
+                "error": None,
+                "message": "A new Telegram login code was requested.",
+                **hint,
+            },
+        )
+    except Exception as exc:
+        return templates.TemplateResponse(
+            "setup.html",
+            {
+                "request": request,
+                "step": "pin",
+                "error": f"{type(exc).__name__}: {exc}",
+                **login_hint(flow_id),
+            },
         )
 
 
