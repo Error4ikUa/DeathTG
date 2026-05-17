@@ -293,6 +293,22 @@ def ensure_wsl_public_access(*, request_elevation: bool = True) -> dict[str, str
     }
 
 
+def _probe_url_ok(url: str, timeout: float = 2.0) -> bool:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            return int(getattr(response, "status", 0) or 0) == 200
+    except Exception:
+        return False
+
+
+def _wsl_remote_probe_ok() -> bool:
+    host = _wsl_windows_host_ip()
+    if not host:
+        return False
+    port = _panel_port()
+    return _probe_url_ok(f"http://{host}:{port}/healthz", timeout=2.0)
+
+
 def effective_panel_bind_host() -> str:
     configured = _env("PANEL_HOST")
     if configured:
@@ -304,8 +320,9 @@ def effective_panel_bind_host() -> str:
 
 def visible_panel_host() -> str:
     host = _env("PANEL_PUBLIC_HOST") or effective_panel_bind_host()
-    if running_in_wsl() and not (_env("PANEL_PUBLIC_URL") or _env("PANEL_PUBLIC_HOST")) and not _wsl_portproxy_ready():
-        return "127.0.0.1"
+    if running_in_wsl() and not (_env("PANEL_PUBLIC_URL") or _env("PANEL_PUBLIC_HOST")):
+        if not (_wsl_portproxy_ready() and _wsl_remote_probe_ok()):
+            return "127.0.0.1"
     if host in {"0.0.0.0", "::"}:
         lan_ip = local_network_ip()
         return lan_ip or "127.0.0.1"
@@ -383,8 +400,11 @@ def panel_host_kind() -> str:
 
 
 def panel_remote_access_ready() -> bool:
-    if running_in_wsl() and not (_env("PANEL_PUBLIC_URL") or _env("PANEL_PUBLIC_HOST")) and not _wsl_portproxy_ready():
-        return False
+    if running_in_wsl() and not (_env("PANEL_PUBLIC_URL") or _env("PANEL_PUBLIC_HOST")):
+        if not _wsl_portproxy_ready():
+            return False
+        if not _wsl_remote_probe_ok():
+            return False
     return panel_host_kind() == "remote"
 
 
