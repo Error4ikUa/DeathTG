@@ -28,6 +28,14 @@ def _set_login_pending(value: bool) -> None:
     update_env_values({"LOGIN_PENDING": "1" if value else "0"})
 
 
+def _cleanup_session_files(session_name: str) -> None:
+    for path in ROOT_DIR.glob(f"{session_name}.session*"):
+        try:
+            path.unlink()
+        except Exception:
+            pass
+
+
 def write_env(api_id: int, api_hash: str, session_name: str, phone: str, panel_key: str, panel_secret: str, bot_token: str = "") -> None:
     update_env_values(
         {
@@ -44,11 +52,22 @@ def write_env(api_id: int, api_hash: str, session_name: str, phone: str, panel_k
     )
 
 
-async def begin_login(flow_id: str, api_id: int, api_hash: str, phone: str, session_name: str) -> None:
+async def begin_login(flow_id: str, api_id: int, api_hash: str, phone: str, session_name: str) -> str:
     _set_login_pending(True)
+    _cleanup_session_files(session_name)
     session_path = str(ROOT_DIR / session_name)
     client = TelegramClient(session_path, api_id, api_hash)
     await client.connect()
+    if await client.is_user_authorized():
+        PENDING[flow_id] = PendingLogin(
+            client=client,
+            phone=phone,
+            api_id=api_id,
+            api_hash=api_hash,
+            session_name=session_name,
+            phone_code_hash=None,
+        )
+        return "authorized"
     sent = await client.send_code_request(phone)
     PENDING[flow_id] = PendingLogin(
         client=client,
@@ -58,6 +77,7 @@ async def begin_login(flow_id: str, api_id: int, api_hash: str, phone: str, sess
         session_name=session_name,
         phone_code_hash=sent.phone_code_hash,
     )
+    return "code"
 
 
 async def confirm_code(flow_id: str, code: str) -> str:
