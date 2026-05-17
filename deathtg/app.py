@@ -62,6 +62,7 @@ class DeathTG:
         self._panel_actions_task: asyncio.Task | None = None
         self._update_watch_task: asyncio.Task | None = None
         self._integrity_watch_task: asyncio.Task | None = None
+        self._bootstrap_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         print(CONSOLE_BANNER)
@@ -73,28 +74,25 @@ class DeathTG:
             self.config.owner_id = me.id
 
         self._write_runtime_profile(me)
-        try:
-            await run_startup_sync(self.client)
-        except Exception:
-            log.exception("Startup sync failed")
-        await self.inline.start()
-        await self.community_bot.start(int(self.config.owner_id or 0))
-        await self.inline.ensure_owner_onboarding()
-
         await self.loader.load_builtin("deathtg.modules", CORE_MODULES)
         await self.loader.load_all_local(force_modules=self._force_modules())
+
+        self.client.add_event_handler(self._dispatch, events.NewMessage())
+        self.client.add_event_handler(self._dispatch_watchers, events.NewMessage())
 
         self._panel_action_pos = 0
         self._panel_actions_task = asyncio.create_task(self._panel_actions_loop())
         self._update_watch_task = asyncio.create_task(self._update_watch_loop())
         self._integrity_watch_task = asyncio.create_task(self._integrity_watch_loop())
-
-        self.client.add_event_handler(self._dispatch, events.NewMessage())
-        self.client.add_event_handler(self._dispatch_watchers, events.NewMessage())
+        self._bootstrap_task = asyncio.create_task(self._bootstrap_services())
         log.info("DeathTG started as @%s", getattr(me, "username", None) or me.id)
         try:
             await self.client.run_until_disconnected()
         finally:
+            if self._bootstrap_task:
+                self._bootstrap_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._bootstrap_task
             if self._panel_actions_task:
                 self._panel_actions_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -109,6 +107,29 @@ class DeathTG:
                     await self._integrity_watch_task
             await self.community_bot.stop()
             await self.inline.stop()
+
+    async def _bootstrap_services(self) -> None:
+        try:
+            await asyncio.wait_for(run_startup_sync(self.client), timeout=180)
+        except asyncio.TimeoutError:
+            log.error("Startup sync timed out after 180 seconds")
+        except Exception:
+            log.exception("Startup sync failed")
+
+        try:
+            await self.inline.start()
+        except Exception:
+            log.exception("Inline manager failed to start")
+
+        try:
+            await self.community_bot.start(int(self.config.owner_id or 0))
+        except Exception:
+            log.exception("Community bot failed to start")
+
+        try:
+            await self.inline.ensure_owner_onboarding()
+        except Exception:
+            log.exception("Owner onboarding failed")
 
     def _write_runtime_profile(self, me) -> None:
         RUNTIME_DIR.mkdir(parents=True, exist_ok=True)

@@ -128,7 +128,7 @@ async def harden_responses(request: Request, call_next):
 
 def _auth_guard(request: Request):
     if not has_env():
-        return RedirectResponse("/setup", status_code=303)
+        return RedirectResponse(_setup_path_with_token(), status_code=303)
     if not request.session.get("auth"):
         return RedirectResponse("/login", status_code=303)
     session_id = str(request.session.get("device_session_id") or "")
@@ -177,6 +177,13 @@ def _setup_allowed(request: Request, setup_token: str = "") -> bool:
     if _is_local_request(request):
         return True
     return valid_setup_token(setup_token or request.query_params.get("setup_token", ""))
+
+
+def _setup_path_with_token() -> str:
+    token = current_setup_token()
+    if token:
+        return f"/setup?setup_token={token}"
+    return "/setup"
 
 
 async def _base_context(request: Request) -> dict:
@@ -373,7 +380,7 @@ async def setup_qr_status(request: Request):
 async def setup_2fa_page(request: Request):
     flow_id = request.session.get("setup_flow_id")
     if not flow_id:
-        return RedirectResponse("/setup", status_code=303)
+        return RedirectResponse(_setup_path_with_token(), status_code=303)
     return templates.TemplateResponse(
         "setup.html",
         _setup_context(request, "secret"),
@@ -384,7 +391,7 @@ async def setup_2fa_page(request: Request):
 async def setup_secret(request: Request, secret_value: str = Form(...)):
     flow_id = request.session.get("setup_flow_id")
     if not flow_id:
-        return RedirectResponse("/setup", status_code=303)
+        return RedirectResponse(_setup_path_with_token(), status_code=303)
     if _is_rate_limited("setup_secret", request):
         return templates.TemplateResponse(
             "setup.html",
@@ -419,7 +426,7 @@ async def setup_secret(request: Request, secret_value: str = Form(...)):
 async def setup_qr_refresh(request: Request):
     flow_id = request.session.get("setup_flow_id")
     if not flow_id:
-        return RedirectResponse("/setup", status_code=303)
+        return RedirectResponse(_setup_path_with_token(), status_code=303)
     try:
         info = await refresh_qr_login(flow_id)
         return templates.TemplateResponse(
@@ -436,7 +443,7 @@ async def setup_qr_refresh(request: Request):
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     if not has_env():
-        return RedirectResponse("/setup", status_code=303)
+        return RedirectResponse(_setup_path_with_token(), status_code=303)
     return templates.TemplateResponse(
         "clean_login.html",
         {"request": request, "error": request.query_params.get("error"), "lang": _request_lang(request)},
@@ -446,7 +453,7 @@ async def login_page(request: Request):
 @app.get("/grant/{token}")
 async def grant_login(request: Request, token: str):
     if not has_env():
-        return RedirectResponse("/setup", status_code=303)
+        return RedirectResponse(_setup_path_with_token(), status_code=303)
     if not PANEL_GRANT_TOKEN_RE.fullmatch(token or ""):
         return RedirectResponse("/login?error=Invalid+grant+token", status_code=303)
     try:
