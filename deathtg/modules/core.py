@@ -2,13 +2,23 @@ from __future__ import annotations
 
 import html
 from pathlib import Path
+import re
 
 from deathtg.command import command
-from deathtg.config import MODULES_DIR, ROOT_DIR
+from deathtg.config import MODULES_DIR, ROOT_DIR, RUNTIME_DIR
 from deathtg.loader import Module
 from deathtg.module_repo import fetch_repo_modules, find_repo_module, is_url, normalize_github_raw_url, trusted_repo_link
 from deathtg.permissions import parse_security
+from deathtg.profile_store import update_env_value
 from deathtg.registry import PROTECTED_MODULES
+from deathtg.startup_sync import (
+    BOT_TOKEN_RE,
+    check_runtime_integrity,
+    manual_bot_blueprint,
+    render_integrity_report,
+    render_manual_bot_guide,
+    run_startup_sync,
+)
 from deathtg.update_manager import apply_update
 
 
@@ -112,6 +122,48 @@ class CoreMod(Module):
             return
         await event.edit(f"<b>Panel password:</b> <code>{html.escape(key)}</code>", parse_mode="html")
 
+    @command("crebot1", description="Show or save inline bot token", usage=".crebot1 [token]", security="owner")
+    async def crebot1_cmd(self, event, args):
+        await self._crebot_flow(event, args, 1)
+
+    @command("crebot2", description="Show or save helper bot token", usage=".crebot2 [token]", security="owner")
+    async def crebot2_cmd(self, event, args):
+        await self._crebot_flow(event, args, 2)
+
+    @command("crebot3", description="Show or save community bot token", usage=".crebot3 [token]", security="owner")
+    async def crebot3_cmd(self, event, args):
+        await self._crebot_flow(event, args, 3)
+
+    @command("dtgcheck", description="Check DeathTG integrity", usage=".dtgcheck", security="owner")
+    async def dtgcheck_cmd(self, event, args):
+        await event.edit("<b>Checking DeathTG integrity...</b>", parse_mode="html")
+        status = await check_runtime_integrity(self.app.client, notify=False)
+        report = html.escape(render_integrity_report(status))
+        await event.edit(
+            "<b>DeathTG integrity</b>\n<pre>" + report[:3600] + "</pre>",
+            parse_mode="html",
+        )
+
+    @command("logs", description="Show recent DeathTG logs", usage=".logs [lines]", security="owner")
+    async def logs_cmd(self, event, args):
+        lines_to_show = 80
+        if args:
+            try:
+                lines_to_show = max(20, min(int(args[0]), 400))
+            except Exception:
+                lines_to_show = 80
+        log_path = RUNTIME_DIR / "deathtg.log"
+        if not log_path.exists():
+            await event.edit("<b>Log file is not created yet.</b>", parse_mode="html")
+            return
+        raw_lines = log_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        tail = "\n".join(raw_lines[-lines_to_show:]).strip() or "log is empty"
+        escaped = html.escape(tail)[-3600:]
+        await event.edit(
+            f"<b>DeathTG logs</b>\n<pre>{escaped}</pre>",
+            parse_mode="html",
+        )
+
     @command("tdgup", description="Update DeathTG using git pull", usage=".tdgup", aliases=("dtgup",), security="owner")
     async def tdgup_cmd(self, event, args):
         msg = await event.edit("<b>Updating DeathTG...</b>", parse_mode="html")
@@ -135,6 +187,32 @@ class CoreMod(Module):
         import asyncio
 
         return await asyncio.to_thread(apply_update)
+
+    async def _crebot_flow(self, event, args, slot: int) -> None:
+        me = await self.app.client.get_me()
+        owner_id = int(getattr(me, "id", 0) or 0)
+        blueprint = manual_bot_blueprint(owner_id, slot)
+        if not blueprint:
+            await event.edit("<b>Unknown bot slot.</b>", parse_mode="html")
+            return
+        if not args:
+            guide = html.escape(render_manual_bot_guide(owner_id, slot))
+            await event.edit(f"<pre>{guide}</pre>", parse_mode="html")
+            return
+        token = args[0].strip()
+        if not re.fullmatch(BOT_TOKEN_RE.pattern, token):
+            await event.edit("<b>Invalid bot token format.</b>", parse_mode="html")
+            return
+        update_env_value(blueprint["env_key"], token)
+        if blueprint["role"] == "community":
+            update_env_value("COMMUNITY_BOT_USERNAME", blueprint["username"])
+        await event.edit("<b>Token saved. Running DeathTG sync...</b>", parse_mode="html")
+        status = await run_startup_sync(self.app.client)
+        report = html.escape(render_integrity_report(status))
+        await event.edit(
+            "<b>Bot token saved.</b>\n<pre>" + report[:3400] + "</pre>",
+            parse_mode="html",
+        )
 
     @command("dlmod", description="Install module from DTG_Modules or raw URL", usage=".dlmod [module_name|raw_url]", security="owner")
     async def dlmod_cmd(self, event, args):

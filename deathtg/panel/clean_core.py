@@ -36,7 +36,15 @@ import aiohttp
 from dotenv import load_dotenv
 from fastapi.templating import Jinja2Templates
 
-from deathtg.assets import IMAGES_DIR, MODULE_IMAGES_DIR, local_module_image_path, module_image_path, resolve_module_entry, shared_module_image_path
+from deathtg.assets import (
+    IMAGES_DIR,
+    MODULE_IMAGES_DIR,
+    default_avatar_path,
+    local_module_image_path,
+    module_image_path,
+    resolve_module_entry,
+    shared_module_image_path,
+)
 from deathtg.config import MODULES_DIR, ROOT_DIR, RUNTIME_DIR, load_config
 from deathtg.i18n import jinja_translate
 from deathtg.loader import ModuleLoader
@@ -125,6 +133,13 @@ def avatar_url() -> str:
             except OSError:
                 stamp = 0
             return f"/static/user/{name}?t={stamp}"
+    fallback = default_avatar_path()
+    if fallback and fallback.exists():
+        try:
+            stamp = int(fallback.stat().st_mtime)
+        except OSError:
+            stamp = 0
+        return f"/static/default_avatar.png?t={stamp}"
     return ""
 
 

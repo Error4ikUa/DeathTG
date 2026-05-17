@@ -25,6 +25,7 @@ from deathtg.metrics import init_metrics, record_command
 from deathtg.permissions import SecurityManager
 from deathtg.registry import CommandRegistry, PROTECTED_MODULES
 from deathtg.startup_sync import run_startup_sync
+from deathtg.startup_sync import check_runtime_integrity
 from deathtg.update_manager import (
     apply_update,
     ignore_update,
@@ -42,6 +43,7 @@ log = logging.getLogger("deathtg")
 CORE_MODULES = ["core", "root", "info", "system", "antivirus", "terminal"]
 PANEL_ACTIONS_PATH = RUNTIME_DIR / "panel_actions.jsonl"
 MODULE_META_PATH = RUNTIME_DIR / "module_meta.json"
+RUNTIME_LOG_PATH = RUNTIME_DIR / "deathtg.log"
 
 
 class DeathTG:
@@ -59,6 +61,7 @@ class DeathTG:
         self._panel_action_pos = PANEL_ACTIONS_PATH.stat().st_size if PANEL_ACTIONS_PATH.exists() else 0
         self._panel_actions_task: asyncio.Task | None = None
         self._update_watch_task: asyncio.Task | None = None
+        self._integrity_watch_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         print(CONSOLE_BANNER)
@@ -84,6 +87,7 @@ class DeathTG:
         self._panel_action_pos = 0
         self._panel_actions_task = asyncio.create_task(self._panel_actions_loop())
         self._update_watch_task = asyncio.create_task(self._update_watch_loop())
+        self._integrity_watch_task = asyncio.create_task(self._integrity_watch_loop())
 
         self.client.add_event_handler(self._dispatch, events.NewMessage())
         self.client.add_event_handler(self._dispatch_watchers, events.NewMessage())
@@ -99,6 +103,10 @@ class DeathTG:
                 self._update_watch_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await self._update_watch_task
+            if self._integrity_watch_task:
+                self._integrity_watch_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._integrity_watch_task
             await self.community_bot.stop()
             await self.inline.stop()
 
@@ -182,6 +190,14 @@ class DeathTG:
             except Exception:
                 log.exception("Update watch failed")
             await asyncio.sleep(update_notify_interval())
+
+    async def _integrity_watch_loop(self) -> None:
+        while True:
+            try:
+                await check_runtime_integrity(self.client, notify=True)
+            except Exception:
+                log.exception("Integrity watch failed")
+            await asyncio.sleep(300)
 
     async def _check_updates_once(self) -> None:
         if not update_notify_enabled() or not self.inline.ready or not self.config.owner_id:
@@ -390,7 +406,15 @@ class DeathTG:
 
 
 def run_async(config: DeathTGConfig) -> None:
-    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(name)s: %(message)s")
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    console_handler = logging.StreamHandler()
+    file_handler = logging.FileHandler(RUNTIME_LOG_PATH, encoding="utf-8")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(levelname)s] %(name)s: %(message)s",
+        handlers=[console_handler, file_handler],
+        force=True,
+    )
     logging.getLogger("telethon").setLevel(logging.WARNING)
     logging.getLogger("telethon.network").setLevel(logging.WARNING)
     logging.getLogger("telethon.client.updates").setLevel(logging.WARNING)
