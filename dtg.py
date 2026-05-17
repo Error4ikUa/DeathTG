@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -18,7 +19,7 @@ from deathtg.panel_access import (
     panel_remote_access_ready,
     running_in_wsl,
 )
-from deathtg.server_bootstrap import ensure_server_env
+from deathtg.server_bootstrap import ensure_server_env, update_env_values
 from deathtg.setup_access import setup_link
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -113,9 +114,47 @@ def panel_url() -> str:
     return panel_base_url()
 
 
+def _port_is_available(host: str, port: int) -> bool:
+    bind_host = "0.0.0.0" if host in {"", "0.0.0.0", "::"} else host
+    family = socket.AF_INET6 if ":" in bind_host and bind_host != "0.0.0.0" else socket.AF_INET
+    try:
+        with socket.socket(family, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind((bind_host, port))
+        return True
+    except OSError:
+        return False
+
+
+def _pick_panel_port(host: str, preferred: int) -> int:
+    if _port_is_available(host, preferred):
+        return preferred
+    for candidate in range(preferred + 1, min(preferred + 100, 65535) + 1):
+        if _port_is_available(host, candidate):
+            return candidate
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def normalize_panel_port() -> int:
+    host = effective_panel_bind_host()
+    raw_port = os.getenv("PANEL_PORT", "8080").strip() or "8080"
+    try:
+        preferred_port = max(1, min(65535, int(raw_port)))
+    except ValueError:
+        preferred_port = 8080
+    chosen_port = _pick_panel_port(host, preferred_port)
+    if chosen_port != preferred_port:
+        update_env_values({"PANEL_PORT": str(chosen_port)}, path=ENV_PATH)
+        os.environ["PANEL_PORT"] = str(chosen_port)
+        print(f"Panel port {preferred_port} is busy, switching to {chosen_port}.")
+    return chosen_port
+
+
 def run_panel() -> None:
     host = effective_panel_bind_host()
-    port = int(os.getenv("PANEL_PORT", "8080"))
+    port = normalize_panel_port()
     uvicorn.run("deathtg.panel.clean_app:app", host=host, port=port, log_level="warning", access_log=False)
 
 if __name__ == "__main__":
@@ -124,6 +163,7 @@ if __name__ == "__main__":
         print("Use a normal Linux server, VPS, or desktop Python environment instead.")
         sys.exit(1)
     ensure_server_env()
+    normalize_panel_port()
     wsl_publish = ensure_wsl_public_access(request_elevation=True)
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
