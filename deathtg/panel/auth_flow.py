@@ -21,6 +21,7 @@ class PendingLogin:
     session_name: str
     phone_code_hash: str | None = None
     delivery_hint: str = ""
+    next_delivery_hint: str = ""
     timeout_seconds: int | None = None
 
 
@@ -70,9 +71,7 @@ async def _request_login_code(client: TelegramClient, phone: str):
     )
 
 
-def _delivery_hint(sent) -> tuple[str, int | None]:
-    code_type = getattr(sent, "type", None)
-    timeout = getattr(sent, "timeout", None)
+def _code_type_hint(code_type) -> str:
     type_name = code_type.__class__.__name__ if code_type is not None else ""
     mapping = {
         "SentCodeTypeApp": (
@@ -81,13 +80,26 @@ def _delivery_hint(sent) -> tuple[str, int | None]:
             "If you just used a code for my.telegram.org to get API_ID/API_HASH, that old code will not work here."
         ),
         "SentCodeTypeSms": "Telegram sent the login code by SMS.",
+        "SentCodeTypeSmsWord": "Telegram sent the login code by SMS as a word.",
+        "SentCodeTypeSmsPhrase": "Telegram sent the login code by SMS as a phrase.",
+        "SentCodeTypeFragmentSms": "Telegram sent the login code through Fragment SMS delivery.",
         "SentCodeTypeCall": "Telegram will deliver the login code by phone call.",
         "SentCodeTypeFlashCall": "Telegram will deliver the login code by flash call.",
         "SentCodeTypeMissedCall": "Telegram will deliver the login code by missed call.",
         "SentCodeTypeEmailCode": "Telegram sent the login code to your email.",
     }
-    hint = mapping.get(type_name, "Telegram requested a login code for this account.")
-    return hint, int(timeout) if isinstance(timeout, int) else None
+    return mapping.get(type_name, "Telegram requested a login code for this account.")
+
+
+def _delivery_hint(sent) -> tuple[str, str, int | None]:
+    code_type = getattr(sent, "type", None)
+    timeout = getattr(sent, "timeout", None)
+    next_type = getattr(sent, "next_type", None)
+    hint = _code_type_hint(code_type)
+    next_hint = ""
+    if next_type is not None:
+        next_hint = f"Another delivery method may become available next: {_code_type_hint(next_type)}"
+    return hint, next_hint, int(timeout) if isinstance(timeout, int) else None
 
 
 def write_env(api_id: int, api_hash: str, session_name: str, phone: str, panel_key: str, panel_secret: str, bot_token: str = "") -> None:
@@ -127,7 +139,7 @@ async def begin_login(flow_id: str, api_id: int, api_hash: str, phone: str, sess
         return "authorized"
     sent = await _request_login_code(client, phone)
     _set_login_stage("waiting_code")
-    delivery_hint, timeout_seconds = _delivery_hint(sent)
+    delivery_hint, next_delivery_hint, timeout_seconds = _delivery_hint(sent)
     _auth_log("requested Telegram login code and is waiting for the code from the website")
     PENDING[flow_id] = PendingLogin(
         client=client,
@@ -137,6 +149,7 @@ async def begin_login(flow_id: str, api_id: int, api_hash: str, phone: str, sess
         session_name=session_name,
         phone_code_hash=sent.phone_code_hash,
         delivery_hint=delivery_hint,
+        next_delivery_hint=next_delivery_hint,
         timeout_seconds=timeout_seconds,
     )
     return "code"
@@ -148,7 +161,9 @@ def login_hint(flow_id: str) -> dict[str, object]:
         return {"delivery_hint": "", "timeout_seconds": None}
     return {
         "delivery_hint": pending.delivery_hint,
+        "next_delivery_hint": pending.next_delivery_hint,
         "timeout_seconds": pending.timeout_seconds,
+        "can_try_alternate": bool(pending.phone_code_hash),
     }
 
 
@@ -160,9 +175,27 @@ async def resend_code(flow_id: str) -> dict[str, object]:
     await pending.client.connect()
     sent = await _request_login_code(pending.client, pending.phone)
     pending.phone_code_hash = sent.phone_code_hash
-    pending.delivery_hint, pending.timeout_seconds = _delivery_hint(sent)
+    pending.delivery_hint, pending.next_delivery_hint, pending.timeout_seconds = _delivery_hint(sent)
     _set_login_stage("waiting_code")
     _auth_log("requested a fresh Telegram login code and is waiting for the website input")
+    return login_hint(flow_id)
+
+
+async def request_alternate_code(flow_id: str) -> dict[str, object]:
+    pending = PENDING[flow_id]
+    if not pending.phone_code_hash:
+        raise RuntimeError("No active phone_code_hash for alternate delivery")
+    sent = await pending.client(
+        functions.auth.ResendCodeRequest(
+            phone_number=pending.phone.strip(),
+            phone_code_hash=pending.phone_code_hash,
+        )
+    )
+    if getattr(sent, "phone_code_hash", None):
+        pending.phone_code_hash = sent.phone_code_hash
+    pending.delivery_hint, pending.next_delivery_hint, pending.timeout_seconds = _delivery_hint(sent)
+    _set_login_stage("waiting_code")
+    _auth_log("requested another Telegram delivery method and is waiting for the website input")
     return login_hint(flow_id)
 
 

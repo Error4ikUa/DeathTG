@@ -39,6 +39,7 @@
         <button type="submit">Confirm code</button>
       </form>
       {% if delivery_hint %}<small>{{ delivery_hint }}</small>{% endif %}
+      {% if next_delivery_hint %}<small>{{ next_delivery_hint }}</small>{% endif %}
       <small>If Telegram shows a letters-and-digits code in the service chat, paste that exact code here.</small>
       <small>If you just logged in to my.telegram.org to obtain API_ID/API_HASH, that old website code is separate. Wait for the fresh DeathTG login code.</small>
       <small>If Telegram already approved the login on another device and immediately asks for your two-step verification password, you can go straight to the 2FA step.</small>
@@ -46,6 +47,11 @@
       <form method="post" action="/setup/resend" class="form-stack" style="margin-top:12px">
         <button type="submit">Resend code</button>
       </form>
+      {% if can_try_alternate %}
+      <form method="post" action="/setup/alternate" class="form-stack" style="margin-top:12px">
+        <button type="submit">Try another delivery method</button>
+      </form>
+      {% endif %}
       <form method="post" action="/setup/to-2fa" class="form-stack" style="margin-top:12px">
         <button type="submit">Go to 2FA</button>
       </form>
