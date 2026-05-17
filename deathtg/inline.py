@@ -511,21 +511,36 @@ class InlineManager:
     def _t(self, key: str, lang: str | None = None, **kwargs) -> str:
         return translate(key, lang or self._current_language(), **kwargs)
 
-    def _help_buttons(self):
+    def _help_buttons_native(self):
         return [[
             Button.url(self._t("bot.news"), "https://t.me/Death_Telega"),
             Button.url(self._t("bot.support"), "https://t.me/Death_TgOfftop"),
         ]]
 
-    def _owner_panel_buttons(self) -> list[list]:
+    def _help_buttons_form(self):
+        return [[
+            {"text": self._t("bot.news"), "url": "https://t.me/Death_Telega"},
+            {"text": self._t("bot.support"), "url": "https://t.me/Death_TgOfftop"},
+        ]]
+
+    def _owner_panel_buttons_native(self) -> list[list]:
         if not self.owner_id:
-            return self._help_buttons()
+            return self._help_buttons_native()
+        link = issue_device_grant("Telegram /start", created_by="inline_start", owner_id=int(self.owner_id))
+        return [
+            [Button.url(self._t("bot.open"), link)],
+            *self._help_buttons_native(),
+        ]
+
+    def _owner_panel_buttons_form(self) -> list[list]:
+        if not self.owner_id:
+            return self._help_buttons_form()
         link = issue_device_grant("Telegram /start", created_by="inline_start", owner_id=int(self.owner_id))
         rows: list[list] = [
             [{"text": self._t("bot.open"), "url": link}],
             [{"text": self._t("bot.change_language"), "callback": self._language_settings_callback, "args": ()}],
         ]
-        rows.extend(self._help_buttons())
+        rows.extend(self._help_buttons_form())
         return rows
 
     async def _send_language_picker(self, chat_id: int, *, onboarding: bool) -> None:
@@ -577,7 +592,7 @@ class InlineManager:
         await self.push_form(
             int(call.chat_id),
             self._t("bot.language_saved", lang),
-            reply_markup=self._owner_panel_buttons() if self.owner_id and int(call.chat_id) == self.owner_id else self._help_buttons(),
+            reply_markup=self._owner_panel_buttons_form() if self.owner_id and int(call.chat_id) == self.owner_id else self._help_buttons_form(),
             ttl=60 * 60,
             parse_mode="html",
         )
@@ -627,7 +642,7 @@ class InlineManager:
                 + f"{self._owner_line()}\n"
                 + f"Bot: @{self.bot_username or 'unknown'}"
             )
-            await event.respond(text, buttons=self._owner_panel_buttons())
+            await event.respond(text, buttons=self._owner_panel_buttons_native())
             return
         text = (
             self._t("bot.ready", lang) + "\n\n"
@@ -638,7 +653,7 @@ class InlineManager:
             + self._t("bot.status_help", lang) + "\n"
             + self._t("bot.lang_help", lang)
         )
-        await event.respond(text, buttons=self._help_buttons())
+        await event.respond(text, buttons=self._help_buttons_native())
 
     async def _on_status(self, event) -> None:
         lang = self._current_language()
@@ -649,7 +664,7 @@ class InlineManager:
             + f"callbacks: {len(self.registry)}\n"
             + f"{self._owner_line()}"
         )
-        await event.respond(text, buttons=self._help_buttons())
+        await event.respond(text, buttons=self._help_buttons_native())
 
     async def _on_lang(self, event) -> None:
         settings = profile_settings()
@@ -664,7 +679,7 @@ class InlineManager:
         if self.owner_id and sender_id == self.owner_id:
             await event.respond(
                 self._t("bot.private", lang) + "\n\n" + self._t("bot.use_button", lang),
-                buttons=self._owner_panel_buttons(),
+                buttons=self._owner_panel_buttons_native(),
             )
             return
-        await event.respond(self._t("bot.private", lang), buttons=self._help_buttons())
+        await event.respond(self._t("bot.private", lang), buttons=self._help_buttons_native())
