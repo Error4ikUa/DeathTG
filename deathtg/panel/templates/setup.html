@@ -35,10 +35,12 @@
       {% elif step == "pin" %}
       <form method="post" action="/setup/pin" class="form-stack">
         <label>Telegram code</label>
-        <input type="text" name="pin" placeholder="Code from Telegram" autofocus required>
+        <input type="text" name="pin" placeholder="Paste the new login code from Telegram" autofocus required>
         <button type="submit">Confirm code</button>
       </form>
       {% if delivery_hint %}<small>{{ delivery_hint }}</small>{% endif %}
+      <small>If Telegram shows a letters-and-digits code in the service chat, paste that exact code here.</small>
+      <small>If you just logged in to my.telegram.org to obtain API_ID/API_HASH, that old website code is separate. Wait for the fresh DeathTG login code.</small>
       {% if timeout_seconds %}<small>You can request a new code if nothing appears after about {{ timeout_seconds }} seconds.</small>{% endif %}
       <form method="post" action="/setup/resend" class="form-stack" style="margin-top:12px">
         <button type="submit">Resend code</button>
