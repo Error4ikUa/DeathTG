@@ -673,9 +673,6 @@ async def run_startup_sync(client) -> dict:
         allowed, cooldown_reason, _ = _shortcuts_allowed_now()
         if not allowed:
             return False, cooldown_reason, ""
-        token = helper_token or bot_token
-        if not token:
-            return False, "missing bot token", ""
         panel_url = _build_panel_grant_url(owner_id)
         remote_ready = panel_remote_access_ready()
         news_url = _env("PANEL_NEWS_URL")
@@ -715,33 +712,79 @@ async def run_startup_sync(client) -> dict:
         welcome_image = system_image("welcome")
         if welcome_image and welcome_image.exists():
             payload["photo"] = str(welcome_image)
-            url = f"https://api.telegram.org/bot{token}/sendPhoto"
         else:
             payload["text"] = payload.pop("caption")
-            url = f"https://api.telegram.org/bot{token}/sendMessage"
+        token_candidates: list[tuple[str, str]] = []
+        if helper_token:
+            token_candidates.append(("helper", helper_token))
+        if bot_token:
+            token_candidates.append(("inline", bot_token))
+        if community_token and community_enabled_for_owner(owner_id):
+            token_candidates.append(("community", community_token))
+        errors: list[str] = []
+
+        async def _try_send_via_bot(label: str, token: str) -> tuple[bool, str | None]:
+            if not token:
+                return False, "missing token"
+            if payload.get("photo"):
+                url = f"https://api.telegram.org/bot{token}/sendPhoto"
+            else:
+                url = f"https://api.telegram.org/bot{token}/sendMessage"
+            for attempt in range(2):
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        if payload.get("photo"):
+                            form_data = aiohttp.FormData()
+                            form_data.add_field("chat_id", str(owner_id))
+                            form_data.add_field("caption", str(payload.get("caption") or ""))
+                            form_data.add_field("reply_markup", json.dumps(payload["reply_markup"], ensure_ascii=False))
+                            form_data.add_field("disable_web_page_preview", "true")
+                            form_data.add_field("photo", welcome_image.read_bytes(), filename=welcome_image.name, content_type="image/png")
+                            async with session.post(url, data=form_data, timeout=20) as response:
+                                if response.status != 200:
+                                    return False, f"{label}: sendPhoto HTTP {response.status}"
+                                data = await response.json()
+                        else:
+                            async with session.post(url, json=payload, timeout=12) as response:
+                                if response.status != 200:
+                                    return False, f"{label}: sendMessage HTTP {response.status}"
+                                data = await response.json()
+                    if data.get("ok"):
+                        return True, None
+                    description = str(data.get("description") or "bot send failed")
+                    if "initiate conversation" in description.lower() and attempt == 0:
+                        await asyncio.sleep(2)
+                        continue
+                    return False, f"{label}: {description}"
+                except Exception as exc:
+                    if attempt == 0:
+                        await asyncio.sleep(1)
+                        continue
+                    return False, f"{label}: {exc}"
+            return False, f"{label}: bot send failed"
+
+        for label, token in token_candidates:
+            ok, error = await _try_send_via_bot(label, token)
+            if ok:
+                return True, None, panel_url
+            if error:
+                errors.append(error)
+
         try:
-            async with aiohttp.ClientSession() as session:
-                if payload.get("photo"):
-                    form_data = aiohttp.FormData()
-                    form_data.add_field("chat_id", str(owner_id))
-                    form_data.add_field("caption", str(payload.get("caption") or ""))
-                    form_data.add_field("reply_markup", json.dumps(payload["reply_markup"], ensure_ascii=False))
-                    form_data.add_field("disable_web_page_preview", "true")
-                    form_data.add_field("photo", welcome_image.read_bytes(), filename=welcome_image.name, content_type="image/png")
-                    async with session.post(url, data=form_data, timeout=20) as response:
-                        if response.status != 200:
-                            return False, f"sendPhoto HTTP {response.status}", panel_url
-                        data = await response.json()
-                else:
-                    async with session.post(url, json=payload, timeout=12) as response:
-                        if response.status != 200:
-                            return False, f"sendMessage HTTP {response.status}", panel_url
-                        data = await response.json()
-            if not data.get("ok"):
-                return False, str(data.get("description") or "bot send failed"), panel_url
-            return True, None, panel_url
+            direct_lines = [
+                "Welcome to DeathTG.",
+                "",
+                "Your personal private panel link is ready.",
+                "Do not share this link with anyone.",
+                panel_url,
+            ]
+            if remote_note:
+                direct_lines.extend(["", remote_note.strip()])
+            await client.send_message("me", "\n".join(direct_lines))
+            return True, "Bot delivery failed, shortcut was sent to Saved Messages", panel_url
         except Exception as exc:
-            return False, str(exc), panel_url
+            errors.append(f"userbot-direct: {exc}")
+        return False, " | ".join(errors) if errors else "missing bot token", panel_url
 
     shortcuts_sent, shortcuts_error, panel_url = await _send_owner_shortcuts()
     status["shortcuts"]["sent"] = shortcuts_sent
