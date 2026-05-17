@@ -107,6 +107,31 @@ def _wsl_windows_host_ip() -> str:
     return ""
 
 
+def _wsl_guest_ip() -> str:
+    commands = [
+        ["hostname", "-I"],
+        ["sh", "-lc", "ip -4 -o addr show scope global | awk '{print $4}'"],
+    ]
+    for command in commands:
+        try:
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=6, check=False)
+        except Exception:
+            continue
+        output = f"{completed.stdout}\n{completed.stderr}"
+        for candidate in re.findall(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", output):
+            if _usable_ipv4(candidate):
+                return candidate
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            candidate = sock.getsockname()[0]
+        if _usable_ipv4(candidate):
+            return candidate
+    except Exception:
+        pass
+    return ""
+
+
 def _wsl_portproxy_ready(port: int | None = None) -> bool:
     listen_port = int(port or int(_env("PANEL_PORT", "8080") or "8080"))
     try:
@@ -176,10 +201,11 @@ def _wsl_rule_name(port: int) -> str:
 
 def _wsl_publish_script(port: int) -> str:
     rule_name = _wsl_rule_name(port).replace("'", "''")
+    guest_ip = _wsl_guest_ip() or "127.0.0.1"
     return f"""
 $ErrorActionPreference = 'Stop'
 & netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport={port} | Out-Null
-& netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport={port} connectaddress=127.0.0.1 connectport={port} | Out-Null
+& netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport={port} connectaddress={guest_ip} connectport={port} | Out-Null
 & netsh advfirewall firewall delete rule name='{rule_name}' protocol=TCP localport={port} | Out-Null
 & netsh advfirewall firewall add rule name='{rule_name}' dir=in action=allow protocol=TCP localport={port} | Out-Null
 Write-Output 'OK'
