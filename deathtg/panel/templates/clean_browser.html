@@ -105,6 +105,13 @@
             </article>
             {% endif %}
         </div>
+        {% if browser_pages and browser_pages > 1 %}
+        <div class="module-actions" style="margin-top:14px">
+            {% for page_no in range(1, browser_pages + 1) %}
+            <a class="small {% if page_no == browser_page %}{% else %}ghost{% endif %}" href="/browser?page={{ page_no }}#browserPane">{{ page_no }}</a>
+            {% endfor %}
+        </div>
+        {% endif %}
         <article class="card panel inline-bridge-card">
             <p class="eyebrow">Inline bridge</p>
             <h2>Module connector</h2>

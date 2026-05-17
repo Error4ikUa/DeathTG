@@ -4,10 +4,12 @@ import hashlib
 import json
 import os
 import secrets
+import socket
 import time
 from pathlib import Path
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from urllib.parse import urlparse
 
 from deathtg.config import RUNTIME_DIR
 
@@ -20,18 +22,76 @@ def _env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
 
 
+def running_in_wsl() -> bool:
+    if _env("WSL_DISTRO_NAME") or _env("WSL_INTEROP"):
+        return True
+    try:
+        return "microsoft" in Path("/proc/version").read_text(encoding="utf-8").lower()
+    except Exception:
+        return False
+
+
+def local_network_ip() -> str:
+    override = _env("PANEL_LOCAL_IP")
+    if override:
+        return override
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            host = sock.getsockname()[0]
+        if host and host not in {"127.0.0.1", "0.0.0.0"}:
+            return host
+    except Exception:
+        pass
+    return ""
+
+
+def effective_panel_bind_host() -> str:
+    configured = _env("PANEL_HOST")
+    if configured:
+        return configured
+    if _env("PANEL_PUBLIC_URL") or _env("PANEL_PUBLIC_HOST"):
+        return "0.0.0.0"
+    if running_in_wsl():
+        return "127.0.0.1"
+    return "0.0.0.0"
+
+
+def visible_panel_host() -> str:
+    host = _env("PANEL_PUBLIC_HOST") or effective_panel_bind_host()
+    if host in {"0.0.0.0", "::"}:
+        lan_ip = local_network_ip()
+        return lan_ip or "127.0.0.1"
+    return host or "127.0.0.1"
+
+
 def panel_base_url() -> str:
     full = _env("PANEL_PUBLIC_URL")
     if full:
         return full.rstrip("/")
     scheme = _env("PANEL_SCHEME", "http") or "http"
-    host = _env("PANEL_PUBLIC_HOST") or _env("PANEL_HOST", "127.0.0.1") or "127.0.0.1"
-    if host in {"0.0.0.0", "::"}:
-        host = "127.0.0.1"
+    host = visible_panel_host()
     port = _env("PANEL_PORT", "8080") or "8080"
     if (scheme == "http" and port == "80") or (scheme == "https" and port == "443"):
         return f"{scheme}://{host}"
     return f"{scheme}://{host}:{port}"
+
+
+def panel_host_kind() -> str:
+    base = panel_base_url()
+    parsed = urlparse(base)
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        return "unknown"
+    if host in {"127.0.0.1", "localhost", "::1"}:
+        return "loopback"
+    return "remote"
+
+
+def panel_remote_access_ready() -> bool:
+    if running_in_wsl() and not (_env("PANEL_PUBLIC_URL") or _env("PANEL_PUBLIC_HOST")):
+        return False
+    return panel_host_kind() == "remote"
 
 
 def public_panel_enabled() -> bool:

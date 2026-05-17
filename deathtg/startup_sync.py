@@ -19,7 +19,12 @@ from telethon.tl.types import DialogFilter, InputFolderPeer, TextWithEntities
 
 from deathtg.config import ENV_PATH, ROOT_DIR, RUNTIME_DIR
 from deathtg.assets import system_image
-from deathtg.panel_access import issue_device_grant, panel_base_url
+from deathtg.community_roles import (
+    community_bot_display_name,
+    community_enabled_for_owner,
+    preferred_community_bot_username,
+)
+from deathtg.panel_access import issue_device_grant, panel_base_url, panel_remote_access_ready, running_in_wsl
 from deathtg.profile_store import update_env_value
 
 
@@ -173,6 +178,34 @@ async def _create_bot_with_botfather(client, owner_id: int, role: str = "inline"
     except Exception as exc:
         return "", str(exc)
     return "", "BotFather did not return a token"
+
+
+async def _create_named_bot_with_botfather(client, display_name: str, username: str) -> tuple[str, str | None]:
+    try:
+        botfather = await client.get_input_entity("BotFather")
+        await client(UnblockRequest(botfather))
+    except Exception:
+        pass
+    try:
+        async with client.conversation("BotFather", timeout=120, exclusive=False) as conv:
+            with contextlib.suppress(Exception):
+                await conv.send_message("/cancel")
+                await conv.get_response()
+            await conv.send_message("/newbot")
+            with contextlib.suppress(Exception):
+                await conv.get_response()
+            await conv.send_message(display_name)
+            with contextlib.suppress(Exception):
+                await conv.get_response()
+            await conv.send_message(username)
+            response = await conv.get_response()
+            text = getattr(response, "raw_text", "") or ""
+            match = BOT_TOKEN_RE.search(text)
+            if match:
+                return match.group(0), None
+            return "", text[:240] or "BotFather did not return a token"
+    except Exception as exc:
+        return "", str(exc)
 
 
 async def _set_bot_profile(bot_token: str, owner_id: int, role: str = "inline") -> tuple[bool, str | None]:
@@ -390,12 +423,57 @@ async def _ensure_bot(
     return token, status
 
 
+async def _ensure_community_bot(client, owner_id: int) -> tuple[str, dict]:
+    username_target = preferred_community_bot_username()
+    bot_token = _env("BOT_TOKEN_COMMUNITY")
+    username, token_error = await _fetch_bot_username(bot_token)
+    status = {
+        "configured": bool(bot_token),
+        "role": "community",
+        "env_key": "BOT_TOKEN_COMMUNITY",
+        "username": username,
+        "created": False,
+        "valid_username": bool(username),
+        "expected_prefix": username_target,
+        "owner_id": owner_id,
+        "error": token_error,
+    }
+    if status["valid_username"]:
+        update_env_value("COMMUNITY_BOT_USERNAME", username)
+        status["error"] = None
+        return bot_token, status
+    token, error = await _create_named_bot_with_botfather(
+        client,
+        community_bot_display_name(),
+        username_target,
+    )
+    if not token:
+        status["error"] = error or token_error or "unable to create community bot"
+        return bot_token, status
+    update_env_value("BOT_TOKEN_COMMUNITY", token)
+    update_env_value("COMMUNITY_BOT_USERNAME", username_target)
+    username, token_error = await _fetch_bot_username(token)
+    status.update(
+        {
+            "configured": True,
+            "username": username,
+            "created": True,
+            "valid_username": bool(username and username.lower() == username_target.lower()),
+            "error": token_error,
+        }
+    )
+    if not status["valid_username"] and not status["error"]:
+        status["error"] = f"community bot username must be @{username_target}"
+    return token, status
+
+
 async def run_startup_sync(client) -> dict:
     me = await client.get_me()
     owner_id = int(getattr(me, "id", 0) or 0)
     update_env_value("OWNER_ID", str(owner_id))
     bot_token = _env("BOT_TOKEN")
     helper_token = _env("BOT_TOKEN_HELPER")
+    community_token = _env("BOT_TOKEN_COMMUNITY")
 
     bot_token, bot_status = await _ensure_bot(
         client,
@@ -411,8 +489,27 @@ async def run_startup_sync(client) -> dict:
         env_key="BOT_TOKEN_HELPER",
         role="helper",
     )
+    community_status = {
+        "configured": False,
+        "role": "community",
+        "env_key": "BOT_TOKEN_COMMUNITY",
+        "username": _env("COMMUNITY_BOT_USERNAME"),
+        "created": False,
+        "valid_username": False,
+        "expected_prefix": preferred_community_bot_username(),
+        "owner_id": owner_id,
+        "error": "Community bot is owner-only",
+        "commands_synced": False,
+        "inline_synced": False,
+        "avatar_synced": False,
+        "start_ping": False,
+        "archived": False,
+    }
+    if community_enabled_for_owner(owner_id):
+        community_token, community_status = await _ensure_community_bot(client, owner_id)
     bot_username = str(bot_status.get("username") or "")
     helper_username = str(helper_status.get("username") or "")
+    community_username = str(community_status.get("username") or "")
 
     commands_synced, commands_error = await _set_bot_profile(bot_token, owner_id, "inline")
     inline_synced, inline_error = await _ensure_bot_inline(client, bot_username)
@@ -426,6 +523,17 @@ async def run_startup_sync(client) -> dict:
     helper_status["commands_synced"] = helper_commands_synced
     helper_status["inline_synced"] = False
     helper_status["avatar_synced"] = helper_avatar_synced
+
+    community_commands_synced = False
+    community_commands_error = None
+    community_avatar_synced = False
+    community_avatar_error = None
+    if community_enabled_for_owner(owner_id):
+        community_commands_synced, community_commands_error = await _set_bot_profile(community_token, owner_id, "community")
+        community_avatar_synced, community_avatar_error = await _sync_bot_avatar(client, community_username)
+    community_status["commands_synced"] = community_commands_synced
+    community_status["inline_synced"] = False
+    community_status["avatar_synced"] = community_avatar_synced
 
     def _collect_error(*items: str | None) -> str | None:
         return next((item for item in items if item), None)
@@ -441,13 +549,23 @@ async def run_startup_sync(client) -> dict:
 
     start_ping, start_ping_error = await _ping_bot(bot_username)
     helper_start_ping, helper_start_ping_error = await _ping_bot(helper_username)
+    community_start_ping = False
+    community_start_ping_error = None
+    if community_enabled_for_owner(owner_id):
+        community_start_ping, community_start_ping_error = await _ping_bot(community_username)
     bot_status["start_ping"] = start_ping
     helper_status["start_ping"] = helper_start_ping
+    community_status["start_ping"] = community_start_ping
 
     archived, archive_error = await _archive_bot_dialog(client, bot_username)
     helper_archived, helper_archive_error = await _archive_bot_dialog(client, helper_username)
+    community_archived = False
+    community_archive_error = None
+    if community_enabled_for_owner(owner_id):
+        community_archived, community_archive_error = await _archive_bot_dialog(client, community_username)
     bot_status["archived"] = archived
     helper_status["archived"] = helper_archived
+    community_status["archived"] = community_archived
 
     if not bot_status.get("error"):
         bot_status["error"] = _collect_error(commands_error, inline_error, avatar_error, archive_error, start_ping_error)
@@ -458,11 +576,19 @@ async def run_startup_sync(client) -> dict:
             helper_archive_error,
             helper_start_ping_error,
         )
+    if community_enabled_for_owner(owner_id) and not community_status.get("error"):
+        community_status["error"] = _collect_error(
+            community_commands_error,
+            community_avatar_error,
+            community_archive_error,
+            community_start_ping_error,
+        )
 
     status = {
         "bot": bot_status,
         "helper_bot": helper_status,
-        "bots": [bot_status, helper_status],
+        "community_bot": community_status,
+        "bots": [bot_status, helper_status] + ([community_status] if community_enabled_for_owner(owner_id) else []),
         "channels": [],
         "folder": {
             "name": FOLDER_NAME,
@@ -481,7 +607,7 @@ async def run_startup_sync(client) -> dict:
 
     folder_peers: list = []
     include_usernames: list[str] = []
-    for username in (bot_username, helper_username):
+    for username in (bot_username, helper_username, community_username if community_enabled_for_owner(owner_id) else ""):
         if not username:
             continue
         try:
@@ -537,35 +663,50 @@ async def run_startup_sync(client) -> dict:
         if not token:
             return False, "missing bot token", ""
         panel_url = _build_panel_grant_url(owner_id)
-        phone_url = issue_device_grant(f"Phone {owner_id}", created_by="startup_sync")
-        desktop_url = issue_device_grant(f"PC {owner_id}", created_by="startup_sync")
+        remote_ready = panel_remote_access_ready()
+        phone_url = issue_device_grant(f"Phone {owner_id}", created_by="startup_sync") if remote_ready else ""
+        desktop_url = issue_device_grant(f"PC {owner_id}", created_by="startup_sync") if remote_ready else ""
         local_panel_url = panel_base_url()
         news_url = _env("PANEL_NEWS_URL")
         support_url = _env("PANEL_SUPPORT_URL")
         personal_url = _env("PANEL_PERSONAL_URL")
-        buttons: list[list[dict]] = [
-            [{"text": "Open Panel", "url": panel_url}],
-            [{"text": "Phone Link", "url": phone_url}, {"text": "PC Link", "url": desktop_url}],
-        ]
+        buttons: list[list[dict]] = [[{"text": "Open Panel", "url": panel_url}]]
+        if remote_ready:
+            buttons.append([{"text": "Phone Link", "url": phone_url}, {"text": "PC Link", "url": desktop_url}])
         second_row: list[dict] = []
         if news_url:
             second_row.append({"text": "News", "url": news_url})
         if support_url:
             second_row.append({"text": "Support", "url": support_url})
-        if local_panel_url:
+        if local_panel_url and remote_ready:
             second_row.append({"text": "Panel Site", "url": local_panel_url})
         if second_row:
             buttons.append(second_row)
         if personal_url:
             buttons.append([{"text": "Personal Site", "url": personal_url}])
+        remote_note = ""
+        if not remote_ready:
+            if running_in_wsl():
+                remote_note = (
+                    "\n\nRemote phone access is not enabled in WSL local mode. "
+                    "Use a VPS/public URL or expose WSL through Windows networking before using another device."
+                )
+            else:
+                remote_note = (
+                    "\n\nRemote phone access is not enabled yet because the panel is bound to localhost. "
+                    "Set a real public or LAN URL for the panel before using links from another device."
+                )
         payload = {
             "chat_id": owner_id,
-            "caption": (
-                "Welcome to DeathTG.\n\n"
-                "Your personal secure panel links are ready.\n"
-                "Do not share these links with anyone.\n"
-                "Use Phone Link for your phone and PC Link for your desktop or laptop.\n"
-                "If you need another device later, create a new secure link from the panel."
+            "caption": "".join(
+                [
+                    "Welcome to DeathTG.\n\n",
+                    "Your personal secure panel links are ready.\n",
+                    "Do not share these links with anyone.\n",
+                    "Use Phone Link for your phone and PC Link for your desktop or laptop.\n" if remote_ready else "",
+                    "If you need another device later, create a new secure link from the panel.",
+                    remote_note,
+                ]
             ),
             "reply_markup": {"inline_keyboard": buttons},
             "disable_web_page_preview": True,

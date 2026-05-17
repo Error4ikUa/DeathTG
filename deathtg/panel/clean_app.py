@@ -15,7 +15,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from deathtg.assets import IMAGES_DIR, module_image_path
 from deathtg.metrics import init_metrics
-from deathtg.panel.auth_flow import begin_login, begin_qr_login, confirm_2fa, confirm_code, finish_login, friendly_login_error, login_hint, qr_status, refresh_qr_login, request_alternate_code, resend_code, write_env
+from deathtg.panel.auth_flow import begin_qr_login, confirm_2fa, finish_login, friendly_login_error, qr_status, refresh_qr_login, write_env
 from deathtg.panel.clean_actions import load_pending_install, router as actions_router
 from deathtg.panel.clean_core import (
     STATIC_DIR,
@@ -45,6 +45,8 @@ from deathtg.panel_access import (
     friendly_device_name,
     issue_device_grant,
     list_devices,
+    panel_base_url,
+    panel_remote_access_ready,
     public_panel_enabled,
     remember_device_session,
     revoke_device_session,
@@ -177,12 +179,34 @@ async def _base_context(request: Request) -> dict:
         "devices": list_devices(),
         "current_device": active_device(session_id) if session_id else None,
         "public_panel_enabled": public_panel_enabled(),
+        "panel_remote_access_ready": panel_remote_access_ready(),
+        "panel_url": _current_panel_url(request),
         "device_link": request.session.pop("fresh_device_link", None),
         "update_info": load_update_state(),
         "module_meta": load_module_meta(),
         "pending_warning": load_pending_install(request.query_params.get("warning")),
         "message": request.query_params.get("message"),
         "error": request.query_params.get("error"),
+    }
+
+
+def _current_panel_url(request: Request) -> str:
+    explicit = os.getenv("PANEL_PUBLIC_URL", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    return str(request.base_url).rstrip("/")
+
+
+def _setup_context(request: Request, step: str, *, error: str | None = None, message: str | None = None, **extra) -> dict:
+    return {
+        "request": request,
+        "step": step,
+        "error": error,
+        "message": message,
+        "setup_token": current_setup_token(),
+        "panel_url": _current_panel_url(request),
+        "panel_remote_access_ready": panel_remote_access_ready(),
+        **extra,
     }
 
 
@@ -202,13 +226,15 @@ async def setup_page(request: Request):
         )
     return templates.TemplateResponse(
         "setup.html",
-        {"request": request, "step": "start", "error": None, "setup_token": current_setup_token()},
+        _setup_context(request, "start"),
     )
 
 
 @app.get("/setup/done", response_class=HTMLResponse)
 async def setup_done_page(request: Request):
     local_ready = bool(request.session.get("auth"))
+    panel_url = _current_panel_url(request)
+    remote_ready = panel_remote_access_ready()
     body = (
         "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>"
         "<title>DeathTG Ready</title></head>"
@@ -216,10 +242,13 @@ async def setup_done_page(request: Request):
         "<div style='max-width:680px;padding:28px;border:1px solid rgba(82,255,139,.24);border-radius:22px;background:rgba(4,18,11,.92)'>"
         "<h1 style='margin-top:0'>Telegram connected</h1>"
         "<p>DeathTG created your session and is preparing secure access.</p>"
+        f"<p>Current panel address: <code>{panel_url}</code></p>"
         "<p>Check Telegram. Your personal secure panel links will arrive from the DeathTG bot.</p>"
         "<p>Do not share those links with anyone.</p>"
         "<p>If the bot message does not appear yet, wait a little and refresh later.</p>"
     )
+    if not remote_ready:
+        body += "<p>This panel is local-only right now. For phone access from another device, use a LAN/public URL configuration.</p>"
     if local_ready:
         body += "<p><a href='/' style='color:#52ff8b'>Open panel in this browser</a></p>"
     body += "</div></body></html>"
@@ -231,11 +260,7 @@ async def setup_save(
     request: Request,
     api_id: int = Form(...),
     api_hash: str = Form(...),
-    phone: str = Form(""),
     session_name: str = Form("deathtg"),
-    panel_password_value: str = Form(""),
-    panel_secret: str = Form(""),
-    bot_token: str = Form(""),
     setup_token: str = Form(""),
 ):
     if not _setup_allowed(request, setup_token):
@@ -249,18 +274,13 @@ async def setup_save(
     if _is_rate_limited("setup_save", request):
         return templates.TemplateResponse(
             "setup.html",
-            {
-                "request": request,
-                "step": "start",
-                "error": "Too many setup attempts. Wait a few minutes and try again.",
-                "setup_token": current_setup_token(),
-            },
+            _setup_context(request, "start", error="Too many setup attempts. Wait a few minutes and try again."),
             status_code=429,
         )
     try:
-        panel_key = secure_panel_password(panel_password_value)
-        secret_value = secure_panel_secret(panel_secret)
-        write_env(api_id, api_hash, session_name, phone, panel_key, secret_value, bot_token)
+        panel_key = secure_panel_password("")
+        secret_value = secure_panel_secret("")
+        write_env(api_id, api_hash, session_name, "", panel_key, secret_value, "")
         os.environ["PANEL_PASSWORD"] = panel_key
         os.environ["PANEL_SECRET"] = secret_value
         panel_password.cache_clear()
@@ -285,69 +305,13 @@ async def setup_save(
         _clear_auth_failures("setup_save", request)
         return templates.TemplateResponse(
             "setup.html",
-            {
-                "request": request,
-                "step": "qr",
-                "error": None,
-                **qr_info,
-            },
+            _setup_context(request, "qr", **qr_info),
         )
     except Exception as exc:
         _mark_auth_failure("setup_save", request)
         return templates.TemplateResponse(
             "setup.html",
-            {"request": request, "step": "start", "error": friendly_login_error(exc), "setup_token": current_setup_token()},
-        )
-
-
-@app.post("/setup/pin")
-async def setup_pin(request: Request, pin: str = Form(...)):
-    flow_id = request.session.get("setup_flow_id")
-    if not flow_id:
-        return RedirectResponse("/setup", status_code=303)
-    if _is_rate_limited("setup_pin", request):
-        return templates.TemplateResponse(
-            "setup.html",
-            {"request": request, "step": "pin", "error": "Too many code attempts. Request a new code and try again."},
-            status_code=429,
-        )
-    try:
-        state = await confirm_code(flow_id, pin)
-        if state == "2fa":
-            _clear_auth_failures("setup_pin", request)
-            return templates.TemplateResponse(
-                "setup.html",
-                {
-                    "request": request,
-                    "step": "secret",
-                    "error": None,
-                    "message": None,
-                },
-            )
-        await finish_login(flow_id)
-        request.session.pop("setup_flow_id", None)
-        request.session["auth"] = True
-        session_id = secrets.token_urlsafe(18)
-        request.session["device_session_id"] = session_id
-        remember_device_session(
-            session_id,
-            ip=_client_ip(request),
-            user_agent=request.headers.get("user-agent", ""),
-            label=friendly_device_name(request.headers.get("user-agent", ""), "Setup device"),
-            auth_method="setup",
-        )
-        _clear_auth_failures("setup_pin", request)
-        return RedirectResponse("/setup/done", status_code=303)
-    except Exception as exc:
-        _mark_auth_failure("setup_pin", request)
-        return templates.TemplateResponse(
-            "setup.html",
-            {
-                "request": request,
-                "step": "pin",
-                "error": friendly_login_error(exc),
-                **login_hint(flow_id),
-            },
+            _setup_context(request, "start", error=friendly_login_error(exc)),
         )
 
 
@@ -384,11 +348,7 @@ async def setup_2fa_page(request: Request):
         return RedirectResponse("/setup", status_code=303)
     return templates.TemplateResponse(
         "setup.html",
-        {
-            "request": request,
-            "step": "secret",
-            "error": None,
-        },
+        _setup_context(request, "secret"),
     )
 
 
@@ -400,7 +360,7 @@ async def setup_secret(request: Request, secret_value: str = Form(...)):
     if _is_rate_limited("setup_secret", request):
         return templates.TemplateResponse(
             "setup.html",
-            {"request": request, "step": "secret", "error": "Too many 2FA attempts. Wait a few minutes and try again."},
+            _setup_context(request, "secret", error="Too many 2FA attempts. Wait a few minutes and try again."),
             status_code=429,
         )
     try:
@@ -423,36 +383,7 @@ async def setup_secret(request: Request, secret_value: str = Form(...)):
         _mark_auth_failure("setup_secret", request)
         return templates.TemplateResponse(
             "setup.html",
-            {"request": request, "step": "secret", "error": friendly_login_error(exc)},
-        )
-
-
-@app.post("/setup/resend")
-async def setup_resend(request: Request):
-    flow_id = request.session.get("setup_flow_id")
-    if not flow_id:
-        return RedirectResponse("/setup", status_code=303)
-    try:
-        hint = await resend_code(flow_id)
-        return templates.TemplateResponse(
-            "setup.html",
-            {
-                "request": request,
-                "step": "pin",
-                "error": None,
-                "message": None,
-                **hint,
-            },
-        )
-    except Exception as exc:
-        return templates.TemplateResponse(
-            "setup.html",
-            {
-                "request": request,
-                "step": "pin",
-                "error": friendly_login_error(exc),
-                **login_hint(flow_id),
-            },
+            _setup_context(request, "secret", error=friendly_login_error(exc)),
         )
 
 
@@ -465,67 +396,12 @@ async def setup_qr_refresh(request: Request):
         info = await refresh_qr_login(flow_id)
         return templates.TemplateResponse(
             "setup.html",
-            {
-                "request": request,
-                "step": "qr",
-                "error": None,
-                **info,
-            },
+            _setup_context(request, "qr", **info),
         )
     except Exception as exc:
         return templates.TemplateResponse(
             "setup.html",
-            {
-                "request": request,
-                "step": "qr",
-                "error": friendly_login_error(exc),
-                **qr_status(flow_id),
-            },
-        )
-
-
-@app.post("/setup/to-2fa")
-async def setup_to_2fa(request: Request):
-    flow_id = request.session.get("setup_flow_id")
-    if not flow_id:
-        return RedirectResponse("/setup", status_code=303)
-    return templates.TemplateResponse(
-        "setup.html",
-        {
-            "request": request,
-            "step": "secret",
-            "error": None,
-            "message": "If Telegram already moved this login to two-step verification, enter your 2FA password below.",
-        },
-    )
-
-
-@app.post("/setup/alternate")
-async def setup_alternate(request: Request):
-    flow_id = request.session.get("setup_flow_id")
-    if not flow_id:
-        return RedirectResponse("/setup", status_code=303)
-    try:
-        hint = await request_alternate_code(flow_id)
-        return templates.TemplateResponse(
-            "setup.html",
-            {
-                "request": request,
-                "step": "pin",
-                "error": None,
-                "message": "DeathTG requested another Telegram delivery method for the login code.",
-                **hint,
-            },
-        )
-    except Exception as exc:
-        return templates.TemplateResponse(
-            "setup.html",
-            {
-                "request": request,
-                "step": "pin",
-                "error": friendly_login_error(exc),
-                **login_hint(flow_id),
-            },
+            _setup_context(request, "qr", error=friendly_login_error(exc), **qr_status(flow_id)),
         )
 
 
@@ -566,7 +442,7 @@ async def login(request: Request, key: str = Form(...)):
             {"request": request, "error": "Too many login attempts. Wait a few minutes and try again."},
             status_code=429,
         )
-    if public_panel_enabled() and not _is_local_request(request):
+    if panel_remote_access_ready() and not _is_local_request(request):
         return templates.TemplateResponse(
             "clean_login.html",
             {"request": request, "error": "Remote password login is disabled. Use a secure device link from Telegram or from an already trusted device."},
@@ -675,10 +551,21 @@ async def browser_page(request: Request):
     if blocked:
         return blocked
     await refresh_modules()
+    repo_modules = await module_repo()
+    try:
+        page = max(1, int(request.query_params.get("page", "1")))
+    except Exception:
+        page = 1
+    per_page = 5
+    total_pages = max(1, (len(repo_modules) + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    start = (page - 1) * per_page
     ctx = await _base_context(request)
     ctx.update(
         {
-            "browser_modules": await module_repo(),
+            "browser_modules": repo_modules[start:start + per_page],
+            "browser_page": page,
+            "browser_pages": total_pages,
             "grouped": registry.by_module(),
             "module_cards": installed_module_cards(registry.by_module()),
             "protected": PROTECTED_MODULES,

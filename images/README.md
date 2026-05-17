@@ -1,10 +1,10 @@
 DeathTG image contract
 
-Put your PNG files here with these exact names:
+Put your PNG files in `images/` or `Image/` with these exact names:
 
-- `welcome_deathtg.png` - welcome card sent after first successful setup
-- `update_available_deathtg.png` - update notification card sent in Telegram
-- `creating_backup.png` - backup flow card
+- `DeathTG_welcome.png` - welcome card sent after first successful setup
+- `DeathTG_update_available.png` - update notification card sent in Telegram
+- `DeathTG_creating_backup.png` - backup flow card
 
 Module images:
 

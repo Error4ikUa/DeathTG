@@ -6,13 +6,14 @@ from pathlib import Path
 from deathtg.config import MODULES_DIR, ROOT_DIR
 
 
-IMAGES_DIR = ROOT_DIR / "images"
+IMAGE_DIR_CANDIDATES = [ROOT_DIR / "images", ROOT_DIR / "Image"]
+IMAGES_DIR = next((path for path in IMAGE_DIR_CANDIDATES if path.exists()), IMAGE_DIR_CANDIDATES[0])
 MODULE_IMAGES_DIR = IMAGES_DIR / "modules"
 MODULE_CARD_NAME = "Module.png"
 SYSTEM_IMAGE_FILES = {
-    "welcome": "welcome_deathtg.png",
-    "update_available": "update_available_deathtg.png",
-    "creating_backup": "creating_backup.png",
+    "welcome": "DeathTG_welcome.png",
+    "update_available": "DeathTG_update_available.png",
+    "creating_backup": "DeathTG_creating_backup.png",
 }
 
 
@@ -20,8 +21,17 @@ def system_image(name: str) -> Path | None:
     filename = SYSTEM_IMAGE_FILES.get(name, "")
     if not filename:
         return None
-    path = IMAGES_DIR / filename
-    return path if path.exists() else None
+    fallbacks = {
+        "DeathTG_welcome.png": ["welcome_deathtg.png"],
+        "DeathTG_update_available.png": ["update_available_deathtg.png"],
+        "DeathTG_creating_backup.png": ["creating_backup.png"],
+    }
+    for directory in IMAGE_DIR_CANDIDATES:
+        for candidate in [filename, *fallbacks.get(filename, [])]:
+            path = directory / candidate
+            if path.exists():
+                return path
+    return None
 
 
 def module_entry_candidates(module_dir: Path, module_name: str | None = None) -> list[Path]:
@@ -83,13 +93,17 @@ def _asset_name_candidates(module_name: str) -> list[str]:
 
 
 def shared_module_image_path(module_name: str) -> Path | None:
-    for stem in _asset_name_candidates(module_name):
-        for suffix in (".png", ".jpg", ".jpeg", ".webp"):
-            candidate = MODULE_IMAGES_DIR / f"{stem}{suffix}"
-            if candidate.exists():
-                return candidate
-    fallback = MODULE_IMAGES_DIR / MODULE_CARD_NAME
-    return fallback if fallback.exists() else None
+    for directory in IMAGE_DIR_CANDIDATES:
+        module_dir = directory / "modules"
+        for stem in _asset_name_candidates(module_name):
+            for suffix in (".png", ".jpg", ".jpeg", ".webp"):
+                candidate = module_dir / f"{stem}{suffix}"
+                if candidate.exists():
+                    return candidate
+        fallback = module_dir / MODULE_CARD_NAME
+        if fallback.exists():
+            return fallback
+    return None
 
 
 def module_image_path(module_name: str) -> Path | None:

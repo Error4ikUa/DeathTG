@@ -5,11 +5,19 @@ import contextlib
 import html
 import json
 import logging
+import os
 from pathlib import Path
 
 from telethon import TelegramClient, events
+from telethon.errors import YouBlockedUserError
 
 from deathtg.assets import system_image
+from deathtg.community_bot import CommunityBotService
+from deathtg.community_roles import (
+    community_enabled_for_owner,
+    preferred_community_bot_username,
+    write_role_scan_result,
+)
 from deathtg.config import DeathTGConfig, MODULES_DIR, RUNTIME_DIR
 from deathtg.inline import InlineManager
 from deathtg.loader import ModuleLoader
@@ -45,6 +53,7 @@ class DeathTG:
         self.loader = ModuleLoader(self.registry, MODULES_DIR)
         self.security = SecurityManager()
         self.inline = InlineManager(api_id=config.api_id, api_hash=config.api_hash, user_client=self.client)
+        self.community_bot = CommunityBotService(api_id=config.api_id, api_hash=config.api_hash, user_client=self.client)
         self.loader.bind(app=self, client=self.client, inline_manager=self.inline)
         self._force_loaded_modules: set[str] = set()
         self._panel_action_pos = PANEL_ACTIONS_PATH.stat().st_size if PANEL_ACTIONS_PATH.exists() else 0
@@ -66,6 +75,8 @@ class DeathTG:
         except Exception:
             log.exception("Startup sync failed")
         await self.inline.start()
+        await self.community_bot.start(int(self.config.owner_id or 0))
+        await self.inline.ensure_owner_onboarding()
 
         await self.loader.load_builtin("deathtg.modules", CORE_MODULES)
         await self.loader.load_all_local(force_modules=self._force_modules())
@@ -88,6 +99,7 @@ class DeathTG:
                 self._update_watch_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await self._update_watch_task
+            await self.community_bot.stop()
             await self.inline.stop()
 
     def _write_runtime_profile(self, me) -> None:
@@ -186,20 +198,20 @@ class DeathTG:
         current = str(info.get("current") or "")[:10]
         upcoming = str(info.get("upcoming") or "")[:10]
         text = (
-            "<b>Доступно обновление DeathTG</b>\n\n"
-            f"Ветка: <code>{info.get('branch') or 'main'}</code>\n"
-            f"Текущий билд: <code>{current}</code>\n"
-            f"Новый билд: <code>{upcoming}</code>\n"
-            f"Коммитов позади: <code>{info.get('behind') or 0}</code>\n\n"
-            "Обновить сейчас или напомнить позже?"
+            "<b>DeathTG update available</b>\n\n"
+            f"Branch: <code>{info.get('branch') or 'main'}</code>\n"
+            f"Current build: <code>{current}</code>\n"
+            f"New build: <code>{upcoming}</code>\n"
+            f"Commits behind: <code>{info.get('behind') or 0}</code>\n\n"
+            "Update now or ignore for later?"
         )
         photo = system_image("update_available")
         await self.inline.push_form(
             int(self.config.owner_id),
             text,
             reply_markup=[
-                [{"text": "Обновить", "callback": self._update_apply_callback, "args": (str(info.get("upcoming") or ""),)}],
-                [{"text": "Игнорировать", "callback": self._update_ignore_callback, "args": (str(info.get("upcoming") or ""),)}],
+                [{"text": "Update", "callback": self._update_apply_callback, "args": (str(info.get("upcoming") or ""),)}],
+                [{"text": "Ignore", "callback": self._update_ignore_callback, "args": (str(info.get("upcoming") or ""),)}],
             ],
             ttl=60 * 60 * 24 * 7,
             parse_mode="html",
@@ -207,36 +219,36 @@ class DeathTG:
         )
 
     async def _update_apply_callback(self, call, expected_upcoming: str) -> None:
-        await call.edit("<b>Обновляю DeathTG...</b>", reply_markup=None, parse_mode="html")
+        await call.edit("<b>Updating DeathTG...</b>", reply_markup=None, parse_mode="html")
         result = await asyncio.to_thread(apply_update)
         message = html.escape(str(result.get("message") or "No output")[-3000:])
         if not result.get("ok"):
             await call.edit(
-                f"<b>Обновление не удалось.</b>\n<pre>{message}</pre>",
-                reply_markup=[[{"text": "Закрыть", "callback": self._close_callback, "args": ()}]],
+                f"<b>Update failed.</b>\n<pre>{message}</pre>",
+                reply_markup=[[{"text": "Close", "callback": self._close_callback, "args": ()}]],
                 parse_mode="html",
             )
             return
         if result.get("updated"):
             await call.edit(
-                f"<b>DeathTG обновлён.</b>\n<pre>{message}</pre>\nНажми перезагрузку, чтобы применить изменения.",
+                f"<b>DeathTG updated.</b>\n<pre>{message}</pre>\nPress restart to apply the new build.",
                 reply_markup=[
-                    [{"text": "Перезагрузить", "callback": self._restart_after_update_callback, "args": ()}],
-                    [{"text": "Закрыть", "callback": self._close_callback, "args": ()}],
+                    [{"text": "Restart", "callback": self._restart_after_update_callback, "args": ()}],
+                    [{"text": "Close", "callback": self._close_callback, "args": ()}],
                 ],
                 parse_mode="html",
             )
             return
         await call.edit(
-            f"<b>Уже актуально.</b>\n<pre>{message}</pre>",
-            reply_markup=[[{"text": "Закрыть", "callback": self._close_callback, "args": ()}]],
+            f"<b>Already up to date.</b>\n<pre>{message}</pre>",
+            reply_markup=[[{"text": "Close", "callback": self._close_callback, "args": ()}]],
             parse_mode="html",
         )
 
     async def _update_ignore_callback(self, call, expected_upcoming: str) -> None:
         await asyncio.to_thread(ignore_update, {"upcoming": expected_upcoming})
         await call.edit(
-            "<b>Обновление скрыто.</b>\nDeathTG снова пришлёт уведомление, когда в репозитории появится уже другой билд.",
+            "<b>Update hidden.</b>\nDeathTG will notify you again when a different build appears in the repository.",
             reply_markup=None,
             parse_mode="html",
         )
@@ -244,10 +256,11 @@ class DeathTG:
     async def _restart_after_update_callback(self, call) -> None:
         schedule_restart()
         await call.edit(
-            "<b>Перезагрузка запущена.</b>\nDeathTG поднимется снова через несколько секунд.",
+            "<b>Restart scheduled.</b>\nDeathTG will boot again in a few seconds.",
             reply_markup=None,
             parse_mode="html",
         )
+
 
     async def _close_callback(self, call) -> None:
         await call.edit("Closed.", reply_markup=None)
@@ -270,6 +283,34 @@ class DeathTG:
                     continue
                 await self._apply_panel_action(payload)
             self._panel_action_pos = f.tell()
+
+    async def _resolve_self_user_id(self) -> int:
+        me = await self.client.get_me()
+        return int(getattr(me, "id", 0) or 0)
+
+    async def _verify_role_with_community_bot(self, role: str) -> tuple[bool, str]:
+        user_id = await self._resolve_self_user_id()
+        if community_enabled_for_owner(user_id):
+            return True, "Owner access confirmed."
+        username = (os.getenv("COMMUNITY_BOT_USERNAME", "") or preferred_community_bot_username()).strip().lstrip("@")
+        if not username:
+            return False, "Community bot username is not configured."
+        try:
+            entity = await self.client.get_entity(username)
+        except Exception as exc:
+            return False, f"Community bot is unavailable: {exc}"
+        try:
+            async with self.client.conversation(entity, timeout=18, exclusive=False) as conv:
+                await conv.send_message(f"/scan {user_id} {role}")
+                response = await conv.get_response()
+        except YouBlockedUserError:
+            return False, "Unblock the DeathTG community bot in Telegram and try again."
+        except Exception as exc:
+            return False, f"Community bot did not respond: {exc}"
+        text = (getattr(response, "raw_text", "") or "").strip().lower()
+        if text == "true":
+            return True, "Community bot approved the role."
+        return False, "Role not approved by DeathTG community bot."
 
     async def _apply_panel_action(self, payload: dict) -> None:
         action = str(payload.get("action") or "").strip()
@@ -309,11 +350,21 @@ class DeathTG:
             return
         if action == "startup_sync":
             await run_startup_sync(self.client)
+            await self.community_bot.stop()
             await self.inline.stop()
             self.inline = InlineManager(api_id=self.config.api_id, api_hash=self.config.api_hash, user_client=self.client)
             await self.inline.start()
+            await self.community_bot.start(int(self.config.owner_id or 0))
             self.loader.bind(app=self, client=self.client, inline_manager=self.inline)
             log.info("Panel sync refreshed startup state")
+            return
+        if action == "role_scan":
+            request_id = str(payload.get("request_id") or "").strip()
+            role = str(payload.get("role") or "").strip().lower()
+            if not request_id or role not in {"admin", "developer"}:
+                return
+            ok, message = await self._verify_role_with_community_bot(role)
+            write_role_scan_result(request_id, ok=ok, message=message, role=role)
 
     def module_file(self, name: str) -> Path:
         safe_name = Path(name).name

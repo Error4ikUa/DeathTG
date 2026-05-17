@@ -110,7 +110,7 @@
                 <h1 class="hero-title">{{ profile.profile_title or "DeathTG Operator" }}</h1>
                 <div class="hero-sub">
                     <p class="profile-meta">@{{ profile.username or "not connected" }}</p>
-                    <span class="role-pill {% if profile.role == 'developer' %}developer{% endif %}">{{ profile.role or "admin" }}</span>
+                    <span class="role-pill {% if profile.role == 'developer' %}developer{% endif %}">{{ profile.role or "user" }}</span>
                 </div>
             </div>
             <div class="hero-actions">
@@ -123,7 +123,7 @@
 
         <section class="stat-ribbon">
             <article class="stat-card"><span>Prefix</span><b>{{ status.prefix }}</b></article>
-            <article class="stat-card"><span>Role</span><b>{{ profile.role or "admin" }}</b></article>
+            <article class="stat-card"><span>Role</span><b>{{ profile.role or "user" }}</b></article>
             <article class="stat-card"><span>Modules</span><b>{{ status.modules_count }}</b></article>
             <article class="stat-card"><span>Commands</span><b>{{ status.commands_count }}</b></article>
             <article class="stat-card"><span>Level</span><b>{{ status.level.level }}</b></article>
@@ -158,7 +158,7 @@
                     {% for bot in startup.bots %}
                     <div class="runtime-row">
                         <div>
-                            <b>{{ "Inline bot" if bot.role == "inline" else "Helper bot" }}</b>
+                            <b>{{ "Inline bot" if bot.role == "inline" else ("Helper bot" if bot.role == "helper" else "Community bot") }}</b>
                             <p class="helper">@{{ bot.username or "not set" }}{% if bot.error %} &middot; {{ bot.error }}{% endif %}</p>
                             <p class="helper">Expected: {{ bot.expected_prefix or "n/a" }}*_bot</p>
                             <p class="helper">Commands: {{ "ok" if bot.commands_synced else "pending" }} &middot; Avatar: {{ "ok" if bot.avatar_synced else "pending" }}{% if bot.role == "inline" %} &middot; Inline: {{ "ok" if bot.inline_synced else "pending" }}{% endif %}</p>
@@ -227,8 +227,13 @@
                 </div>
                 {% if public_panel_enabled %}
                 <p class="helper" style="margin-bottom:12px">Public access is enabled. Remote devices should use one-time secure links, not the panel password.</p>
+                <p class="helper" style="margin-bottom:12px">Current panel address: <code>{{ panel_url }}</code></p>
+                {% elif panel_remote_access_ready %}
+                <p class="helper" style="margin-bottom:12px">This panel is reachable on your network. Use secure links for phones, tablets and laptops.</p>
+                <p class="helper" style="margin-bottom:12px">Current panel address: <code>{{ panel_url }}</code></p>
                 {% else %}
-                <p class="helper" style="margin-bottom:12px">Public URL is not configured yet. Secure links will point to the current panel base URL.</p>
+                <p class="helper" style="margin-bottom:12px">Remote access is not ready yet. Set a LAN or public address before expecting phone links to work outside this machine.</p>
+                <p class="helper" style="margin-bottom:12px">Current panel address: <code>{{ panel_url }}</code></p>
                 {% endif %}
                 {% if device_link %}
                 <div class="item" style="margin-bottom:12px">
@@ -336,12 +341,19 @@
                                 <option value="developer" {% if profile.role == "developer" %}selected{% endif %}>Developer</option>
                             </select>
                         </label>
+                        <label>Role key
+                            <input type="text" name="role_key" placeholder="Optional if your Telegram is approved in community bot">
+                        </label>
                         <label>Command prefix
                             <input type="text" name="command_prefix" value="{{ status.prefix or '.' }}" maxlength="4">
                         </label>
                         <div class="wide accent-set">
                             <span>Accent</span>
                             <div class="accent-grid">
+                                <div class="accent-item">
+                                    <input id="accent-green" type="radio" name="accent" value="green" {% if profile.accent == "green" %}checked{% endif %}>
+                                    <label for="accent-green"><span class="accent-dot" style="background:linear-gradient(135deg,#52ff8b,#1fd866)"></span>Green</label>
+                                </div>
                                 <div class="accent-item">
                                     <input id="accent-blue" type="radio" name="accent" value="blue" {% if profile.accent == "blue" %}checked{% endif %}>
                                     <label for="accent-blue"><span class="accent-dot accent-blue"></span>Blue</label>
@@ -354,8 +366,16 @@
                                     <input id="accent-gold" type="radio" name="accent" value="gold" {% if profile.accent == "gold" %}checked{% endif %}>
                                     <label for="accent-gold"><span class="accent-dot accent-gold"></span>Gold</label>
                                 </div>
+                                <div class="accent-item">
+                                    <input id="accent-purple" type="radio" name="accent" value="purple" {% if profile.accent == "purple" %}checked{% endif %}>
+                                    <label for="accent-purple"><span class="accent-dot" style="background:linear-gradient(135deg,#a879ff,#d0b7ff)"></span>Purple</label>
+                                </div>
+                                <div class="accent-item">
+                                    <input id="accent-dark" type="radio" name="accent" value="dark" {% if profile.accent == "dark" %}checked{% endif %}>
+                                    <label for="accent-dark"><span class="accent-dot" style="background:linear-gradient(135deg,#9aa6ba,#d7e0ed)"></span>Dark</label>
+                                </div>
                             </div>
-                            <span class="helper">Accent changes profile card and panel highlight color.</span>
+                            <span class="helper">Green, blue, red, gold, purple and dark themes are available. Role key can be used directly, or DeathTG can verify your Telegram account through the owner community bot.</span>
                         </div>
                         <label class="wide">Description
                             <textarea name="description">{{ profile.description or '' }}</textarea>

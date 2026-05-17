@@ -141,7 +141,7 @@ async def info_cmd(event, args: list[str]) -> None:
         "name": name or "DeathTG User",
         "username": username,
         "description": description,
-        "role": settings.get("role", "admin"),
+        "role": settings.get("role", "user"),
         "prefix": cfg.command_prefix,
         "uses": total,
         "days": days,
