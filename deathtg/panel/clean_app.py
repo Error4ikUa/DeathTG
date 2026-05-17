@@ -47,6 +47,7 @@ from deathtg.panel_access import (
     list_devices,
     panel_base_url,
     panel_remote_access_ready,
+    panel_site_id,
     public_panel_enabled,
     remember_device_session,
     revoke_device_session,
@@ -193,8 +194,8 @@ async def _base_context(request: Request) -> dict:
 def _current_panel_url(request: Request) -> str:
     explicit = os.getenv("PANEL_PUBLIC_URL", "").strip()
     if explicit:
-        return explicit.rstrip("/")
-    return str(request.base_url).rstrip("/")
+        return panel_base_url()
+    return panel_base_url()
 
 
 def _request_origin_url(request: Request) -> str:
@@ -446,6 +447,15 @@ async def grant_login(request: Request, token: str):
     return RedirectResponse("/?message=Connected+from+secure+device+link", status_code=303)
 
 
+@app.get("/site/{site_id}/{owner_slug}/{token}")
+async def private_site_grant_login(request: Request, site_id: str, owner_slug: str, token: str):
+    if site_id != panel_site_id():
+        return RedirectResponse("/login?error=Invalid+private+site+id", status_code=303)
+    if not re.fullmatch(r"u\d{1,20}", owner_slug or ""):
+        return RedirectResponse("/login?error=Invalid+private+owner+id", status_code=303)
+    return await grant_login(request, token)
+
+
 @app.post("/login")
 async def login(request: Request, key: str = Form(...)):
     if _is_rate_limited("login", request):
@@ -496,7 +506,12 @@ async def create_device_link(request: Request, device_name: str = Form("")):
     if blocked:
         return blocked
     label = (device_name or "").strip() or friendly_device_name(request.headers.get("user-agent", ""), "New device")
-    request.session["fresh_device_link"] = issue_device_grant(label, created_by="panel")
+    owner_id = 0
+    try:
+        owner_id = int((os.getenv("OWNER_ID", "").strip() or "0"))
+    except Exception:
+        owner_id = 0
+    request.session["fresh_device_link"] = issue_device_grant(label, created_by="panel", owner_id=owner_id)
     return RedirectResponse("/profile?message=Secure+device+link+created", status_code=303)
 
 

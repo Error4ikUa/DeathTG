@@ -25,7 +25,7 @@ from deathtg.community_roles import (
     community_enabled_for_owner,
     preferred_community_bot_username,
 )
-from deathtg.panel_access import issue_device_grant, panel_base_url, panel_remote_access_ready
+from deathtg.panel_access import issue_device_grant, panel_remote_access_ready
 from deathtg.profile_store import update_env_value
 
 
@@ -59,7 +59,7 @@ def _load_status() -> dict:
 
 def _issue_panel_grant(owner_id: int, ttl_seconds: int = 60 * 60 * 24 * 7) -> str:
     device_label = f"Telegram shortcut {owner_id}"
-    return issue_device_grant(device_label, ttl_seconds=ttl_seconds, created_by="startup_sync")
+    return issue_device_grant(device_label, ttl_seconds=ttl_seconds, created_by="startup_sync", owner_id=owner_id)
 
 
 def _build_panel_grant_url(owner_id: int) -> str:
@@ -678,22 +678,15 @@ async def run_startup_sync(client) -> dict:
             return False, "missing bot token", ""
         panel_url = _build_panel_grant_url(owner_id)
         remote_ready = panel_remote_access_ready()
-        phone_url = issue_device_grant(f"Phone {owner_id}", created_by="startup_sync") if remote_ready else ""
-        desktop_url = issue_device_grant(f"PC {owner_id}", created_by="startup_sync") if remote_ready else ""
-        local_panel_url = panel_base_url()
         news_url = _env("PANEL_NEWS_URL")
         support_url = _env("PANEL_SUPPORT_URL")
         personal_url = _env("PANEL_PERSONAL_URL")
-        buttons: list[list[dict]] = [[{"text": "Open Panel", "url": panel_url}]]
-        if remote_ready:
-            buttons.append([{"text": "Phone Link", "url": phone_url}, {"text": "PC Link", "url": desktop_url}])
+        buttons: list[list[dict]] = [[{"text": "Open DeathTG", "url": panel_url}]]
         second_row: list[dict] = []
         if news_url:
             second_row.append({"text": "News", "url": news_url})
         if support_url:
             second_row.append({"text": "Support", "url": support_url})
-        if local_panel_url and remote_ready:
-            second_row.append({"text": "Panel Site", "url": local_panel_url})
         if second_row:
             buttons.append(second_row)
         if personal_url:
@@ -709,10 +702,10 @@ async def run_startup_sync(client) -> dict:
             "caption": "".join(
                 [
                     "Welcome to DeathTG.\n\n",
-                    "Your personal secure panel links are ready.\n",
-                    "Do not share these links with anyone.\n",
-                    "Use Phone Link for your phone and PC Link for your desktop or laptop.\n" if remote_ready else "",
-                    "If you need another device later, create a new secure link from the panel.",
+                    "Your personal private panel link is ready.\n",
+                    "Do not share this link with anyone.\n",
+                    "Open this link on your phone or on another browser if you want to trust one more device.\n",
+                    "If you need another device later, create a new secure link from inside the panel.",
                     remote_note,
                 ]
             ),

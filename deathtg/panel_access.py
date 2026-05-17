@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
 import socket
 import time
@@ -63,16 +64,55 @@ def visible_panel_host() -> str:
     return host or "127.0.0.1"
 
 
+def _normalize_visible_url(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    host = (parsed.hostname or "").strip().lower()
+    if host not in {"0.0.0.0", "::", "localhost"}:
+        return raw.rstrip("/")
+    scheme = parsed.scheme or _env("PANEL_SCHEME", "http") or "http"
+    visible_host = visible_panel_host()
+    port = parsed.port
+    if port and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
+        return f"{scheme}://{visible_host}:{port}"
+    return f"{scheme}://{visible_host}"
+
+
 def panel_base_url() -> str:
     full = _env("PANEL_PUBLIC_URL")
     if full:
-        return full.rstrip("/")
+        return _normalize_visible_url(full)
     scheme = _env("PANEL_SCHEME", "http") or "http"
     host = visible_panel_host()
     port = _env("PANEL_PORT", "8080") or "8080"
     if (scheme == "http" and port == "80") or (scheme == "https" and port == "443"):
         return f"{scheme}://{host}"
     return f"{scheme}://{host}:{port}"
+
+
+def panel_site_id() -> str:
+    raw = _env("PANEL_SITE_ID")
+    slug = re.sub(r"[^a-zA-Z0-9_-]", "", raw)[:48]
+    return slug or "dtg"
+
+
+def panel_private_route(owner_id: int | None = None, token: str = "") -> str:
+    owner_value = owner_id
+    if owner_value is None:
+        try:
+            owner_value = int(_env("OWNER_ID") or "0")
+        except Exception:
+            owner_value = 0
+    route = f"/site/{panel_site_id()}/u{max(0, int(owner_value or 0))}"
+    if token:
+        return f"{route}/{token}"
+    return route
+
+
+def panel_private_url(owner_id: int | None = None, token: str = "") -> str:
+    return f"{panel_base_url()}{panel_private_route(owner_id, token)}"
 
 
 def panel_host_kind() -> str:
@@ -173,7 +213,13 @@ def list_devices() -> list[dict]:
     )
 
 
-def issue_device_grant(device_name: str, *, ttl_seconds: int = DEFAULT_GRANT_TTL, created_by: str = "panel") -> str:
+def issue_device_grant(
+    device_name: str,
+    *,
+    ttl_seconds: int = DEFAULT_GRANT_TTL,
+    created_by: str = "panel",
+    owner_id: int | None = None,
+) -> str:
     grant_id = secrets.token_urlsafe(12)
     grant_secret = secrets.token_urlsafe(24)
     now = int(time.time())
@@ -191,7 +237,7 @@ def issue_device_grant(device_name: str, *, ttl_seconds: int = DEFAULT_GRANT_TTL
     }
     _write_json(GRANTS_PATH, grants)
     token = _serializer().dumps({"gid": grant_id, "sec": grant_secret})
-    return f"{panel_base_url()}/grant/{token}"
+    return panel_private_url(owner_id=owner_id, token=token)
 
 
 def consume_device_grant(token: str, *, ip: str = "", user_agent: str = "") -> dict:
