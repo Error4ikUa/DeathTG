@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/static/clean.css">
     <link rel="stylesheet" href="/static/clean_patch.css">
     <link rel="stylesheet" href="/static/accent_fix.css">
+    <link rel="stylesheet" href="/static/theme_cards.css">
     <style>
         .profile-shell{display:grid;gap:16px}
         .profile-hero{padding:24px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:20px;align-items:center}
@@ -423,6 +424,19 @@
 </div>
 
 <script src="/static/matrix.js"></script>
+<script>
+(() => {
+  const body = document.body;
+  const accentInputs = document.querySelectorAll('input[name="accent"]');
+  accentInputs.forEach((input) => {
+    input.addEventListener('change', () => {
+      if (input.checked) {
+        body.setAttribute('data-accent', input.value);
+      }
+    });
+  });
+})();
+</script>
 <script src="/static/clean.js"></script>
 </body>
 </html>

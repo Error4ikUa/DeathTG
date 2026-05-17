@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from deathtg.config import ENV_PATH, ROOT_DIR
-from deathtg.panel_access import local_network_ip, running_in_wsl, visible_panel_host
+from deathtg.panel_access import local_network_ip, visible_panel_host
 
 INSECURE_PASSWORDS = {"", "deathtg", "change_me_now", "admin", "password", "123456"}
 INSECURE_SECRETS = {"", "change_me_long_secret", "change_me_to_random_long_string", "secret"}
@@ -107,11 +107,11 @@ def ensure_server_env(*, path: Path = ENV_PATH, panel_host: str = "", panel_port
     if current.get("PANEL_SECRET", "") != secret:
         updates["PANEL_SECRET"] = secret
 
-    default_panel_host = "127.0.0.1" if running_in_wsl() else "0.0.0.0"
+    default_panel_host = "0.0.0.0"
     current_panel_host = current.get("PANEL_HOST", "").strip()
     if not current_panel_host:
         resolved_panel_host = panel_host or default_panel_host
-    elif current_panel_host in {"127.0.0.1", "localhost"} and not effective_public_host and not effective_public_url and not running_in_wsl():
+    elif current_panel_host in {"127.0.0.1", "localhost"} and not effective_public_host and not effective_public_url:
         resolved_panel_host = "0.0.0.0"
         updates["PANEL_HOST"] = resolved_panel_host
     else:
@@ -280,7 +280,7 @@ def render_caddy_config(server_name: str, *, panel_port: str = "8080") -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate secure DeathTG server defaults and deploy files.")
     parser.add_argument("--write-env", action="store_true", help="Fill missing or insecure env values.")
-    parser.add_argument("--panel-host", default="127.0.0.1")
+    parser.add_argument("--panel-host", default="0.0.0.0")
     parser.add_argument("--panel-port", default="8080")
     parser.add_argument("--public-host", default="")
     parser.add_argument("--public-url", default="")

@@ -52,8 +52,6 @@ def effective_panel_bind_host() -> str:
         return configured
     if _env("PANEL_PUBLIC_URL") or _env("PANEL_PUBLIC_HOST"):
         return "0.0.0.0"
-    if running_in_wsl():
-        return "127.0.0.1"
     return "0.0.0.0"
 
 
@@ -89,8 +87,6 @@ def panel_host_kind() -> str:
 
 
 def panel_remote_access_ready() -> bool:
-    if running_in_wsl() and not (_env("PANEL_PUBLIC_URL") or _env("PANEL_PUBLIC_HOST")):
-        return False
     return panel_host_kind() == "remote"
 
 
