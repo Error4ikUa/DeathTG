@@ -374,7 +374,7 @@ async def setup_secret(request: Request, secret_value: str = Form(...)):
         _mark_auth_failure("setup_secret", request)
         return templates.TemplateResponse(
             "setup.html",
-            {"request": request, "step": "secret", "error": f"{type(exc).__name__}: {exc}"},
+            {"request": request, "step": "secret", "error": friendly_login_error(exc)},
         )
 
 
@@ -405,6 +405,22 @@ async def setup_resend(request: Request):
                 **login_hint(flow_id),
             },
         )
+
+
+@app.post("/setup/to-2fa")
+async def setup_to_2fa(request: Request):
+    flow_id = request.session.get("setup_flow_id")
+    if not flow_id:
+        return RedirectResponse("/setup", status_code=303)
+    return templates.TemplateResponse(
+        "setup.html",
+        {
+            "request": request,
+            "step": "secret",
+            "error": None,
+            "message": "If Telegram already moved this login to two-step verification, enter your 2FA password below.",
+        },
+    )
 
 
 @app.get("/login", response_class=HTMLResponse)
