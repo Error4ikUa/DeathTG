@@ -27,21 +27,23 @@
         <input type="number" name="api_id" placeholder="123456" required>
         <label>API HASH</label>
         <input type="text" name="api_hash" placeholder="your_api_hash" required>
-        <label>Phone</label>
-        <input type="text" name="phone" placeholder="+380..." required>
         <label>Session name</label>
         <input type="text" name="session_name" value="deathtg" required>
         <button type="submit">Confirm</button>
       </form>
-      {% elif step == "pin" %}
-      <form method="post" action="/setup/pin" class="form-stack">
-        <label>Telegram code</label>
-        <input type="text" name="pin" placeholder="Code from Telegram" autofocus required>
-        <button type="submit">Confirm code</button>
-      </form>
-      <small>Wait for the Telegram code and enter it here.</small>
-      <form method="post" action="/setup/resend" class="form-stack delayed-action" id="resend-form" hidden style="margin-top:12px">
-        <button type="submit">Resend code</button>
+      {% elif step == "qr" %}
+      <div class="form-stack">
+        <label>QR login</label>
+        {% if qr_data_url %}
+        <div style="display:flex;justify-content:center;padding:8px 0 4px">
+          <img src="{{ qr_data_url }}" alt="DeathTG QR Login" style="width:min(100%,320px);height:auto;background:#fff;border-radius:18px;padding:14px">
+        </div>
+        {% endif %}
+        <small>Open Telegram on your phone and scan this QR code to log in.</small>
+        <small id="qr-status-text">Waiting for scan...</small>
+      </div>
+      <form method="post" action="/setup/qr-refresh" class="form-stack delayed-action" id="qr-refresh-form" hidden style="margin-top:12px">
+        <button type="submit">Refresh QR</button>
       </form>
       {% elif step == "secret" %}
       <form method="post" action="/setup/secret" class="form-stack">
@@ -57,10 +59,44 @@
   <script>
     (function () {
       const resendForm = document.getElementById("resend-form");
-      if (!resendForm) return;
+      if (resendForm) {
+        window.setTimeout(() => {
+          resendForm.hidden = false;
+        }, 20000);
+      }
+
+      const qrRefreshForm = document.getElementById("qr-refresh-form");
+      const qrStatusText = document.getElementById("qr-status-text");
+      if (!qrRefreshForm) return;
+
+      const poll = async () => {
+        try {
+          const response = await fetch("/setup/qr-status", { cache: "no-store" });
+          const data = await response.json();
+          if (data.redirect) {
+            window.location.href = data.redirect;
+            return;
+          }
+          if (data.qr_state === "expired") {
+            if (qrStatusText) qrStatusText.textContent = data.qr_error || "QR code expired.";
+            qrRefreshForm.hidden = false;
+            return;
+          }
+          if (data.qr_state === "error") {
+            if (qrStatusText) qrStatusText.textContent = data.qr_error || "QR login failed.";
+            qrRefreshForm.hidden = false;
+            return;
+          }
+        } catch (error) {
+          if (qrStatusText) qrStatusText.textContent = "Waiting for scan...";
+        }
+        window.setTimeout(poll, 2000);
+      };
+
       window.setTimeout(() => {
-        resendForm.hidden = false;
-      }, 20000);
+        qrRefreshForm.hidden = false;
+      }, 30000);
+      window.setTimeout(poll, 2000);
     })();
   </script>
 </body>
