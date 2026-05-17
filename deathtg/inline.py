@@ -14,6 +14,7 @@ from telethon.errors import UserDeactivatedError
 
 from deathtg.assets import system_image
 from deathtg.config import ENV_PATH, RUNTIME_DIR
+from deathtg.panel_access import issue_device_grant, panel_remote_access_ready
 from deathtg.profile_store import profile_settings, save_profile_settings
 
 
@@ -507,6 +508,14 @@ class InlineManager:
             [Button.url("News", "https://t.me/Death_Telega"), Button.url("Support", "https://t.me/Death_TgOfftop")],
         ]
 
+    def _owner_panel_buttons(self) -> list[list]:
+        if not self.owner_id:
+            return self._help_buttons()
+        link = issue_device_grant("Telegram /start", created_by="inline_start", owner_id=int(self.owner_id))
+        rows: list[list] = [[Button.url("Open DeathTG", link)]]
+        rows.extend(self._help_buttons())
+        return rows
+
     def _language_copy(self, language: str) -> dict[str, str]:
         if language == "ru":
             return {
@@ -630,6 +639,24 @@ class InlineManager:
             return
         lang = settings.get("language", "en")
         copy = self._language_copy(lang)
+        sender_id = int(getattr(event, "sender_id", 0) or 0)
+        if self.owner_id and sender_id == self.owner_id:
+            remote_hint = (
+                "This private link works on your phone and PC.\n"
+                if panel_remote_access_ready()
+                else "This private link works from the current reachable panel address.\n"
+            )
+            text = (
+                copy["ready"] + "\n\n"
+                "Your private DeathTG site link is attached below.\n"
+                "Do not share it with anyone.\n"
+                + remote_hint
+                + "\n"
+                f"{self._owner_line()}\n"
+                f"Bot: @{self.bot_username or 'unknown'}"
+            )
+            await event.respond(text, buttons=self._owner_panel_buttons())
+            return
         text = (
             copy["ready"] + "\n\n"
             f"{self._owner_line()}\n"
@@ -655,4 +682,11 @@ class InlineManager:
     async def _on_private_message(self, event) -> None:
         settings = profile_settings()
         copy = self._language_copy(settings.get("language", "en"))
+        sender_id = int(getattr(event, "sender_id", 0) or 0)
+        if self.owner_id and sender_id == self.owner_id:
+            await event.respond(
+                copy["private"] + "\n\nUse the button below to open your private DeathTG site link.",
+                buttons=self._owner_panel_buttons(),
+            )
+            return
         await event.respond(copy["private"], buttons=self._help_buttons())
