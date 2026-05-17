@@ -15,7 +15,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from deathtg.assets import IMAGES_DIR, module_image_path
 from deathtg.metrics import init_metrics
-from deathtg.panel.auth_flow import begin_login, confirm_2fa, confirm_code, finish_login, friendly_login_error, login_hint, resend_code, write_env
+from deathtg.panel.auth_flow import begin_login, confirm_2fa, confirm_code, finish_login, friendly_login_error, login_hint, request_alternate_code, resend_code, write_env
 from deathtg.panel.clean_actions import load_pending_install, router as actions_router
 from deathtg.panel.clean_core import (
     STATIC_DIR,
@@ -430,6 +430,35 @@ async def setup_to_2fa(request: Request):
             "message": "If Telegram already moved this login to two-step verification, enter your 2FA password below.",
         },
     )
+
+
+@app.post("/setup/alternate")
+async def setup_alternate(request: Request):
+    flow_id = request.session.get("setup_flow_id")
+    if not flow_id:
+        return RedirectResponse("/setup", status_code=303)
+    try:
+        hint = await request_alternate_code(flow_id)
+        return templates.TemplateResponse(
+            "setup.html",
+            {
+                "request": request,
+                "step": "pin",
+                "error": None,
+                "message": "DeathTG requested another Telegram delivery method for the login code.",
+                **hint,
+            },
+        )
+    except Exception as exc:
+        return templates.TemplateResponse(
+            "setup.html",
+            {
+                "request": request,
+                "step": "pin",
+                "error": friendly_login_error(exc),
+                **login_hint(flow_id),
+            },
+        )
 
 
 @app.get("/login", response_class=HTMLResponse)
