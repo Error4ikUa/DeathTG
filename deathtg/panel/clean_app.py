@@ -15,7 +15,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from deathtg.assets import IMAGES_DIR, module_image_path
 from deathtg.metrics import init_metrics
-from deathtg.panel.auth_flow import begin_login, confirm_2fa, confirm_code, finish_login, friendly_login_error, login_hint, request_alternate_code, resend_code, write_env
+from deathtg.panel.auth_flow import begin_login, begin_qr_login, confirm_2fa, confirm_code, finish_login, friendly_login_error, login_hint, qr_status, refresh_qr_login, request_alternate_code, resend_code, write_env
 from deathtg.panel.clean_actions import load_pending_install, router as actions_router
 from deathtg.panel.clean_core import (
     STATIC_DIR,
@@ -231,7 +231,7 @@ async def setup_save(
     request: Request,
     api_id: int = Form(...),
     api_hash: str = Form(...),
-    phone: str = Form(...),
+    phone: str = Form(""),
     session_name: str = Form("deathtg"),
     panel_password_value: str = Form(""),
     panel_secret: str = Form(""),
@@ -266,8 +266,8 @@ async def setup_save(
         panel_password.cache_clear()
         flow_id = secrets.token_urlsafe(16)
         request.session["setup_flow_id"] = flow_id
-        login_state = await begin_login(flow_id, api_id, api_hash, phone, session_name)
-        if login_state == "authorized":
+        qr_info = await begin_qr_login(flow_id, api_id, api_hash, session_name)
+        if qr_info.get("qr_state") == "done":
             await finish_login(flow_id)
             request.session.pop("setup_flow_id", None)
             request.session["auth"] = True
@@ -287,10 +287,9 @@ async def setup_save(
             "setup.html",
             {
                 "request": request,
-                "step": "pin",
+                "step": "qr",
                 "error": None,
-                "message": None,
-                **login_hint(flow_id),
+                **qr_info,
             },
         )
     except Exception as exc:
@@ -350,6 +349,47 @@ async def setup_pin(request: Request, pin: str = Form(...)):
                 **login_hint(flow_id),
             },
         )
+
+
+@app.get("/setup/qr-status")
+async def setup_qr_status(request: Request):
+    flow_id = request.session.get("setup_flow_id")
+    if not flow_id:
+        return JSONResponse({"qr_state": "missing", "redirect": "/setup"}, status_code=404)
+    info = qr_status(flow_id)
+    state = info.get("qr_state")
+    if state == "done":
+        await finish_login(flow_id)
+        request.session.pop("setup_flow_id", None)
+        request.session["auth"] = True
+        session_id = secrets.token_urlsafe(18)
+        request.session["device_session_id"] = session_id
+        remember_device_session(
+            session_id,
+            ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent", ""),
+            label=friendly_device_name(request.headers.get("user-agent", ""), "Setup device"),
+            auth_method="setup",
+        )
+        return JSONResponse({"qr_state": "done", "redirect": "/setup/done"})
+    if state == "2fa":
+        return JSONResponse({"qr_state": "2fa", "redirect": "/setup/2fa"})
+    return JSONResponse(info)
+
+
+@app.get("/setup/2fa", response_class=HTMLResponse)
+async def setup_2fa_page(request: Request):
+    flow_id = request.session.get("setup_flow_id")
+    if not flow_id:
+        return RedirectResponse("/setup", status_code=303)
+    return templates.TemplateResponse(
+        "setup.html",
+        {
+            "request": request,
+            "step": "secret",
+            "error": None,
+        },
+    )
 
 
 @app.post("/setup/secret")
@@ -412,6 +452,34 @@ async def setup_resend(request: Request):
                 "step": "pin",
                 "error": friendly_login_error(exc),
                 **login_hint(flow_id),
+            },
+        )
+
+
+@app.post("/setup/qr-refresh")
+async def setup_qr_refresh(request: Request):
+    flow_id = request.session.get("setup_flow_id")
+    if not flow_id:
+        return RedirectResponse("/setup", status_code=303)
+    try:
+        info = await refresh_qr_login(flow_id)
+        return templates.TemplateResponse(
+            "setup.html",
+            {
+                "request": request,
+                "step": "qr",
+                "error": None,
+                **info,
+            },
+        )
+    except Exception as exc:
+        return templates.TemplateResponse(
+            "setup.html",
+            {
+                "request": request,
+                "step": "qr",
+                "error": friendly_login_error(exc),
+                **qr_status(flow_id),
             },
         )
 

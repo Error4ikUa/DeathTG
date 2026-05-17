@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import base64
+import contextlib
 import os
 import stat
+from io import BytesIO
 from dataclasses import dataclass
 
 from telethon import TelegramClient
@@ -15,14 +19,20 @@ from deathtg.server_bootstrap import secure_panel_password, secure_panel_secret,
 @dataclass
 class PendingLogin:
     client: TelegramClient
-    phone: str
     api_id: int
     api_hash: str
     session_name: str
+    phone: str = ""
     phone_code_hash: str | None = None
     delivery_hint: str = ""
     next_delivery_hint: str = ""
     timeout_seconds: int | None = None
+    qr_login: object | None = None
+    qr_data_url: str = ""
+    qr_url: str = ""
+    qr_state: str = "idle"
+    qr_error: str = ""
+    qr_wait_task: asyncio.Task | None = None
 
 
 PENDING: dict[str, PendingLogin] = {}
@@ -45,6 +55,17 @@ def _mask_phone(phone: str) -> str:
 
 def _auth_log(message: str) -> None:
     print(f"Auth: {message}")
+
+
+def _render_qr_data_url(url: str) -> str:
+    import qrcode
+    import qrcode.image.svg
+
+    image = qrcode.make(url, image_factory=qrcode.image.svg.SvgImage, box_size=8, border=2)
+    buffer = BytesIO()
+    image.save(buffer)
+    payload = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/svg+xml;base64,{payload}"
 
 
 def _cleanup_session_files(session_name: str) -> None:
@@ -102,7 +123,7 @@ def _delivery_hint(sent) -> tuple[str, str, int | None]:
     return hint, next_hint, int(timeout) if isinstance(timeout, int) else None
 
 
-def write_env(api_id: int, api_hash: str, session_name: str, phone: str, panel_key: str, panel_secret: str, bot_token: str = "") -> None:
+def write_env(api_id: int, api_hash: str, session_name: str, phone: str = "", panel_key: str = "", panel_secret: str = "", bot_token: str = "") -> None:
     update_env_values(
         {
             "API_ID": str(api_id),
@@ -116,6 +137,99 @@ def write_env(api_id: int, api_hash: str, session_name: str, phone: str, panel_k
             "LOGIN_PENDING": "1",
         }
     )
+
+
+async def _watch_qr_login(flow_id: str) -> None:
+    pending = PENDING.get(flow_id)
+    if not pending or pending.qr_login is None:
+        return
+    try:
+        await pending.qr_login.wait()
+        pending.qr_state = "done"
+        _set_login_stage("qr_confirmed")
+        _auth_log("QR login approved in Telegram")
+    except SessionPasswordNeededError:
+        pending.qr_state = "2fa"
+        _set_login_stage("waiting_2fa")
+        _auth_log("QR login approved and Telegram requested two-step verification password")
+    except asyncio.TimeoutError:
+        pending.qr_state = "expired"
+        pending.qr_error = "QR code expired. Refresh it and scan again."
+        _set_login_stage("qr_expired")
+        _auth_log("QR login expired before it was scanned")
+    except Exception as exc:
+        pending.qr_state = "error"
+        pending.qr_error = friendly_login_error(exc)
+        _set_login_stage("qr_error")
+        _auth_log(f"QR login failed: {type(exc).__name__}: {exc}")
+
+
+async def begin_qr_login(flow_id: str, api_id: int, api_hash: str, session_name: str) -> dict[str, object]:
+    _set_login_pending(True)
+    _set_login_stage("starting")
+    _auth_log("saved setup data and started Telegram QR login")
+    _cleanup_session_files(session_name)
+    client = _new_client(session_name, api_id, api_hash)
+    await client.connect()
+    if await client.is_user_authorized():
+        _set_login_stage("authorized")
+        _auth_log("existing session is already authorized")
+        PENDING[flow_id] = PendingLogin(
+            client=client,
+            api_id=api_id,
+            api_hash=api_hash,
+            session_name=session_name,
+            qr_state="done",
+        )
+        return qr_status(flow_id)
+
+    qr_login = await client.qr_login()
+    pending = PendingLogin(
+        client=client,
+        api_id=api_id,
+        api_hash=api_hash,
+        session_name=session_name,
+        qr_login=qr_login,
+        qr_url=qr_login.url,
+        qr_data_url=_render_qr_data_url(qr_login.url),
+        qr_state="waiting_qr",
+    )
+    PENDING[flow_id] = pending
+    pending.qr_wait_task = asyncio.create_task(_watch_qr_login(flow_id))
+    _set_login_stage("waiting_qr")
+    _auth_log("generated QR login and is waiting for a scan from Telegram")
+    return qr_status(flow_id)
+
+
+def qr_status(flow_id: str) -> dict[str, object]:
+    pending = PENDING.get(flow_id)
+    if not pending:
+        return {"qr_state": "missing", "qr_error": "Setup session not found."}
+    return {
+        "qr_state": pending.qr_state,
+        "qr_error": pending.qr_error,
+        "qr_data_url": pending.qr_data_url,
+        "qr_url": pending.qr_url,
+    }
+
+
+async def refresh_qr_login(flow_id: str) -> dict[str, object]:
+    pending = PENDING[flow_id]
+    if pending.qr_wait_task:
+        pending.qr_wait_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await pending.qr_wait_task
+    if pending.qr_login is None:
+        raise RuntimeError("QR login is not active")
+    await pending.qr_login.recreate()
+    pending.qr_url = pending.qr_login.url
+    pending.qr_data_url = _render_qr_data_url(pending.qr_url)
+    pending.qr_state = "waiting_qr"
+    pending.qr_error = ""
+    pending.qr_wait_task = asyncio.create_task(_watch_qr_login(flow_id))
+    _set_login_stage("waiting_qr")
+    _auth_log("refreshed QR login and is waiting for a new scan")
+    return qr_status(flow_id)
 
 
 async def begin_login(flow_id: str, api_id: int, api_hash: str, phone: str, session_name: str) -> str:
@@ -252,6 +366,10 @@ async def confirm_2fa(flow_id: str, password: str) -> None:
 
 async def finish_login(flow_id: str) -> dict[str, str]:
     pending = PENDING.pop(flow_id)
+    if pending.qr_wait_task:
+        pending.qr_wait_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await pending.qr_wait_task
     me = await pending.client.get_me()
     await pending.client.disconnect()
     _set_login_pending(False)
@@ -273,6 +391,10 @@ async def finish_login(flow_id: str) -> dict[str, str]:
 async def cancel_login(flow_id: str) -> None:
     pending = PENDING.pop(flow_id, None)
     if pending:
+        if pending.qr_wait_task:
+            pending.qr_wait_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await pending.qr_wait_task
         await pending.client.disconnect()
     if not PENDING:
         _set_login_pending(False)
