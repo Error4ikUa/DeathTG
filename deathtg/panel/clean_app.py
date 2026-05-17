@@ -147,6 +147,12 @@ def _client_ip(request: Request) -> str:
 
 
 def _is_local_request(request: Request) -> bool:
+    host = (request.url.hostname or "").strip().lower()
+    if host in {"127.0.0.1", "localhost", "::1"}:
+        return True
+    origin_host = (request.headers.get("host") or "").split(":", 1)[0].strip().lower()
+    if origin_host in {"127.0.0.1", "localhost", "::1"}:
+        return True
     try:
         return ipaddress.ip_address(_client_ip(request)).is_loopback
     except Exception:
