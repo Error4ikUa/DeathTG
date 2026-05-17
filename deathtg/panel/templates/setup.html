@@ -17,7 +17,13 @@
       <div class="brand-mark">DTG</div>
       <p class="eyebrow">First launch</p>
       <h1>DeathTG Setup</h1>
-      <p>Enter your API data and phone, then confirm the Telegram code here.</p>
+      <p>Enter your API data, continue through QR login, and enter 2FA here only if Telegram asks for it.</p>
+      {% if panel_url %}
+      <small style="display:block;margin-top:-4px;margin-bottom:10px;color:#9fc7ae">Current panel address: {{ panel_url }}</small>
+      {% endif %}
+      {% if panel_remote_access_ready %}
+      <small style="display:block;margin-bottom:12px;color:#9fc7ae">This panel can be opened from your other devices on the same network or through your public URL.</small>
+      {% endif %}
       {% if message %}<div class="alert success">{{ message }}</div>{% endif %}
       {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
       {% if step == "start" %}
@@ -39,8 +45,8 @@
           <img src="{{ qr_data_url }}" alt="DeathTG QR Login" style="width:min(100%,320px);height:auto;background:#fff;border-radius:18px;padding:14px">
         </div>
         {% endif %}
-        <small>Open Telegram on your phone and scan this QR code to log in.</small>
-        <small id="qr-status-text">Waiting for scan...</small>
+        <small>Open Telegram on your phone, then scan this QR code to connect your DeathTG session.</small>
+        <small id="qr-status-text">Waiting for Telegram scan...</small>
       </div>
       <form method="post" action="/setup/qr-refresh" class="form-stack delayed-action" id="qr-refresh-form" hidden style="margin-top:12px">
         <button type="submit">Refresh QR</button>
@@ -58,13 +64,6 @@
   <script src="/static/matrix.js"></script>
   <script>
     (function () {
-      const resendForm = document.getElementById("resend-form");
-      if (resendForm) {
-        window.setTimeout(() => {
-          resendForm.hidden = false;
-        }, 20000);
-      }
-
       const qrRefreshForm = document.getElementById("qr-refresh-form");
       const qrStatusText = document.getElementById("qr-status-text");
       if (!qrRefreshForm) return;

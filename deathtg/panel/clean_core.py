@@ -226,7 +226,7 @@ async def profile_info() -> dict[str, str]:
                 "language": settings.get("language", "en"),
                 "accent": settings.get("accent", "blue"),
                 "profile_title": settings.get("profile_title", "DeathTG Operator"),
-                "role": settings.get("role", "admin"),
+                "role": settings.get("role", "user"),
                 "info_text": settings.get("info_text", ""),
             }
         except Exception:
@@ -241,7 +241,7 @@ async def profile_info() -> dict[str, str]:
         "language": settings.get("language", "en"),
         "accent": settings.get("accent", "blue"),
         "profile_title": settings.get("profile_title", "DeathTG Operator"),
-        "role": settings.get("role", "admin"),
+        "role": settings.get("role", "user"),
         "info_text": settings.get("info_text", ""),
     }
 

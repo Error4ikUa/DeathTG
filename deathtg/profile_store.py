@@ -12,8 +12,11 @@ DEFAULT_PROFILE_SETTINGS = {
     "description": "DeathTG userbot online. Neon profile, modules and automation in one panel.",
     "accent": "blue",
     "profile_title": "DeathTG Operator",
-    "role": "admin",
+    "role": "user",
     "info_text": "",
+    "backup_enabled": "0",
+    "backup_interval_hours": "24",
+    "onboarding_done": "0",
 }
 
 def profile_settings() -> dict[str, str]:
@@ -28,6 +31,10 @@ def profile_settings() -> dict[str, str]:
             pass
     if data.get("language") not in {"en", "ru"}:
         data["language"] = "en"
+    if data.get("accent") not in {"blue", "red", "gold", "green", "purple", "dark"}:
+        data["accent"] = "blue"
+    if data.get("role") not in {"user", "admin", "developer"}:
+        data["role"] = "user"
     return data
 
 def save_profile_settings(**updates: str) -> dict[str, str]:
@@ -38,6 +45,10 @@ def save_profile_settings(**updates: str) -> dict[str, str]:
             data[key] = str(value).strip()
     if data.get("language") not in {"en", "ru"}:
         data["language"] = "en"
+    if data.get("accent") not in {"blue", "red", "gold", "green", "purple", "dark"}:
+        data["accent"] = "blue"
+    if data.get("role") not in {"user", "admin", "developer"}:
+        data["role"] = "user"
     PROFILE_SETTINGS_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return data
 

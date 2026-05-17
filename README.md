@@ -1,12 +1,12 @@
 # DeathTG
 
 ```text
-██████╗░███████╗░█████╗░████████╗██╗░░██╗  ████████╗░██████╗░
-██╔══██╗██╔════╝██╔══██╗╚══██╔══╝██║░░██║  ╚══██╔══╝██╔════╝░
-██║░░██║█████╗░░███████║░░░██║░░░███████║  ░░░██║░░░██║░░██╗░
-██║░░██║██╔══╝░░██╔══██║░░░██║░░░██╔══██║  ░░░██║░░░██║░░╚██╗
-██████╔╝███████╗██║░░██║░░░██║░░░██║░░██║  ░░░██║░░░╚██████╔╝
-╚═════╝░╚══════╝╚═╝░░╚═╝░░░╚═╝░░░╚═╝░░╚═╝  ░░░╚═╝░░░░╚═════╝░
+██████╗ ███████╗ █████╗ ████████╗██╗  ██╗    ████████╗ ██████╗
+██╔══██╗██╔════╝██╔══██╗╚══██╔══╝██║  ██║    ╚══██╔══╝██╔════╝
+██║  ██║█████╗  ███████║   ██║   ███████║       ██║   ██║  ██╗
+██║  ██║██╔══╝  ██╔══██║   ██║   ██╔══██║       ██║   ██║  ╚██╗
+██████╔╝███████╗██║  ██║   ██║   ██║  ██║       ██║   ╚██████╔╝
+╚═════╝ ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝       ╚═╝    ╚═════╝
 ```
 
 DeathTG is a secure Telegram userbot platform with:
@@ -42,9 +42,8 @@ You do not need manual `nano .env`.
 1. Open the setup link from terminal
 2. Enter `API_ID`
 3. Enter `API_HASH`
-4. Enter Telegram phone number
-5. Enter Telegram code
-6. Enter 2FA password if enabled
+4. Scan the Telegram QR code
+5. Enter 2FA password only if Telegram asks for it
 
 After that DeathTG:
 
@@ -120,8 +119,8 @@ Rules:
 Fallback image logic:
 
 1. module local `Module.png`
-2. `images/modules/<module_name>.png`
-3. `images/modules/Module.png`
+2. `images/modules/<module_name>.png` or `Image/modules/<module_name>.png`
+3. `images/modules/Module.png` or `Image/modules/Module.png`
 
 ## DTG_Modules Repo Contract
 
@@ -133,15 +132,15 @@ ModuleName/ModuleName.py
 ModuleName/Module.png
 ```
 
-If `Module.png` is missing, DeathTG shows the shared fallback from `images/modules/Module.png`.
+If `Module.png` is missing, DeathTG shows the shared fallback from `images/modules/Module.png` or `Image/modules/Module.png`.
 
 ## Image Contract
 
-Put your PNG assets in `images/` with these exact names:
+Put your PNG assets in `images/` or `Image/` with these exact names:
 
-- `welcome_deathtg.png`
-- `update_available_deathtg.png`
-- `creating_backup.png`
+- `DeathTG_welcome.png`
+- `DeathTG_update_available.png`
+- `DeathTG_creating_backup.png`
 
 Module images:
 

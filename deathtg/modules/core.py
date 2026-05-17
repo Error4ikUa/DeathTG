@@ -6,12 +6,14 @@ from pathlib import Path
 from deathtg.command import command
 from deathtg.config import MODULES_DIR, ROOT_DIR
 from deathtg.loader import Module
+from deathtg.module_repo import fetch_repo_modules, find_repo_module, is_url, normalize_github_raw_url, trusted_repo_link
 from deathtg.permissions import parse_security
 from deathtg.registry import PROTECTED_MODULES
 from deathtg.update_manager import apply_update
 
 
 HELP_PAGE_SIZE = 8
+DLMOD_PAGE_SIZE = 5
 
 
 def _cmd(name: str) -> str:
@@ -134,24 +136,89 @@ class CoreMod(Module):
 
         return await asyncio.to_thread(apply_update)
 
-    @command("dlmod", description="Download and load module by URL", usage=".dlmod https://.../module.py", security="owner")
+    @command("dlmod", description="Install module from DTG_Modules or raw URL", usage=".dlmod [module_name|raw_url]", security="owner")
     async def dlmod_cmd(self, event, args):
         if not args:
-            await event.edit("<b>Provide a .py module URL.</b>", parse_mode="html")
+            items = await fetch_repo_modules()
+            if not items:
+                await event.edit("<b>DTG_Modules is unavailable right now.</b>", parse_mode="html")
+                return
+            await self.inline_send(
+                event,
+                self._dlmod_page_text(items, 0),
+                reply_markup=self._dlmod_page_buttons(items, 0),
+                parse_mode="html",
+                link_preview=False,
+                ttl=3600,
+            )
             return
         msg = await event.edit("<b>Downloading module...</b>", parse_mode="html")
         try:
-            trusted = _is_trusted_dtg_link(args[0])
-            path = await self.app.loader.download_module(args[0], force=trusted)
+            requested = args[0].strip()
+            module_ref = requested
+            blob_hint = ""
+            if is_url(requested):
+                normalized = normalize_github_raw_url(requested)
+                if normalized != requested and "/blob/" in requested:
+                    blob_hint = "\n<i>Blob link auto-converted to raw.</i>"
+                module_ref = normalized
+            else:
+                found = await find_repo_module(requested)
+                if not found:
+                    await msg.edit(
+                        f"<b>Module not found in DTG_Modules:</b> <code>{html.escape(requested)}</code>",
+                        parse_mode="html",
+                    )
+                    return
+                module_ref = str(found.get("link") or "")
+                if not module_ref:
+                    await msg.edit("<b>Module exists but has no downloadable raw file.</b>", parse_mode="html")
+                    return
+            trusted = trusted_repo_link(module_ref) or _is_trusted_dtg_link(module_ref)
+            path = await self.app.loader.download_module(module_ref, force=trusted)
             try:
                 module_name = await self.app.loader.load_file(path, force=trusted)
             except Exception:
                 path.unlink(missing_ok=True)
                 raise
-            await msg.edit(f"<b>Module loaded:</b> <code>{html.escape(module_name)}</code>", parse_mode="html")
+            await msg.edit(
+                f"<b>Module loaded:</b> <code>{html.escape(module_name)}</code>{blob_hint}",
+                parse_mode="html",
+            )
         except Exception as exc:
             await msg.edit(
                 f"<b>dlmod failed:</b>\n<code>{html.escape(type(exc).__name__ + ': ' + str(exc))}</code>",
+                parse_mode="html",
+            )
+
+    async def dlmod_page_callback(self, call, page: int = 0):
+        items = await fetch_repo_modules()
+        await call.edit(
+            self._dlmod_page_text(items, page),
+            reply_markup=self._dlmod_page_buttons(items, page),
+            parse_mode="html",
+            link_preview=False,
+        )
+
+    async def dlmod_install_callback(self, call, link: str, label: str):
+        await call.edit(f"<b>Installing:</b> <code>{html.escape(label)}</code>", reply_markup=None, parse_mode="html")
+        try:
+            trusted = trusted_repo_link(link) or _is_trusted_dtg_link(link)
+            path = await self.app.loader.download_module(link, force=trusted)
+            try:
+                module_name = await self.app.loader.load_file(path, force=trusted)
+            except Exception:
+                path.unlink(missing_ok=True)
+                raise
+            await call.edit(
+                f"<b>Module loaded:</b> <code>{html.escape(module_name)}</code>",
+                reply_markup=None,
+                parse_mode="html",
+            )
+        except Exception as exc:
+            await call.edit(
+                f"<b>dlmod failed:</b>\n<code>{html.escape(type(exc).__name__ + ': ' + str(exc))}</code>",
+                reply_markup=None,
                 parse_mode="html",
             )
 
@@ -261,6 +328,56 @@ class CoreMod(Module):
             lock = "protected" if name in PROTECTED_MODULES else "external"
             lines.append(f"{self._module_icon(name)} <b>{html.escape(name)}</b> - <code>{count}</code> cmds ({lock})")
         return "\n".join(lines)
+
+    def _dlmod_page_text(self, items: list[dict], page: int) -> str:
+        total = len(items)
+        pages = max(1, (total + DLMOD_PAGE_SIZE - 1) // DLMOD_PAGE_SIZE)
+        page = max(0, min(page, pages - 1))
+        start = page * DLMOD_PAGE_SIZE
+        chunk = items[start:start + DLMOD_PAGE_SIZE]
+        lines = [
+            "<b>DTG_Modules Browser</b>",
+            "",
+            f"Page <code>{page + 1}</code>/<code>{pages}</code>",
+            "",
+        ]
+        for index, item in enumerate(chunk, start=1):
+            name = str(item.get("name") or "module")
+            description = str(item.get("description") or "DTG module")
+            lines.append(f"<b>{index}. {html.escape(name)}</b>\n{html.escape(description)}")
+        lines.extend(["", "Use buttons below to install a module from this page."])
+        return "\n".join(lines)
+
+    def _dlmod_page_buttons(self, items: list[dict], page: int):
+        total = len(items)
+        pages = max(1, (total + DLMOD_PAGE_SIZE - 1) // DLMOD_PAGE_SIZE)
+        page = max(0, min(page, pages - 1))
+        start = page * DLMOD_PAGE_SIZE
+        chunk = items[start:start + DLMOD_PAGE_SIZE]
+        rows = []
+        for item in chunk:
+            name = str(item.get("name") or "module")
+            link = str(item.get("link") or "")
+            if not link:
+                continue
+            rows.append(
+                [
+                    {
+                        "text": f"Install {name}"[:32],
+                        "callback": self.dlmod_install_callback,
+                        "args": (link, name),
+                    }
+                ]
+            )
+        nav = []
+        if page > 0:
+            nav.append({"text": "Back", "callback": self.dlmod_page_callback, "args": (page - 1,)})
+        if start + DLMOD_PAGE_SIZE < total:
+            nav.append({"text": "Next", "callback": self.dlmod_page_callback, "args": (page + 1,)})
+        if nav:
+            rows.append(nav)
+        rows.append([{"text": "Close", "callback": self.close_callback, "args": ()}])
+        return self.inline_buttons(*rows)
 
     def _modules_text(self) -> str:
         items = sorted(self.app.loader.loaded)

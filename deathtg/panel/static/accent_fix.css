@@ -22,6 +22,30 @@ body[data-accent="gold"]{
   --line2:rgba(255,209,102,.40) !important;
 }
 
+body[data-accent="green"]{
+  --accent:#52ff8b !important;
+  --accent2:#1fd866 !important;
+  --accent-rgb:82,255,139 !important;
+  --line:rgba(82,255,139,.20) !important;
+  --line2:rgba(82,255,139,.38) !important;
+}
+
+body[data-accent="purple"]{
+  --accent:#a879ff !important;
+  --accent2:#d0b7ff !important;
+  --accent-rgb:168,121,255 !important;
+  --line:rgba(168,121,255,.20) !important;
+  --line2:rgba(168,121,255,.38) !important;
+}
+
+body[data-accent="dark"]{
+  --accent:#9aa6ba !important;
+  --accent2:#d7e0ed !important;
+  --accent-rgb:154,166,186 !important;
+  --line:rgba(154,166,186,.18) !important;
+  --line2:rgba(154,166,186,.32) !important;
+}
+
 .card{
   border-color:rgba(var(--accent-rgb),.28)!important;
   box-shadow:0 18px 70px rgba(0,0,0,.32),inset 0 0 34px rgba(var(--accent-rgb),.06)!important;

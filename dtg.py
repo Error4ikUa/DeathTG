@@ -10,6 +10,7 @@ from pathlib import Path
 
 import uvicorn
 from dotenv import load_dotenv
+from deathtg.panel_access import effective_panel_bind_host, panel_base_url, running_in_wsl
 from deathtg.setup_access import setup_link
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -101,18 +102,11 @@ def cleanup(signum, frame):
 
 
 def panel_url() -> str:
-    public = os.getenv("PANEL_PUBLIC_URL", "").strip()
-    if public:
-        return public.rstrip("/")
-    host = os.getenv("PANEL_HOST", "127.0.0.1").strip() or "127.0.0.1"
-    if host in {"0.0.0.0", "::"}:
-        host = "127.0.0.1"
-    port = (os.getenv("PANEL_PORT", "8080").strip() or "8080")
-    return f"http://{host}:{port}"
+    return panel_base_url()
 
 
 def run_panel() -> None:
-    host = os.getenv("PANEL_HOST", "127.0.0.1")
+    host = effective_panel_bind_host()
     port = int(os.getenv("PANEL_PORT", "8080"))
     uvicorn.run("deathtg.panel.clean_app:app", host=host, port=port)
 
@@ -130,6 +124,8 @@ if __name__ == "__main__":
         print(f"First run setup link: {setup_link()}")
     print("First run: open setup, enter API_ID/API_HASH, scan the QR code in Telegram, then enter 2FA only if Telegram asks for it.")
     print("Console never asks for the Telegram code. DeathTG waits for QR approval from the website flow and finishes login in the background.")
+    if running_in_wsl() and not os.getenv("PANEL_PUBLIC_URL", "").strip():
+        print("Phone access note: WSL keeps the panel local by default. For real phone access, use a VPS/public URL or expose WSL through Windows networking manually.")
     print("Userbot: will auto-start after setup and session creation.")
     print("Git updates are not auto-applied. DeathTG will notify you in Telegram when a new update appears.")
     supervisor_thread = threading.Thread(target=supervisor_loop, name="dtg-userbot-supervisor", daemon=True)

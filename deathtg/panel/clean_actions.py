@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import re
@@ -17,9 +18,11 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from deathtg.config import MODULES_DIR, ROOT_DIR, RUNTIME_DIR
 from deathtg.panel.clean_core import MODULE_META_PATH, loader, refresh_modules, _extract_module_source_meta
-from deathtg.profile_store import save_profile_settings, update_env_value
+from deathtg.profile_store import profile_settings, save_profile_settings, update_env_value
 from deathtg.registry import PROTECTED_MODULES
 from deathtg.module_config import ModuleConfig, ValidationError
+from deathtg.role_gate import can_assign_role, normalize_role
+from deathtg.community_roles import clear_role_scan_result, read_role_scan_result
 from deathtg.security import is_trusted_module_link, scan_module_source
 
 router = APIRouter()
@@ -28,6 +31,7 @@ USER_STATIC_DIR = Path(__file__).resolve().parent / "static" / "user"
 PANEL_ACTIONS_PATH = RUNTIME_DIR / "panel_actions.jsonl"
 PENDING_INSTALLS_DIR = RUNTIME_DIR / "pending_installs"
 REQUIREMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+(?:==[A-Za-z0-9_.!+-]+|>=[A-Za-z0-9_.!+-]+|<=[A-Za-z0-9_.!+-]+)?$")
+ROLE_SCAN_TIMEOUT_SECONDS = 15.0
 
 
 def _load_module_meta() -> dict[str, dict]:
@@ -97,6 +101,24 @@ def _queue_userbot_action(action: str, **payload: object) -> None:
     item.update(payload)
     with PANEL_ACTIONS_PATH.open("a", encoding="utf-8") as f:
         f.write(json.dumps(item, ensure_ascii=False) + "\n")
+
+
+async def _request_role_scan(role: str) -> tuple[bool, str]:
+    request_id = secrets.token_urlsafe(12)
+    clear_role_scan_result(request_id)
+    _queue_userbot_action("role_scan", request_id=request_id, role=normalize_role(role))
+    deadline = time.monotonic() + ROLE_SCAN_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        payload = read_role_scan_result(request_id)
+        if payload is not None:
+            clear_role_scan_result(request_id)
+            if bool(payload.get("ok")):
+                return True, ""
+            message = str(payload.get("message") or "").strip()
+            return False, message or "Role verification was denied."
+        await asyncio.sleep(0.35)
+    clear_role_scan_result(request_id)
+    return False, "Role verification timed out. Open Telegram and confirm your DeathTG access first."
 
 
 def _report_payload(report) -> dict:
@@ -266,13 +288,26 @@ async def save_profile(
     description: str = Form(""),
     info_text: str = Form(""),
     accent: str = Form("blue"),
-    role: str = Form("admin"),
+    role: str = Form("user"),
+    role_key: str = Form(""),
     command_prefix: str = Form("."),
 ):
     blocked = _require_auth(request)
     if blocked:
         return blocked
-    role = role if role in {"user", "admin", "developer"} else "admin"
+    current = profile_settings()
+    role = normalize_role(role)
+    allowed, error = can_assign_role(
+        current_role=str(current.get("role") or "user"),
+        requested_role=role,
+        provided_key=role_key,
+    )
+    if not allowed and role in {"admin", "developer"}:
+        allowed, scan_error = await _request_role_scan(role)
+        if not allowed and scan_error:
+            error = scan_error
+    if not allowed:
+        return _redirect("/profile", error=error)
     save_profile_settings(
         profile_title=profile_title,
         description=description,
@@ -301,11 +336,13 @@ async def upload_avatar(
             if not data:
                 raise RuntimeError("Avatar file is empty")
             (USER_STATIC_DIR / "avatar.png").write_bytes(data)
+            _queue_userbot_action("startup_sync")
             return RedirectResponse("/profile?message=Avatar saved", status_code=303)
         if not avatar_base64:
             raise RuntimeError("Avatar payload is empty")
         data = base64.b64decode(avatar_base64.split(",", 1)[1])
         (USER_STATIC_DIR / "avatar.png").write_bytes(data)
+        _queue_userbot_action("startup_sync")
         return JSONResponse({"status": "ok", "avatar": f"/static/user/avatar.png?t={int(time.time())}"})
     except Exception as e:
         return JSONResponse({"error": str(e)}, 400)

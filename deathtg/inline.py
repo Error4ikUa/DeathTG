@@ -12,7 +12,9 @@ from dotenv import load_dotenv
 from telethon import Button, TelegramClient, events
 from telethon.errors import UserDeactivatedError
 
+from deathtg.assets import system_image
 from deathtg.config import ENV_PATH, RUNTIME_DIR
+from deathtg.profile_store import profile_settings, save_profile_settings
 
 
 CallbackFunc = Callable[..., Awaitable[Any]]
@@ -505,9 +507,131 @@ class InlineManager:
             [Button.url("News", "https://t.me/Death_Telega"), Button.url("Support", "https://t.me/Death_TgOfftop")],
         ]
 
+    def _language_copy(self, language: str) -> dict[str, str]:
+        if language == "ru":
+            return {
+                "welcome": "Добро пожаловать в DeathTG.\nGod Bless Amerika.\n\nВыберите язык.",
+                "backup": "Настройте backup системы.\n\nХотите делать backup?",
+                "backup_saved": "Backup настроен.",
+                "backup_off": "Backup отключен.",
+                "ready": "DeathTG настроен. Панель и inline-бот готовы.",
+                "private": "Кнопки и формы управляются вашим DeathTG. Используйте /status для проверки состояния.",
+                "status": "Статус DeathTG inline:",
+                "language": "Язык сохранён.",
+                "choose_interval": "Выберите, через какое время делать backup.",
+            }
+        return {
+            "welcome": "God Bless Amerika. Welcome to DeathTG.\n\nChoose language.",
+            "backup": "Set up the backup system.\n\nDo you want backups?",
+            "backup_saved": "Backup settings saved.",
+            "backup_off": "Backups disabled.",
+            "ready": "DeathTG is configured. Panel and inline bot are ready.",
+            "private": "Buttons and forms are managed by your DeathTG userbot. Use /status to check readiness.",
+            "status": "DeathTG inline status:",
+            "language": "Language saved.",
+            "choose_interval": "Choose how often backups should run.",
+        }
+
+    async def _send_onboarding_language(self, chat_id: int) -> None:
+        copy = self._language_copy("en")
+        await self.push_form(
+            chat_id,
+            copy["welcome"],
+            reply_markup=[
+                [{"text": "Рус", "callback": self._onboarding_language_callback, "args": ("ru",)}],
+                [{"text": "Eng", "callback": self._onboarding_language_callback, "args": ("en",)}],
+            ],
+            ttl=60 * 60 * 24,
+            parse_mode="html",
+            photo=str(system_image("welcome")) if system_image("welcome") else None,
+        )
+
+    async def ensure_owner_onboarding(self) -> None:
+        settings = profile_settings()
+        if not self.owner_id or settings.get("onboarding_done") == "1":
+            return
+        await self._send_onboarding_language(int(self.owner_id))
+
+    async def _send_backup_prompt(self, chat_id: int, language: str) -> None:
+        lang = "ru" if language == "ru" else "en"
+        copy = self._language_copy(lang)
+        intro = copy["language"] + "\n\n" if copy.get("language") else ""
+        await self.push_form(
+            chat_id,
+            intro + copy["backup"],
+            reply_markup=[
+                [{"text": "Да" if lang == "ru" else "Yes", "callback": self._onboarding_backup_toggle_callback, "args": (lang, "1")}],
+                [{"text": "Нет" if lang == "ru" else "No", "callback": self._onboarding_backup_toggle_callback, "args": (lang, "0")}],
+            ],
+            ttl=60 * 60 * 24,
+            parse_mode="html",
+            photo=str(system_image("creating_backup")) if system_image("creating_backup") else None,
+        )
+
+    async def _onboarding_language_callback(self, call, language: str) -> None:
+        lang = "ru" if language == "ru" else "en"
+        save_profile_settings(language=lang)
+        with contextlib.suppress(Exception):
+            await call.delete()
+        await self._send_backup_prompt(int(call.chat_id), lang)
+
+    async def _onboarding_backup_toggle_callback(self, call, language: str, enabled: str) -> None:
+        lang = "ru" if language == "ru" else "en"
+        copy = self._language_copy(lang)
+        if enabled != "1":
+            save_profile_settings(language=lang, backup_enabled="0", onboarding_done="1")
+            await call.edit(copy["backup_off"] + "\n\n" + copy["ready"], reply_markup=None, parse_mode="html")
+            return
+        rows = []
+        labels = [1, 2, 4, 6, 8, 12, 24, 48, 168]
+        for start_row in range(0, len(labels), 3):
+            row = []
+            for hours in labels[start_row:start_row + 3]:
+                row.append(
+                    {
+                        "text": f"{hours}h",
+                        "callback": self._onboarding_backup_interval_callback,
+                        "args": (lang, str(hours)),
+                    }
+                )
+            rows.append(row)
+        rows.append(
+            [
+                {
+                    "text": "Never" if lang == "en" else "Никогда",
+                    "callback": self._onboarding_backup_interval_callback,
+                    "args": (lang, "0"),
+                }
+            ]
+        )
+        await call.edit(copy["choose_interval"], reply_markup=rows, parse_mode="html")
+
+    async def _onboarding_backup_interval_callback(self, call, language: str, hours: str) -> None:
+        lang = "ru" if language == "ru" else "en"
+        copy = self._language_copy(lang)
+        enabled = "1" if hours not in {"", "0"} else "0"
+        interval = hours if hours.isdigit() and int(hours) > 0 else "24"
+        save_profile_settings(
+            language=lang,
+            backup_enabled=enabled,
+            backup_interval_hours=interval,
+            onboarding_done="1",
+        )
+        if enabled == "1":
+            message = f"{copy['backup_saved']}\n\n{'Интервал' if lang == 'ru' else 'Interval'}: {interval}h\n\n{copy['ready']}"
+        else:
+            message = copy["backup_off"] + "\n\n" + copy["ready"]
+        await call.edit(message, reply_markup=None, parse_mode="html")
+
     async def _on_start(self, event) -> None:
+        settings = profile_settings()
+        if self.owner_id and int(getattr(event, "sender_id", 0) or 0) == self.owner_id and settings.get("onboarding_done") != "1":
+            await self._send_onboarding_language(event.chat_id)
+            return
+        lang = settings.get("language", "en")
+        copy = self._language_copy(lang)
         text = (
-            "DeathTG inline bot is connected.\n"
+            copy["ready"] + "\n\n"
             f"{self._owner_line()}\n"
             f"Bot: @{self.bot_username or 'unknown'}\n\n"
             "Commands:\n"
@@ -517,9 +641,11 @@ class InlineManager:
         await event.respond(text, buttons=self._help_buttons())
 
     async def _on_status(self, event) -> None:
+        settings = profile_settings()
+        copy = self._language_copy(settings.get("language", "en"))
         ready = "yes" if self.ready else "no"
         text = (
-            "DeathTG inline status:\n"
+            copy["status"] + "\n"
             f"ready: {ready}\n"
             f"callbacks: {len(self.registry)}\n"
             f"{self._owner_line()}"
@@ -527,8 +653,6 @@ class InlineManager:
         await event.respond(text, buttons=self._help_buttons())
 
     async def _on_private_message(self, event) -> None:
-        text = (
-            "Buttons and inline forms are managed by the DeathTG userbot.\n"
-            "Use /status to check readiness."
-        )
-        await event.respond(text, buttons=self._help_buttons())
+        settings = profile_settings()
+        copy = self._language_copy(settings.get("language", "en"))
+        await event.respond(copy["private"], buttons=self._help_buttons())

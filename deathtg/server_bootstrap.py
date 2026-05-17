@@ -3,11 +3,13 @@ from __future__ import annotations
 import argparse
 import os
 import secrets
+import socket
 import stat
 from pathlib import Path
 from urllib.parse import urlparse
 
 from deathtg.config import ENV_PATH, ROOT_DIR
+from deathtg.panel_access import local_network_ip, running_in_wsl, visible_panel_host
 
 INSECURE_PASSWORDS = {"", "deathtg", "change_me_now", "admin", "password", "123456"}
 INSECURE_SECRETS = {"", "change_me_long_secret", "change_me_to_random_long_string", "secret"}
@@ -105,10 +107,20 @@ def ensure_server_env(*, path: Path = ENV_PATH, panel_host: str = "", panel_port
     if current.get("PANEL_SECRET", "") != secret:
         updates["PANEL_SECRET"] = secret
 
+    default_panel_host = "127.0.0.1" if running_in_wsl() else "0.0.0.0"
+    current_panel_host = current.get("PANEL_HOST", "").strip()
+    if not current_panel_host:
+        resolved_panel_host = panel_host or default_panel_host
+    elif current_panel_host in {"127.0.0.1", "localhost"} and not effective_public_host and not effective_public_url and not running_in_wsl():
+        resolved_panel_host = "0.0.0.0"
+        updates["PANEL_HOST"] = resolved_panel_host
+    else:
+        resolved_panel_host = panel_host or current_panel_host
+
     desired_defaults = {
         "SESSION_NAME": current.get("SESSION_NAME", "deathtg") or "deathtg",
         "COMMAND_PREFIX": current.get("COMMAND_PREFIX", ".") or ".",
-        "PANEL_HOST": panel_host or current.get("PANEL_HOST", "127.0.0.1") or "127.0.0.1",
+        "PANEL_HOST": resolved_panel_host,
         "PANEL_PORT": panel_port or current.get("PANEL_PORT", "8080") or "8080",
         "PANEL_SCHEME": "https" if (effective_public_host or effective_public_url) else (current.get("PANEL_SCHEME", "http") or "http"),
         "PANEL_PUBLIC_HOST": effective_public_host,
@@ -149,6 +161,9 @@ def _normalized_host(value: str) -> str:
 
 def panel_allowed_hosts() -> list[str]:
     hosts = {"127.0.0.1", "localhost"}
+    with_hostname = _normalized_host(socket.gethostname())
+    if with_hostname:
+        hosts.add(with_hostname)
     env = parse_env_file()
     for raw in (
         env.get("PANEL_HOST", ""),
@@ -158,6 +173,10 @@ def panel_allowed_hosts() -> list[str]:
         os.getenv("PANEL_PUBLIC_HOST", ""),
         os.getenv("PANEL_PUBLIC_URL", ""),
     ):
+        host = _normalized_host(raw)
+        if host:
+            hosts.add(host)
+    for raw in (visible_panel_host(), local_network_ip()):
         host = _normalized_host(raw)
         if host:
             hosts.add(host)
