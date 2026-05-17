@@ -16,9 +16,9 @@ SYSTEM_IMAGE_FILES = {
     "creating_backup": "DeathTG_creating_backup.png",
 }
 DEFAULT_AVATAR_CANDIDATES = [
-    ROOT_DIR / "deathtg" / "panel" / "static" / "default_avatar.png",
     ROOT_DIR / "images" / "DeathTG_Avatarka.png",
     ROOT_DIR / "Image" / "DeathTG_Avatarka.png",
+    ROOT_DIR / "deathtg" / "panel" / "static" / "default_avatar.png",
 ]
 
 

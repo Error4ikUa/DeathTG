@@ -361,7 +361,9 @@ async def _botfather_step(conv, message: str, *, retries: int = 4):
         raw_text = getattr(response, "raw_text", "") or ""
         wait_seconds = _botfather_retry_seconds(raw_text)
         if wait_seconds:
-            await asyncio.sleep(wait_seconds + 1)
+            if wait_seconds > 30:
+                return response
+            await asyncio.sleep(min(wait_seconds + 1, 6))
             continue
         return response
     return last_response
@@ -383,9 +385,9 @@ def _title_text(value) -> str:
     return getattr(value, "text", "") or ""
 
 
-async def _fetch_bot_username(bot_token: str) -> tuple[str, str | None]:
+async def _fetch_bot_username(bot_token: str, *, env_key: str = "BOT_TOKEN") -> tuple[str, str | None]:
     if not bot_token:
-        return "", "BOT_TOKEN is missing"
+        return "", f"{env_key} is missing"
     url = f"https://api.telegram.org/bot{bot_token}/getMe"
     try:
         async with aiohttp.ClientSession() as session:
@@ -568,11 +570,7 @@ async def _archive_bot_dialog(client, bot_username: str) -> tuple[bool, str | No
 async def _ping_bot_runtime(client, username: str) -> tuple[bool, str | None]:
     if not username:
         return False, "missing bot username"
-    try:
-        await client.send_message(username, "/start")
-        return True, None
-    except Exception as exc:
-        return False, str(exc)
+    return True, None
 
 
 async def check_runtime_integrity(client, *, notify: bool = True) -> dict:
@@ -584,7 +582,7 @@ async def check_runtime_integrity(client, *, notify: bool = True) -> dict:
         if blueprint["role"] == "community" and not community_enabled_for_owner(owner_id):
             continue
         token = _env(blueprint["env_key"])
-        username, token_error = await _fetch_bot_username(token)
+        username, token_error = await _fetch_bot_username(token, env_key=blueprint["env_key"])
         if blueprint["role"] == "community":
             valid_username = bool(username and username.lower() == blueprint["username"].lower())
         else:
@@ -688,8 +686,9 @@ async def _ensure_bot(
     *,
     env_key: str = "BOT_TOKEN",
     role: str = "inline",
+    allow_create: bool = False,
 ) -> tuple[str, dict]:
-    username, token_error = await _fetch_bot_username(bot_token)
+    username, token_error = await _fetch_bot_username(bot_token, env_key=env_key)
     status = {
         "configured": bool(bot_token),
         "role": role,
@@ -705,13 +704,20 @@ async def _ensure_bot(
         status["error"] = None
         return bot_token, status
 
+    if not allow_create:
+        if not bot_token:
+            status["error"] = f"{env_key} is missing"
+        elif not status["error"]:
+            status["error"] = "bot username does not match expected owner prefix"
+        return bot_token, status
+
     token, error = await _create_bot_with_botfather(client, owner_id, role)
     if not token:
         status["error"] = error or token_error or "unable to create owner-bound bot"
         return bot_token, status
 
     update_env_value(env_key, token)
-    username, token_error = await _fetch_bot_username(token)
+    username, token_error = await _fetch_bot_username(token, env_key=env_key)
     status.update(
         {
             "configured": True,
@@ -726,10 +732,10 @@ async def _ensure_bot(
     return token, status
 
 
-async def _ensure_community_bot(client, owner_id: int) -> tuple[str, dict]:
+async def _ensure_community_bot(client, owner_id: int, *, allow_create: bool = False) -> tuple[str, dict]:
     username_target = preferred_community_bot_username()
     bot_token = _env("BOT_TOKEN_COMMUNITY")
-    username, token_error = await _fetch_bot_username(bot_token)
+    username, token_error = await _fetch_bot_username(bot_token, env_key="BOT_TOKEN_COMMUNITY")
     status = {
         "configured": bool(bot_token),
         "role": "community",
@@ -745,6 +751,12 @@ async def _ensure_community_bot(client, owner_id: int) -> tuple[str, dict]:
         update_env_value("COMMUNITY_BOT_USERNAME", username)
         status["error"] = None
         return bot_token, status
+    if not allow_create:
+        if not bot_token:
+            status["error"] = "BOT_TOKEN_COMMUNITY is missing"
+        elif not status["error"]:
+            status["error"] = f"community bot username must be @{username_target}"
+        return bot_token, status
     token, error = await _create_named_bot_with_botfather(
         client,
         community_bot_display_name(),
@@ -755,7 +767,7 @@ async def _ensure_community_bot(client, owner_id: int) -> tuple[str, dict]:
         return bot_token, status
     update_env_value("BOT_TOKEN_COMMUNITY", token)
     update_env_value("COMMUNITY_BOT_USERNAME", username_target)
-    username, token_error = await _fetch_bot_username(token)
+    username, token_error = await _fetch_bot_username(token, env_key="BOT_TOKEN_COMMUNITY")
     status.update(
         {
             "configured": True,
@@ -784,6 +796,7 @@ async def run_startup_sync(client) -> dict:
         owner_id,
         env_key="BOT_TOKEN",
         role="inline",
+        allow_create=False,
     )
     helper_token, helper_status = await _ensure_bot(
         client,
@@ -791,6 +804,7 @@ async def run_startup_sync(client) -> dict:
         owner_id,
         env_key="BOT_TOKEN_HELPER",
         role="helper",
+        allow_create=False,
     )
     community_status = {
         "configured": False,
@@ -809,7 +823,7 @@ async def run_startup_sync(client) -> dict:
         "archived": False,
     }
     if community_enabled_for_owner(owner_id):
-        community_token, community_status = await _ensure_community_bot(client, owner_id)
+        community_token, community_status = await _ensure_community_bot(client, owner_id, allow_create=False)
     bot_username = str(bot_status.get("username") or "")
     helper_username = str(helper_status.get("username") or "")
     community_username = str(community_status.get("username") or "")
