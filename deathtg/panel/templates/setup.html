@@ -6,6 +6,9 @@
   <title>DeathTG Setup</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/layout.css">
+  <style>
+    .delayed-action[hidden] { display: none !important; }
+  </style>
 </head>
 <body>
   <canvas id="matrix"></canvas>
@@ -14,8 +17,7 @@
       <div class="brand-mark">DTG</div>
       <p class="eyebrow">First launch</p>
       <h1>DeathTG Setup</h1>
-      <p>First run is fully web-based: API ID/HASH and phone, then Telegram code and optional 2FA password.</p>
-      <div class="alert success">No manual nano editing required. Secure panel secrets are auto-generated if you leave them empty.</div>
+      <p>Enter your API data and phone, then confirm the Telegram code here.</p>
       {% if message %}<div class="alert success">{{ message }}</div>{% endif %}
       {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
       {% if step == "start" %}
@@ -29,31 +31,17 @@
         <input type="text" name="phone" placeholder="+380..." required>
         <label>Session name</label>
         <input type="text" name="session_name" value="deathtg" required>
-        <button type="submit">Confirm and request Telegram login</button>
+        <button type="submit">Confirm</button>
       </form>
-      <small>DeathTG will save the data, start Telegram login in the background, and wait for your code here on the website.</small>
       {% elif step == "pin" %}
       <form method="post" action="/setup/pin" class="form-stack">
         <label>Telegram code</label>
-        <input type="text" name="pin" placeholder="Paste the new login code from Telegram" autofocus required>
+        <input type="text" name="pin" placeholder="Code from Telegram" autofocus required>
         <button type="submit">Confirm code</button>
       </form>
-      {% if delivery_hint %}<small>{{ delivery_hint }}</small>{% endif %}
-      {% if next_delivery_hint %}<small>{{ next_delivery_hint }}</small>{% endif %}
-      <small>If Telegram shows a letters-and-digits code in the service chat, paste that exact code here.</small>
-      <small>If you just logged in to my.telegram.org to obtain API_ID/API_HASH, that old website code is separate. Wait for the fresh DeathTG login code.</small>
-      <small>If Telegram already approved the login on another device and immediately asks for your two-step verification password, you can go straight to the 2FA step.</small>
-      {% if timeout_seconds %}<small>You can request a new code if nothing appears after about {{ timeout_seconds }} seconds.</small>{% endif %}
-      <form method="post" action="/setup/resend" class="form-stack" style="margin-top:12px">
+      <small>Wait for the Telegram code and enter it here.</small>
+      <form method="post" action="/setup/resend" class="form-stack delayed-action" id="resend-form" hidden style="margin-top:12px">
         <button type="submit">Resend code</button>
-      </form>
-      {% if can_try_alternate %}
-      <form method="post" action="/setup/alternate" class="form-stack" style="margin-top:12px">
-        <button type="submit">Try another delivery method</button>
-      </form>
-      {% endif %}
-      <form method="post" action="/setup/to-2fa" class="form-stack" style="margin-top:12px">
-        <button type="submit">Go to 2FA</button>
       </form>
       {% elif step == "secret" %}
       <form method="post" action="/setup/secret" class="form-stack">
@@ -61,10 +49,19 @@
         <input type="password" name="secret_value" placeholder="Two-step verification password" autofocus required>
         <button type="submit">Confirm 2FA</button>
       </form>
-      <small>Only needed if two-step verification is enabled in Telegram.</small>
+      <small>Enter your Telegram two-step verification password.</small>
       {% endif %}
     </section>
   </main>
   <script src="/static/matrix.js"></script>
+  <script>
+    (function () {
+      const resendForm = document.getElementById("resend-form");
+      if (!resendForm) return;
+      window.setTimeout(() => {
+        resendForm.hidden = false;
+      }, 20000);
+    })();
+  </script>
 </body>
 </html>
