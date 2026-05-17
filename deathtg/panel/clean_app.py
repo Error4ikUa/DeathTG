@@ -289,6 +289,7 @@ async def setup_save(
                 "request": request,
                 "step": "pin",
                 "error": None,
+                "message": "DeathTG saved your API data, started Telegram login, and is now waiting for the code from Telegram here on the website.",
                 **login_hint(flow_id),
             },
         )
@@ -315,7 +316,15 @@ async def setup_pin(request: Request, pin: str = Form(...)):
         state = await confirm_code(flow_id, pin)
         if state == "2fa":
             _clear_auth_failures("setup_pin", request)
-            return templates.TemplateResponse("setup.html", {"request": request, "step": "secret", "error": None})
+            return templates.TemplateResponse(
+                "setup.html",
+                {
+                    "request": request,
+                    "step": "secret",
+                    "error": None,
+                    "message": "Telegram accepted the code and now needs your two-step verification password.",
+                },
+            )
         await finish_login(flow_id)
         request.session.pop("setup_flow_id", None)
         request.session["auth"] = True

@@ -128,7 +128,8 @@ if __name__ == "__main__":
     print(f"Panel: {panel_url()}")
     if not _userbot_ready():
         print(f"First run setup link: {setup_link()}")
-    print("First run: open setup, enter API_ID/API_HASH/phone, then confirm code and 2FA in web UI.")
+    print("First run: open setup, enter API_ID/API_HASH/phone, then enter Telegram code and 2FA only in the web UI.")
+    print("Console never asks for the Telegram code. DeathTG waits for the code from the website and confirms login in the background.")
     print("Userbot: will auto-start after setup and session creation.")
     print("Git updates are not auto-applied. DeathTG will notify you in Telegram when a new update appears.")
     supervisor_thread = threading.Thread(target=supervisor_loop, name="dtg-userbot-supervisor", daemon=True)
