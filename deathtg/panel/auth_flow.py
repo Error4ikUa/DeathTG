@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
+from telethon.tl import functions, types
 
 from deathtg.config import ROOT_DIR
 from deathtg.server_bootstrap import secure_panel_password, secure_panel_secret, update_env_values
@@ -38,12 +39,32 @@ def _cleanup_session_files(session_name: str) -> None:
             pass
 
 
+def _new_client(session_name: str, api_id: int, api_hash: str) -> TelegramClient:
+    session_path = str(ROOT_DIR / session_name)
+    return TelegramClient(session_path, api_id, api_hash)
+
+
+async def _request_login_code(client: TelegramClient, phone: str):
+    return await client(
+        functions.auth.SendCodeRequest(
+            phone_number=phone.strip(),
+            api_id=client.api_id,
+            api_hash=client.api_hash,
+            settings=types.CodeSettings(),
+        )
+    )
+
+
 def _delivery_hint(sent) -> tuple[str, int | None]:
     code_type = getattr(sent, "type", None)
     timeout = getattr(sent, "timeout", None)
     type_name = code_type.__class__.__name__ if code_type is not None else ""
     mapping = {
-        "SentCodeTypeApp": "Telegram sent the login code inside the Telegram app.",
+        "SentCodeTypeApp": (
+            "Telegram sent a fresh login code inside the official Telegram app. "
+            "Open the service chat named Telegram and paste the new code exactly as shown. "
+            "If you just used a code for my.telegram.org to get API_ID/API_HASH, that old code will not work here."
+        ),
         "SentCodeTypeSms": "Telegram sent the login code by SMS.",
         "SentCodeTypeCall": "Telegram will deliver the login code by phone call.",
         "SentCodeTypeFlashCall": "Telegram will deliver the login code by flash call.",
@@ -73,8 +94,7 @@ def write_env(api_id: int, api_hash: str, session_name: str, phone: str, panel_k
 async def begin_login(flow_id: str, api_id: int, api_hash: str, phone: str, session_name: str) -> str:
     _set_login_pending(True)
     _cleanup_session_files(session_name)
-    session_path = str(ROOT_DIR / session_name)
-    client = TelegramClient(session_path, api_id, api_hash)
+    client = _new_client(session_name, api_id, api_hash)
     await client.connect()
     if await client.is_user_authorized():
         PENDING[flow_id] = PendingLogin(
@@ -86,7 +106,7 @@ async def begin_login(flow_id: str, api_id: int, api_hash: str, phone: str, sess
             phone_code_hash=None,
         )
         return "authorized"
-    sent = await client.send_code_request(phone)
+    sent = await _request_login_code(client, phone)
     delivery_hint, timeout_seconds = _delivery_hint(sent)
     PENDING[flow_id] = PendingLogin(
         client=client,
@@ -113,18 +133,41 @@ def login_hint(flow_id: str) -> dict[str, object]:
 
 async def resend_code(flow_id: str) -> dict[str, object]:
     pending = PENDING[flow_id]
-    sent = await pending.client.send_code_request(pending.phone)
+    await pending.client.disconnect()
+    _cleanup_session_files(pending.session_name)
+    pending.client = _new_client(pending.session_name, pending.api_id, pending.api_hash)
+    await pending.client.connect()
+    sent = await _request_login_code(pending.client, pending.phone)
     pending.phone_code_hash = sent.phone_code_hash
     pending.delivery_hint, pending.timeout_seconds = _delivery_hint(sent)
     return login_hint(flow_id)
 
 
+def friendly_login_error(exc: Exception) -> str:
+    name = type(exc).__name__
+    text = str(exc)
+    if name == "SendCodeUnavailableError":
+        return (
+            "Telegram did not allow another code request right now. "
+            "If you already used a code from my.telegram.org to obtain API_ID/API_HASH, wait a little and request a fresh DeathTG login code again. "
+            "Do not reuse the old my.telegram.org code here."
+        )
+    if name == "PhoneNumberFloodError":
+        return "Telegram temporarily limited code requests for this phone number. Wait a bit, then start setup again and request one fresh login code."
+    if name == "PhoneCodeExpiredError":
+        return "That Telegram code already expired. Request a new code and use only the latest one."
+    if name == "PhoneCodeInvalidError":
+        return "The Telegram code is invalid. Paste only the new code from the Telegram service chat, exactly as shown."
+    return f"{name}: {text}"
+
+
 async def confirm_code(flow_id: str, code: str) -> str:
     pending = PENDING[flow_id]
+    normalized_code = code.strip()
     try:
         await pending.client.sign_in(
             phone=pending.phone,
-            code=code,
+            code=normalized_code,
             phone_code_hash=pending.phone_code_hash,
         )
         return "done"
