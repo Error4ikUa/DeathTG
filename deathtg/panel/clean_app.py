@@ -45,6 +45,7 @@ from deathtg.panel_access import (
     friendly_device_name,
     issue_device_grant,
     list_devices,
+    local_network_ip,
     panel_base_url,
     panel_remote_access_ready,
     panel_site_id,
@@ -153,8 +154,12 @@ def _is_local_request(request: Request) -> bool:
     origin_host = (request.headers.get("host") or "").split(":", 1)[0].strip().lower()
     if origin_host in {"127.0.0.1", "localhost", "::1"}:
         return True
+    client_ip = _client_ip(request).strip().lower()
+    local_ip = (local_network_ip() or "").strip().lower()
+    if local_ip and client_ip == local_ip:
+        return True
     try:
-        return ipaddress.ip_address(_client_ip(request)).is_loopback
+        return ipaddress.ip_address(client_ip).is_loopback
     except Exception:
         return False
 
