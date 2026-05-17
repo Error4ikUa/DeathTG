@@ -8,8 +8,6 @@ from deathtg.config import RUNTIME_DIR
 
 
 OWNER_TG_ID = 2054091032
-ADMIN_KEY = "qi2m3of9n5"
-DEVELOPER_KEY = "orkfvimd"
 VALID_ROLES = {"user", "admin", "developer"}
 
 
@@ -33,7 +31,7 @@ def normalize_role(role: str) -> str:
     return value if value in VALID_ROLES else "user"
 
 
-def can_assign_role(*, current_role: str, requested_role: str, provided_key: str = "") -> tuple[bool, str]:
+def can_assign_role(*, current_role: str, requested_role: str) -> tuple[bool, str]:
     current = normalize_role(current_role)
     requested = normalize_role(requested_role)
     if requested == current:
@@ -43,9 +41,4 @@ def can_assign_role(*, current_role: str, requested_role: str, provided_key: str
     owner_id = current_owner_id()
     if owner_id == OWNER_TG_ID:
         return True, ""
-    expected = ADMIN_KEY if requested == "admin" else DEVELOPER_KEY
-    if (provided_key or "").strip() == expected:
-        return True, ""
-    if requested == "admin":
-        return False, "Admin key required."
-    return False, "Developer key required."
+    return False, "Confirm this role through the DeathTG community bot."
