@@ -289,7 +289,6 @@ async def save_profile(
     info_text: str = Form(""),
     accent: str = Form("blue"),
     role: str = Form("user"),
-    role_key: str = Form(""),
     command_prefix: str = Form("."),
 ):
     blocked = _require_auth(request)
@@ -300,7 +299,6 @@ async def save_profile(
     allowed, error = can_assign_role(
         current_role=str(current.get("role") or "user"),
         requested_role=role,
-        provided_key=role_key,
     )
     if not allowed and role in {"admin", "developer"}:
         allowed, scan_error = await _request_role_scan(role)

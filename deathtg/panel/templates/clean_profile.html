@@ -342,9 +342,6 @@
                                 <option value="developer" {% if profile.role == "developer" %}selected{% endif %}>Developer</option>
                             </select>
                         </label>
-                        <label>Role key
-                            <input type="text" name="role_key" placeholder="Optional if your Telegram is approved in community bot">
-                        </label>
                         <label>Command prefix
                             <input type="text" name="command_prefix" value="{{ status.prefix or '.' }}" maxlength="4">
                         </label>
@@ -376,7 +373,7 @@
                                     <label for="accent-dark"><span class="accent-dot" style="background:linear-gradient(135deg,#9aa6ba,#d7e0ed)"></span>Dark</label>
                                 </div>
                             </div>
-                            <span class="helper">Green, blue, red, gold, purple and dark themes are available. Role key can be used directly, or DeathTG can verify your Telegram account through the owner community bot.</span>
+                            <span class="helper">Green, blue, red, gold, purple and dark themes are available. Admin and developer roles are confirmed only through the DeathTG community bot.</span>
                         </div>
                         <label class="wide">Description
                             <textarea name="description">{{ profile.description or '' }}</textarea>
