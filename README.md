@@ -26,6 +26,18 @@ For Ubuntu / WSL / VPS / Oracle Cloud:
 clear && cd ~ && rm -rf DeathTG && git clone https://github.com/Error4ikUa/DeathTG.git && cd DeathTG && python3 bootstrap.py
 ```
 
+For Windows PowerShell:
+
+```powershell
+Clear-Host; Set-Location $HOME; if (Test-Path DeathTG) { Remove-Item DeathTG -Recurse -Force }; git clone https://github.com/Error4ikUa/DeathTG.git; Set-Location DeathTG; py bootstrap.py
+```
+
+If port `8080` is already busy, use a different panel port:
+
+```powershell
+Clear-Host; Set-Location $HOME; if (Test-Path DeathTG) { Remove-Item DeathTG -Recurse -Force }; git clone https://github.com/Error4ikUa/DeathTG.git; Set-Location DeathTG; $env:PANEL_PORT="8090"; py bootstrap.py
+```
+
 What happens automatically:
 
 1. Creates `.venv`
@@ -62,12 +74,12 @@ Supported environments:
 - Linux desktop
 - Windows PowerShell
 - Windows CMD
-- WSL
 
-Blocked:
+Blocked or limited:
 
 - Termux
 - Android terminal environments
+- WSL for phone/public panel access (use only for local development on the same PC)
 
 For public servers DeathTG uses:
 
