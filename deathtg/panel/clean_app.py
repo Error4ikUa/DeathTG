@@ -289,7 +289,7 @@ async def setup_save(
                 "request": request,
                 "step": "pin",
                 "error": None,
-                "message": "DeathTG saved your API data, started Telegram login, and is now waiting for the code from Telegram here on the website.",
+                "message": None,
                 **login_hint(flow_id),
             },
         )
@@ -322,7 +322,7 @@ async def setup_pin(request: Request, pin: str = Form(...)):
                     "request": request,
                     "step": "secret",
                     "error": None,
-                    "message": "Telegram accepted the code and now needs your two-step verification password.",
+                    "message": None,
                 },
             )
         await finish_login(flow_id)
@@ -400,7 +400,7 @@ async def setup_resend(request: Request):
                 "request": request,
                 "step": "pin",
                 "error": None,
-                "message": "A fresh Telegram login code was requested for DeathTG setup.",
+                "message": None,
                 **hint,
             },
         )
