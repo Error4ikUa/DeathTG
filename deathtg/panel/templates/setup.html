@@ -29,9 +29,9 @@
         <input type="text" name="phone" placeholder="+380..." required>
         <label>Session name</label>
         <input type="text" name="session_name" value="deathtg" required>
-        <button type="submit">Send Telegram code</button>
+        <button type="submit">Confirm and request Telegram login</button>
       </form>
-      <small>DeathTG will generate secure panel credentials automatically and continue setup through Telegram login.</small>
+      <small>DeathTG will save the data, start Telegram login in the background, and wait for your code here on the website.</small>
       {% elif step == "pin" %}
       <form method="post" action="/setup/pin" class="form-stack">
         <label>Telegram code</label>

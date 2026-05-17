@@ -31,6 +31,21 @@ def _set_login_pending(value: bool) -> None:
     update_env_values({"LOGIN_PENDING": "1" if value else "0"})
 
 
+def _set_login_stage(stage: str) -> None:
+    update_env_values({"LOGIN_STAGE": stage})
+
+
+def _mask_phone(phone: str) -> str:
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if len(digits) <= 4:
+        return phone.strip()
+    return f"+***{digits[-4:]}"
+
+
+def _auth_log(message: str) -> None:
+    print(f"Auth: {message}")
+
+
 def _cleanup_session_files(session_name: str) -> None:
     for path in ROOT_DIR.glob(f"{session_name}.session*"):
         try:
@@ -93,10 +108,14 @@ def write_env(api_id: int, api_hash: str, session_name: str, phone: str, panel_k
 
 async def begin_login(flow_id: str, api_id: int, api_hash: str, phone: str, session_name: str) -> str:
     _set_login_pending(True)
+    _set_login_stage("starting")
+    _auth_log(f"saved setup data and started Telegram login for {_mask_phone(phone)}")
     _cleanup_session_files(session_name)
     client = _new_client(session_name, api_id, api_hash)
     await client.connect()
     if await client.is_user_authorized():
+        _set_login_stage("authorized")
+        _auth_log("existing session is already authorized")
         PENDING[flow_id] = PendingLogin(
             client=client,
             phone=phone,
@@ -107,7 +126,9 @@ async def begin_login(flow_id: str, api_id: int, api_hash: str, phone: str, sess
         )
         return "authorized"
     sent = await _request_login_code(client, phone)
+    _set_login_stage("waiting_code")
     delivery_hint, timeout_seconds = _delivery_hint(sent)
+    _auth_log("requested Telegram login code and is waiting for the code from the website")
     PENDING[flow_id] = PendingLogin(
         client=client,
         phone=phone,
@@ -140,6 +161,8 @@ async def resend_code(flow_id: str) -> dict[str, object]:
     sent = await _request_login_code(pending.client, pending.phone)
     pending.phone_code_hash = sent.phone_code_hash
     pending.delivery_hint, pending.timeout_seconds = _delivery_hint(sent)
+    _set_login_stage("waiting_code")
+    _auth_log("requested a fresh Telegram login code and is waiting for the website input")
     return login_hint(flow_id)
 
 
@@ -166,22 +189,30 @@ def friendly_login_error(exc: Exception) -> str:
 async def confirm_code(flow_id: str, code: str) -> str:
     pending = PENDING[flow_id]
     normalized_code = code.strip()
+    _auth_log("received Telegram code from the website and is confirming login")
     try:
         await pending.client.sign_in(
             phone=pending.phone,
             code=normalized_code,
             phone_code_hash=pending.phone_code_hash,
         )
+        _set_login_stage("code_confirmed")
+        _auth_log("Telegram code accepted")
         return "done"
     except SessionPasswordNeededError:
+        _set_login_stage("waiting_2fa")
+        _auth_log("Telegram requested two-step verification password")
         return "2fa"
 
 
 async def confirm_2fa(flow_id: str, password: str) -> None:
     pending = PENDING[flow_id]
     normalized_password = password.strip()
+    _auth_log("received 2FA password from the website and is finishing Telegram login")
     try:
         await pending.client.sign_in(password=normalized_password)
+        _set_login_stage("2fa_confirmed")
+        _auth_log("two-step verification password accepted")
     except PasswordHashInvalidError:
         raise
 
@@ -191,11 +222,13 @@ async def finish_login(flow_id: str) -> dict[str, str]:
     me = await pending.client.get_me()
     await pending.client.disconnect()
     _set_login_pending(False)
+    _set_login_stage("ready")
     for path in ROOT_DIR.glob(f"{pending.session_name}.session*"):
         try:
             os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
         except Exception:
             pass
+    _auth_log("Telegram session is ready and DeathTG can start the userbot")
     return {
         "id": str(me.id),
         "first_name": me.first_name or "",
@@ -210,3 +243,5 @@ async def cancel_login(flow_id: str) -> None:
         await pending.client.disconnect()
     if not PENDING:
         _set_login_pending(False)
+        _set_login_stage("idle")
+        _auth_log("login flow was cancelled")
