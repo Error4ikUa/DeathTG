@@ -266,7 +266,22 @@ async def setup_save(
         panel_password.cache_clear()
         flow_id = secrets.token_urlsafe(16)
         request.session["setup_flow_id"] = flow_id
-        await begin_login(flow_id, api_id, api_hash, phone, session_name)
+        login_state = await begin_login(flow_id, api_id, api_hash, phone, session_name)
+        if login_state == "authorized":
+            await finish_login(flow_id)
+            request.session.pop("setup_flow_id", None)
+            request.session["auth"] = True
+            session_id = secrets.token_urlsafe(18)
+            request.session["device_session_id"] = session_id
+            remember_device_session(
+                session_id,
+                ip=_client_ip(request),
+                user_agent=request.headers.get("user-agent", ""),
+                label=friendly_device_name(request.headers.get("user-agent", ""), "Setup device"),
+                auth_method="setup",
+            )
+            _clear_auth_failures("setup_save", request)
+            return RedirectResponse("/setup/done", status_code=303)
         _clear_auth_failures("setup_save", request)
         return templates.TemplateResponse("setup.html", {"request": request, "step": "pin", "error": None})
     except Exception as exc:
