@@ -99,3 +99,43 @@ body[data-accent="dark"]{
 .dtg-tooltip b{
   color:var(--accent) !important;
 }
+
+body[data-accent] .menu-btn,
+body[data-accent] .mini-menu,
+body[data-accent] .avatar-large,
+body[data-accent] .hero-avatar,
+body[data-accent] .avatar-box,
+body[data-accent] .role-pill,
+body[data-accent] .editor-panel,
+body[data-accent] .meta-chip,
+body[data-accent] .profile-list .item{
+  border-color:rgba(var(--accent-rgb),.28)!important;
+  box-shadow:0 12px 38px rgba(0,0,0,.22), inset 0 0 26px rgba(var(--accent-rgb),.05)!important;
+}
+
+body[data-accent] nav a,
+body[data-accent] .quick a,
+body[data-accent] .logout{
+  border-color:rgba(var(--accent-rgb),.18)!important;
+}
+
+body[data-accent] nav a.active,
+body[data-accent] nav a:hover,
+body[data-accent] .quick a:hover,
+body[data-accent] .accent-item input:checked + label{
+  background:rgba(var(--accent-rgb),.12)!important;
+  border-color:rgba(var(--accent-rgb),.48)!important;
+  box-shadow:0 0 0 1px rgba(var(--accent-rgb),.34),0 10px 28px rgba(0,0,0,.24)!important;
+}
+
+body[data-accent] .mark{
+  background:linear-gradient(135deg,rgba(var(--accent-rgb),.24),rgba(2,18,9,.92))!important;
+  border-color:rgba(var(--accent-rgb),.40)!important;
+  color:var(--accent)!important;
+}
+
+body[data-accent] .mini-menu{
+  background:
+    radial-gradient(120% 140% at 100% 0%,rgba(var(--accent-rgb),.10),rgba(0,0,0,0) 58%),
+    rgba(3,20,11,.94)!important;
+}

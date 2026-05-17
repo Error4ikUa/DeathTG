@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import os
@@ -24,7 +25,7 @@ from deathtg.community_roles import (
     community_enabled_for_owner,
     preferred_community_bot_username,
 )
-from deathtg.panel_access import issue_device_grant, panel_base_url, panel_remote_access_ready, running_in_wsl
+from deathtg.panel_access import issue_device_grant, panel_base_url, panel_remote_access_ready
 from deathtg.profile_store import update_env_value
 
 
@@ -32,6 +33,7 @@ TARGET_CHANNELS = ("Death_Telega", "Death_TgOfftop")
 FOLDER_NAME = "DeathTG"
 STATUS_PATH = RUNTIME_DIR / "startup_status.json"
 BOT_TOKEN_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b")
+BOTFATHER_RETRY_RE = re.compile(r"too many attempts.*?try again in\s+(\d+)\s+seconds?", re.IGNORECASE)
 BOT_AVATAR = ROOT_DIR / "deathtg" / "panel" / "static" / "user" / "avatar.png"
 
 
@@ -109,6 +111,31 @@ def _random_bot_username(owner_id: int, role: str = "inline") -> str:
     return f"dtg{owner_id}_{role_prefix}{suffix}_bot"
 
 
+def _botfather_retry_seconds(text: str) -> int:
+    match = BOTFATHER_RETRY_RE.search(text or "")
+    if not match:
+        return 0
+    try:
+        return max(1, int(match.group(1)))
+    except Exception:
+        return 5
+
+
+async def _botfather_step(conv, message: str, *, retries: int = 4):
+    last_response = None
+    for _ in range(max(1, retries)):
+        await conv.send_message(message)
+        response = await conv.get_response()
+        last_response = response
+        raw_text = getattr(response, "raw_text", "") or ""
+        wait_seconds = _botfather_retry_seconds(raw_text)
+        if wait_seconds:
+            await asyncio.sleep(wait_seconds + 1)
+            continue
+        return response
+    return last_response
+
+
 def _peer_key(peer) -> tuple:
     if hasattr(peer, "channel_id"):
         return ("channel", getattr(peer, "channel_id"))
@@ -156,18 +183,17 @@ async def _create_bot_with_botfather(client, owner_id: int, role: str = "inline"
     try:
         async with client.conversation("BotFather", timeout=120, exclusive=False) as conv:
             with contextlib.suppress(Exception):
-                await conv.send_message("/cancel")
-                await conv.get_response()
-            await conv.send_message("/newbot")
+                await _botfather_step(conv, "/cancel", retries=1)
+            first = await _botfather_step(conv, "/newbot")
+            first_text = getattr(first, "raw_text", "") or ""
+            if "create and manage telegram bots" in first_text.lower():
+                first = await _botfather_step(conv, "/newbot")
             with contextlib.suppress(Exception):
-                await conv.get_response()
+                getattr(first, "raw_text", "")
             display_role = "Helper" if role == "helper" else "Inline"
-            await conv.send_message(f"DeathTG {display_role} {owner_id}")
-            with contextlib.suppress(Exception):
-                await conv.get_response()
+            await _botfather_step(conv, f"DeathTG {display_role} {owner_id}")
             for _ in range(20):
-                await conv.send_message(_random_bot_username(owner_id, role))
-                response = await conv.get_response()
+                response = await _botfather_step(conv, _random_bot_username(owner_id, role))
                 text = getattr(response, "raw_text", "") or ""
                 match = BOT_TOKEN_RE.search(text)
                 if match:
@@ -189,16 +215,13 @@ async def _create_named_bot_with_botfather(client, display_name: str, username: 
     try:
         async with client.conversation("BotFather", timeout=120, exclusive=False) as conv:
             with contextlib.suppress(Exception):
-                await conv.send_message("/cancel")
-                await conv.get_response()
-            await conv.send_message("/newbot")
-            with contextlib.suppress(Exception):
-                await conv.get_response()
-            await conv.send_message(display_name)
-            with contextlib.suppress(Exception):
-                await conv.get_response()
-            await conv.send_message(username)
-            response = await conv.get_response()
+                await _botfather_step(conv, "/cancel", retries=1)
+            first = await _botfather_step(conv, "/newbot")
+            first_text = getattr(first, "raw_text", "") or ""
+            if "create and manage telegram bots" in first_text.lower():
+                first = await _botfather_step(conv, "/newbot")
+            await _botfather_step(conv, display_name)
+            response = await _botfather_step(conv, username)
             text = getattr(response, "raw_text", "") or ""
             match = BOT_TOKEN_RE.search(text)
             if match:
@@ -252,14 +275,9 @@ async def _sync_bot_avatar(client, bot_username: str) -> tuple[bool, str | None]
     try:
         async with client.conversation("BotFather", timeout=120, exclusive=False) as conv:
             with contextlib.suppress(Exception):
-                await conv.send_message("/cancel")
-                await conv.get_response()
-            await conv.send_message("/setuserpic")
-            with contextlib.suppress(Exception):
-                await conv.get_response()
-            await conv.send_message(f"@{bot_username}")
-            with contextlib.suppress(Exception):
-                await conv.get_response()
+                await _botfather_step(conv, "/cancel", retries=1)
+            await _botfather_step(conv, "/setuserpic")
+            await _botfather_step(conv, f"@{bot_username}")
             await conv.send_file(str(BOT_AVATAR))
             with contextlib.suppress(Exception):
                 await conv.get_response()
@@ -280,21 +298,17 @@ async def _ensure_bot_inline(client, bot_username: str) -> tuple[bool, str | Non
     try:
         async with client.conversation("BotFather", timeout=120, exclusive=False) as conv:
             with contextlib.suppress(Exception):
-                await conv.send_message("/cancel")
-                await conv.get_response()
+                await _botfather_step(conv, "/cancel", retries=1)
 
-            await conv.send_message("/setinline")
-            first = await conv.get_response()
+            first = await _botfather_step(conv, "/setinline")
             first_text = (getattr(first, "raw_text", "") or "").lower()
             if "choose a bot" not in first_text and "select a bot" not in first_text and "@" not in first_text:
                 return False, (getattr(first, "raw_text", "") or "BotFather did not ask for a bot")[:240]
 
-            await conv.send_message(f"@{bot_username}")
-            second = await conv.get_response()
+            second = await _botfather_step(conv, f"@{bot_username}")
             second_text = (getattr(second, "raw_text", "") or "").lower()
             if any(word in second_text for word in ("placeholder", "input field", "inline")):
-                await conv.send_message("DeathTG")
-                final = await conv.get_response()
+                final = await _botfather_step(conv, "DeathTG")
                 final_text = getattr(final, "raw_text", "") or ""
             else:
                 final_text = getattr(second, "raw_text", "") or ""
@@ -686,16 +700,10 @@ async def run_startup_sync(client) -> dict:
             buttons.append([{"text": "Personal Site", "url": personal_url}])
         remote_note = ""
         if not remote_ready:
-            if running_in_wsl():
-                remote_note = (
-                    "\n\nRemote phone access is not enabled in WSL local mode. "
-                    "Use a VPS/public URL or expose WSL through Windows networking before using another device."
-                )
-            else:
-                remote_note = (
-                    "\n\nRemote phone access is not enabled yet because the panel is bound to localhost. "
-                    "Set a real public or LAN URL for the panel before using links from another device."
-                )
+            remote_note = (
+                "\n\nRemote phone access is not enabled yet because the panel is still local-only. "
+                "Restart DeathTG after this update so it can rebind the panel and refresh your secure links."
+            )
         payload = {
             "chat_id": owner_id,
             "caption": "".join(

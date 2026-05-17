@@ -197,6 +197,17 @@ def _current_panel_url(request: Request) -> str:
     return str(request.base_url).rstrip("/")
 
 
+def _request_origin_url(request: Request) -> str:
+    host = (request.url.hostname or "").strip().lower()
+    if not host or host in {"127.0.0.1", "localhost", "::1"}:
+        return ""
+    scheme = request.url.scheme or "http"
+    port = request.url.port
+    if port and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
+        return f"{scheme}://{host}:{port}"
+    return f"{scheme}://{host}"
+
+
 def _setup_context(request: Request, step: str, *, error: str | None = None, message: str | None = None, **extra) -> dict:
     return {
         "request": request,
@@ -281,6 +292,7 @@ async def setup_save(
         panel_key = secure_panel_password("")
         secret_value = secure_panel_secret("")
         write_env(api_id, api_hash, session_name, "", panel_key, secret_value, "")
+        ensure_server_env(public_url=_request_origin_url(request))
         os.environ["PANEL_PASSWORD"] = panel_key
         os.environ["PANEL_SECRET"] = secret_value
         panel_password.cache_clear()
