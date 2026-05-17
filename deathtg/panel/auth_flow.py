@@ -5,7 +5,7 @@ import stat
 from dataclasses import dataclass
 
 from telethon import TelegramClient
-from telethon.errors import SessionPasswordNeededError
+from telethon.errors import PasswordHashInvalidError, SessionPasswordNeededError
 from telethon.tl import functions, types
 
 from deathtg.config import ROOT_DIR
@@ -158,6 +158,8 @@ def friendly_login_error(exc: Exception) -> str:
         return "That Telegram code already expired. Request a new code and use only the latest one."
     if name == "PhoneCodeInvalidError":
         return "The Telegram code is invalid. Paste only the new code from the Telegram service chat, exactly as shown."
+    if name == "PasswordHashInvalidError":
+        return "The Telegram 2FA password is incorrect. Enter the exact two-step verification password from Telegram."
     return f"{name}: {text}"
 
 
@@ -177,7 +179,11 @@ async def confirm_code(flow_id: str, code: str) -> str:
 
 async def confirm_2fa(flow_id: str, password: str) -> None:
     pending = PENDING[flow_id]
-    await pending.client.sign_in(password=password)
+    normalized_password = password.strip()
+    try:
+        await pending.client.sign_in(password=normalized_password)
+    except PasswordHashInvalidError:
+        raise
 
 
 async def finish_login(flow_id: str) -> dict[str, str]:
