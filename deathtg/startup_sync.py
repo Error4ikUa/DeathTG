@@ -19,14 +19,14 @@ from telethon.tl.functions.messages import GetDialogFiltersRequest, UpdateDialog
 from telethon.tl.types import DialogFilter, InputFolderPeer, TextWithEntities
 
 from deathtg.config import ENV_PATH, ROOT_DIR, RUNTIME_DIR
-from deathtg.assets import system_image
+from deathtg.assets import default_avatar_path, system_image
 from deathtg.community_roles import (
     community_bot_display_name,
     community_enabled_for_owner,
     preferred_community_bot_username,
 )
 from deathtg.panel_access import issue_device_grant, panel_remote_access_ready
-from deathtg.profile_store import update_env_value
+from deathtg.profile_store import profile_settings, update_env_value
 
 
 TARGET_CHANNELS = ("Death_Telega", "Death_TgOfftop")
@@ -34,7 +34,7 @@ FOLDER_NAME = "DeathTG"
 STATUS_PATH = RUNTIME_DIR / "startup_status.json"
 BOT_TOKEN_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b")
 BOTFATHER_RETRY_RE = re.compile(r"too many attempts.*?try again in\s+(\d+)\s+seconds?", re.IGNORECASE)
-BOT_AVATAR = ROOT_DIR / "deathtg" / "panel" / "static" / "user" / "avatar.png"
+BOT_AVATAR = default_avatar_path() or (ROOT_DIR / "deathtg" / "panel" / "static" / "default_avatar.png")
 
 
 def _env(name: str) -> str:
@@ -119,6 +119,237 @@ def _botfather_retry_seconds(text: str) -> int:
         return max(1, int(match.group(1)))
     except Exception:
         return 5
+
+
+def _language() -> str:
+    lang = str(profile_settings().get("language", "en")).strip().lower()
+    return lang if lang in {"en", "ru"} else "en"
+
+
+def _msg(en: str, ru: str) -> str:
+    return ru if _language() == "ru" else en
+
+
+def manual_bot_blueprints(owner_id: int) -> list[dict[str, str]]:
+    return [
+        {
+            "slot": "1",
+            "role": "inline",
+            "label": "Inline bot",
+            "env_key": "BOT_TOKEN",
+            "display_name": f"DeathTG Inline {owner_id}",
+            "username": f"dtg{owner_id}_inline_bot",
+            "purpose_en": "Main owner bot, startup actions, private panel link, inline bridge.",
+            "purpose_ru": "Главный бот владельца, стартовые действия, приватная ссылка на панель, inline-мост.",
+        },
+        {
+            "slot": "2",
+            "role": "helper",
+            "label": "Helper bot",
+            "env_key": "BOT_TOKEN_HELPER",
+            "display_name": f"DeathTG Helper {owner_id}",
+            "username": f"dtg{owner_id}_helper_bot",
+            "purpose_en": "Fallback delivery channel, helper notifications, extra Telegram bridge.",
+            "purpose_ru": "Резервный канал доставки, helper-уведомления, дополнительный Telegram-мост.",
+        },
+        {
+            "slot": "3",
+            "role": "community",
+            "label": "Community bot",
+            "env_key": "BOT_TOKEN_COMMUNITY",
+            "display_name": community_bot_display_name(),
+            "username": preferred_community_bot_username(),
+            "purpose_en": "Owner-only role verification for admin/developer approvals.",
+            "purpose_ru": "Owner-only проверка ролей для подтверждения admin/developer.",
+        },
+    ]
+
+
+def manual_bot_blueprint(owner_id: int, slot: int | str) -> dict[str, str] | None:
+    slot_text = str(slot).strip()
+    for item in manual_bot_blueprints(owner_id):
+        if item["slot"] == slot_text:
+            return item
+    return None
+
+
+def _slot_command_name(slot: str) -> str:
+    return f".crebot{slot}"
+
+
+def render_manual_bot_guide(owner_id: int, slot: int | str | None = None) -> str:
+    blueprints = manual_bot_blueprints(owner_id)
+    if slot is not None:
+        selected = manual_bot_blueprint(owner_id, slot)
+        blueprints = [selected] if selected else []
+    if not blueprints:
+        return _msg("Unknown bot slot.", "Неизвестный слот бота.")
+    lines = [
+        _msg("DeathTG bot recovery", "Восстановление ботов DeathTG"),
+        "",
+    ]
+    for item in blueprints:
+        lines.extend(
+            [
+                f"{item['slot']}. {item['label']}",
+                f"Name: {item['display_name']}",
+                f"Username: @{item['username']}",
+                _msg(f"Purpose: {item['purpose_en']}", f"Назначение: {item['purpose_ru']}"),
+                _msg(
+                    f"After BotFather sends the token, save it with: {_slot_command_name(item['slot'])} <token>",
+                    f"Когда BotFather пришлёт токен, сохрани его так: {_slot_command_name(item['slot'])} <token>",
+                ),
+                "",
+            ]
+        )
+    return "\n".join(lines).strip()
+
+
+def render_integrity_report(status: dict) -> str:
+    bots = [item for item in list(status.get("bots") or []) if isinstance(item, dict)]
+    lines = [
+        _msg("DeathTG integrity report", "Отчёт целостности DeathTG"),
+        "",
+    ]
+    if not bots:
+        lines.append(_msg("No bot data collected yet.", "Данные по ботам ещё не собраны."))
+        return "\n".join(lines)
+    for item in bots:
+        role = str(item.get("role") or "bot")
+        label = {
+            "inline": "Inline",
+            "helper": "Helper",
+            "community": "Community",
+        }.get(role, role.title())
+        ok = bool(item.get("configured")) and bool(item.get("valid_username")) and bool(item.get("start_ping")) and not item.get("error")
+        lines.append(f"{'OK' if ok else 'FAIL'} {label}: @{item.get('username') or 'missing'}")
+        if item.get("error"):
+            lines.append(f"  {_msg('Reason', 'Причина')}: {item.get('error')}")
+        if role in {"inline", "helper", "community"}:
+            slot = {"inline": "1", "helper": "2", "community": "3"}[role]
+            lines.append(f"  {_msg('Recovery', 'Восстановление')}: {_slot_command_name(slot)}")
+    folder = status.get("folder") if isinstance(status.get("folder"), dict) else {}
+    if folder:
+        lines.extend(
+            [
+                "",
+                f"{_msg('Folder', 'Папка')}: {'OK' if folder.get('ok') else 'FAIL'}",
+            ]
+        )
+        if folder.get("error"):
+            lines.append(f"  {_msg('Reason', 'Причина')}: {folder.get('error')}")
+    shortcuts = status.get("shortcuts") if isinstance(status.get("shortcuts"), dict) else {}
+    panel_url = str(shortcuts.get("panel_url") or "")
+    if panel_url:
+        lines.extend(["", f"Panel: {panel_url}"])
+    return "\n".join(lines)
+
+
+def _integrity_signature(status: dict) -> str:
+    bots = [item for item in list(status.get("bots") or []) if isinstance(item, dict)]
+    chunks: list[str] = []
+    for item in bots:
+        chunks.append(
+            "|".join(
+                [
+                    str(item.get("role") or ""),
+                    str(item.get("username") or ""),
+                    str(item.get("configured") or ""),
+                    str(item.get("valid_username") or ""),
+                    str(item.get("start_ping") or ""),
+                    str(item.get("error") or ""),
+                ]
+            )
+        )
+    return "||".join(chunks)
+
+
+def _integrity_failures(status: dict) -> list[dict]:
+    failures: list[dict] = []
+    for item in list(status.get("bots") or []):
+        if not isinstance(item, dict):
+            continue
+        if not item.get("configured") or not item.get("valid_username") or not item.get("start_ping") or item.get("error"):
+            failures.append(item)
+    return failures
+
+
+async def _send_saved_message(client, text: str) -> tuple[bool, str | None]:
+    try:
+        await client.send_message("me", text)
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _integrity_alert_text(owner_id: int, status: dict) -> str:
+    failures = _integrity_failures(status)
+    lines = [
+        _msg("DeathTG found problems in its Telegram bot system.", "DeathTG нашёл проблемы в своей Telegram-системе."),
+        "",
+        render_integrity_report(status),
+    ]
+    if failures:
+        lines.extend(
+            [
+                "",
+                _msg("Manual recovery shortcuts:", "Быстрые команды для восстановления:"),
+            ]
+        )
+        for item in failures:
+            slot = {"inline": "1", "helper": "2", "community": "3"}.get(str(item.get("role") or ""))
+            if not slot:
+                continue
+            guide = manual_bot_blueprint(owner_id, slot)
+            if not guide:
+                continue
+            lines.append(f"{_slot_command_name(slot)} -> @{guide['username']}")
+        lines.extend(
+            [
+                "",
+                _msg(
+                    "Create the missing bot in BotFather, copy the token, then paste it into one of the commands above.",
+                    "Создай отсутствующего бота в BotFather, скопируй токен и вставь его в одну из команд выше.",
+                )
+            ]
+        )
+    return "\n".join(lines)
+
+
+async def _notify_integrity_if_needed(client, owner_id: int, status: dict, previous_status: dict | None = None) -> None:
+    previous_status = previous_status or {}
+    integrity = previous_status.get("integrity", {}) if isinstance(previous_status.get("integrity"), dict) else {}
+    previous_signature = str(integrity.get("last_alert_signature") or "")
+    current_signature = _integrity_signature(status)
+    failures = _integrity_failures(status)
+    if failures:
+        if current_signature != previous_signature:
+            _, error = await _send_saved_message(client, _integrity_alert_text(owner_id, status))
+            status["integrity"] = {
+                "last_alert_signature": current_signature,
+                "last_alert_error": error,
+                "healthy": False,
+            }
+            return
+        status["integrity"] = {
+            "last_alert_signature": previous_signature,
+            "last_alert_error": integrity.get("last_alert_error"),
+            "healthy": False,
+        }
+        return
+    if previous_signature:
+        text = _msg(
+            "DeathTG integrity recovered. All configured Telegram bots respond again.",
+            "Целостность DeathTG восстановлена. Все настроенные Telegram-боты снова отвечают.",
+        )
+        _, error = await _send_saved_message(client, text)
+        status["integrity"] = {
+            "last_alert_signature": "",
+            "last_alert_error": error,
+            "healthy": True,
+        }
+        return
+    status["integrity"] = {"last_alert_signature": "", "last_alert_error": None, "healthy": True}
 
 
 async def _botfather_step(conv, message: str, *, retries: int = 4):
@@ -332,6 +563,64 @@ async def _archive_bot_dialog(client, bot_username: str) -> tuple[bool, str | No
         return True, None
     except Exception as exc:
         return False, str(exc)
+
+
+async def _ping_bot_runtime(client, username: str) -> tuple[bool, str | None]:
+    if not username:
+        return False, "missing bot username"
+    try:
+        await client.send_message(username, "/start")
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
+
+
+async def check_runtime_integrity(client, *, notify: bool = True) -> dict:
+    me = await client.get_me()
+    owner_id = int(getattr(me, "id", 0) or 0)
+    previous_status = _load_status()
+    bots: list[dict] = []
+    for blueprint in manual_bot_blueprints(owner_id):
+        if blueprint["role"] == "community" and not community_enabled_for_owner(owner_id):
+            continue
+        token = _env(blueprint["env_key"])
+        username, token_error = await _fetch_bot_username(token)
+        if blueprint["role"] == "community":
+            valid_username = bool(username and username.lower() == blueprint["username"].lower())
+        else:
+            valid_username = _is_valid_bot_username(username, owner_id)
+        start_ping = False
+        start_ping_error = None
+        if valid_username:
+            start_ping, start_ping_error = await _ping_bot_runtime(client, username)
+        bots.append(
+            {
+                "configured": bool(token),
+                "role": blueprint["role"],
+                "env_key": blueprint["env_key"],
+                "username": username,
+                "created": False,
+                "valid_username": valid_username,
+                "expected_prefix": blueprint["username"],
+                "owner_id": owner_id,
+                "commands_synced": None,
+                "inline_synced": None,
+                "avatar_synced": None,
+                "start_ping": start_ping,
+                "archived": None,
+                "error": token_error or start_ping_error,
+            }
+        )
+    runtime_status = dict(previous_status) if isinstance(previous_status, dict) else {}
+    runtime_status["bots"] = bots
+    runtime_status["bot"] = next((item for item in bots if item.get("role") == "inline"), {})
+    runtime_status["helper_bot"] = next((item for item in bots if item.get("role") == "helper"), {})
+    runtime_status["community_bot"] = next((item for item in bots if item.get("role") == "community"), {})
+    runtime_status["last_runtime_check_at"] = int(time.time())
+    if notify:
+        await _notify_integrity_if_needed(client, owner_id, runtime_status, previous_status)
+    _write_status(runtime_status)
+    return runtime_status
 
 
 async def _ensure_folder(client, peers: list) -> tuple[bool, str | None]:
@@ -552,21 +841,12 @@ async def run_startup_sync(client) -> dict:
     def _collect_error(*items: str | None) -> str | None:
         return next((item for item in items if item), None)
 
-    async def _ping_bot(username: str) -> tuple[bool, str | None]:
-        if not username:
-            return False, "missing bot username"
-        try:
-            await client.send_message(username, "/start")
-            return True, None
-        except Exception as exc:
-            return False, str(exc)
-
-    start_ping, start_ping_error = await _ping_bot(bot_username)
-    helper_start_ping, helper_start_ping_error = await _ping_bot(helper_username)
+    start_ping, start_ping_error = await _ping_bot_runtime(client, bot_username)
+    helper_start_ping, helper_start_ping_error = await _ping_bot_runtime(client, helper_username)
     community_start_ping = False
     community_start_ping_error = None
     if community_enabled_for_owner(owner_id):
-        community_start_ping, community_start_ping_error = await _ping_bot(community_username)
+        community_start_ping, community_start_ping_error = await _ping_bot_runtime(client, community_username)
     bot_status["start_ping"] = start_ping
     helper_status["start_ping"] = helper_start_ping
     community_status["start_ping"] = community_start_ping
@@ -792,5 +1072,6 @@ async def run_startup_sync(client) -> dict:
     status["shortcuts"]["panel_url"] = panel_url
     status["shortcuts"]["interval_sec"] = _shortcuts_interval_seconds()
     status["shortcuts"]["sent_at"] = int(time.time()) if shortcuts_sent else previous_sent_at
+    await _notify_integrity_if_needed(client, owner_id, status, previous_status)
     _write_status(status)
     return status

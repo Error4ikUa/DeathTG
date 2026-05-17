@@ -9,6 +9,7 @@ import secrets
 import socket
 import subprocess
 import time
+import base64
 from pathlib import Path
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -18,6 +19,7 @@ from deathtg.config import RUNTIME_DIR
 
 GRANTS_PATH = RUNTIME_DIR / "panel_device_grants.json"
 DEVICES_PATH = RUNTIME_DIR / "panel_devices.json"
+WSL_PUBLISH_STATE_PATH = RUNTIME_DIR / "wsl_publish_state.json"
 DEFAULT_GRANT_TTL = 60 * 60 * 24 * 7
 
 
@@ -105,6 +107,166 @@ def _wsl_windows_host_ip() -> str:
     return ""
 
 
+def _wsl_portproxy_ready(port: int | None = None) -> bool:
+    listen_port = int(port or int(_env("PANEL_PORT", "8080") or "8080"))
+    try:
+        completed = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command", "netsh interface portproxy show v4tov4"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+    except Exception:
+        return False
+    output = f"{completed.stdout}\n{completed.stderr}"
+    return f":{listen_port}" in output or f" {listen_port} " in output
+
+
+def _panel_port() -> int:
+    raw = _env("PANEL_PORT", "8080") or "8080"
+    try:
+        return max(1, min(65535, int(raw)))
+    except Exception:
+        return 8080
+
+
+def _wsl_publish_state() -> dict:
+    if not WSL_PUBLISH_STATE_PATH.exists():
+        return {}
+    try:
+        data = json.loads(WSL_PUBLISH_STATE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_wsl_publish_state(payload: dict) -> None:
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    WSL_PUBLISH_STATE_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _powershell_run(script: str, *, timeout: int = 20) -> subprocess.CompletedProcess[str] | None:
+    try:
+        return subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                script,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except Exception:
+        return None
+
+
+def _encode_powershell(script: str) -> str:
+    return base64.b64encode(script.encode("utf-16le")).decode("ascii")
+
+
+def _wsl_rule_name(port: int) -> str:
+    return f"DeathTG {port}"
+
+
+def _wsl_publish_script(port: int) -> str:
+    rule_name = _wsl_rule_name(port).replace("'", "''")
+    return f"""
+$ErrorActionPreference = 'Stop'
+& netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport={port} | Out-Null
+& netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport={port} connectaddress=127.0.0.1 connectport={port} | Out-Null
+& netsh advfirewall firewall delete rule name='{rule_name}' protocol=TCP localport={port} | Out-Null
+& netsh advfirewall firewall add rule name='{rule_name}' dir=in action=allow protocol=TCP localport={port} | Out-Null
+Write-Output 'OK'
+""".strip()
+
+
+def ensure_wsl_public_access(*, request_elevation: bool = True) -> dict[str, str | bool]:
+    if not running_in_wsl():
+        return {"applicable": False, "ready": True, "message": "Not running in WSL."}
+    if _env("PANEL_PUBLIC_URL") or _env("PANEL_PUBLIC_HOST"):
+        return {"applicable": True, "ready": True, "message": "Public panel URL already configured."}
+
+    port = _panel_port()
+    if _wsl_portproxy_ready(port):
+        state = {
+            "last_status": "ready",
+            "last_port": port,
+            "last_checked_at": int(time.time()),
+            "last_message": "Windows port forwarding is active.",
+        }
+        _write_wsl_publish_state(state)
+        return {"applicable": True, "ready": True, "message": "Windows port forwarding is active."}
+
+    script = _wsl_publish_script(port)
+    direct = _powershell_run(script, timeout=25)
+    if direct and direct.returncode == 0 and _wsl_portproxy_ready(port):
+        state = {
+            "last_status": "ready",
+            "last_port": port,
+            "last_checked_at": int(time.time()),
+            "last_message": "Windows port forwarding was configured automatically.",
+        }
+        _write_wsl_publish_state(state)
+        return {"applicable": True, "ready": True, "message": "Windows port forwarding was configured automatically."}
+
+    error_output = ""
+    if direct is not None:
+        error_output = (f"{direct.stdout}\n{direct.stderr}").strip()
+
+    if request_elevation:
+        state = _wsl_publish_state()
+        now = int(time.time())
+        last_prompt = int(state.get("last_elevation_prompt_at", 0) or 0)
+        if not last_prompt or now - last_prompt >= 300:
+            encoded = _encode_powershell(script)
+            elevate = _powershell_run(
+                (
+                    "Start-Process powershell "
+                    "-Verb RunAs "
+                    "-ArgumentList "
+                    f"' -NoProfile -ExecutionPolicy Bypass -EncodedCommand {encoded}'"
+                ),
+                timeout=10,
+            )
+            state.update(
+                {
+                    "last_status": "elevation_requested",
+                    "last_port": port,
+                    "last_checked_at": now,
+                    "last_elevation_prompt_at": now,
+                    "last_message": "Requested Windows administrator access to publish the panel for phone and PC access.",
+                    "last_error": error_output,
+                }
+            )
+            _write_wsl_publish_state(state)
+            if elevate and elevate.returncode == 0:
+                return {
+                    "applicable": True,
+                    "ready": False,
+                    "message": "Requested Windows administrator access to finish publishing the panel.",
+                }
+
+    state = {
+        "last_status": "failed",
+        "last_port": port,
+        "last_checked_at": int(time.time()),
+        "last_message": "Windows port forwarding is not active yet.",
+        "last_error": error_output,
+    }
+    _write_wsl_publish_state(state)
+    return {
+        "applicable": True,
+        "ready": False,
+        "message": "Windows port forwarding is not active yet.",
+    }
+
+
 def effective_panel_bind_host() -> str:
     configured = _env("PANEL_HOST")
     if configured:
@@ -116,6 +278,8 @@ def effective_panel_bind_host() -> str:
 
 def visible_panel_host() -> str:
     host = _env("PANEL_PUBLIC_HOST") or effective_panel_bind_host()
+    if running_in_wsl() and not (_env("PANEL_PUBLIC_URL") or _env("PANEL_PUBLIC_HOST")) and not _wsl_portproxy_ready():
+        return "127.0.0.1"
     if host in {"0.0.0.0", "::"}:
         lan_ip = local_network_ip()
         return lan_ip or "127.0.0.1"
@@ -148,6 +312,14 @@ def panel_base_url() -> str:
     if (scheme == "http" and port == "80") or (scheme == "https" and port == "443"):
         return f"{scheme}://{host}"
     return f"{scheme}://{host}:{port}"
+
+
+def panel_local_url() -> str:
+    scheme = _env("PANEL_SCHEME", "http") or "http"
+    port = _env("PANEL_PORT", "8080") or "8080"
+    if (scheme == "http" and port == "80") or (scheme == "https" and port == "443"):
+        return f"{scheme}://127.0.0.1"
+    return f"{scheme}://127.0.0.1:{port}"
 
 
 def panel_site_id() -> str:
@@ -185,6 +357,8 @@ def panel_host_kind() -> str:
 
 
 def panel_remote_access_ready() -> bool:
+    if running_in_wsl() and not (_env("PANEL_PUBLIC_URL") or _env("PANEL_PUBLIC_HOST")) and not _wsl_portproxy_ready():
+        return False
     return panel_host_kind() == "remote"
 
 

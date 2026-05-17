@@ -15,6 +15,11 @@ SYSTEM_IMAGE_FILES = {
     "update_available": "DeathTG_update_available.png",
     "creating_backup": "DeathTG_creating_backup.png",
 }
+DEFAULT_AVATAR_CANDIDATES = [
+    ROOT_DIR / "deathtg" / "panel" / "static" / "default_avatar.png",
+    ROOT_DIR / "images" / "DeathTG_Avatarka.png",
+    ROOT_DIR / "Image" / "DeathTG_Avatarka.png",
+]
 
 
 def system_image(name: str) -> Path | None:
@@ -108,3 +113,10 @@ def shared_module_image_path(module_name: str) -> Path | None:
 
 def module_image_path(module_name: str) -> Path | None:
     return local_module_image_path(module_name) or shared_module_image_path(module_name)
+
+
+def default_avatar_path() -> Path | None:
+    for path in DEFAULT_AVATAR_CANDIDATES:
+        if path.exists():
+            return path
+    return None

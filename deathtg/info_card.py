@@ -8,12 +8,13 @@ from pathlib import Path
 import psutil
 from PIL import Image, ImageDraw, ImageFont
 
+from deathtg.assets import default_avatar_path
 from deathtg.config import ROOT_DIR, RUNTIME_DIR
 
 
 CARD_W = 1280
 CARD_H = 780
-PANEL_AVATAR = ROOT_DIR / "deathtg" / "panel" / "static" / "user" / "avatar.png"
+PANEL_AVATAR = default_avatar_path() or (ROOT_DIR / "deathtg" / "panel" / "static" / "default_avatar.png")
 PROCESS_STARTED_AT = time.time()
 
 
