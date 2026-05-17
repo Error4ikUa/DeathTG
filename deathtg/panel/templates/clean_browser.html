@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ lang or 'en' }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DeathTG Modules</title>
+    <title>{{ tr('browser.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
     <link rel="stylesheet" href="/static/clean_patch.css">
     <link rel="stylesheet" href="/static/accent_fix.css">
@@ -16,39 +16,39 @@
     {% if profile.avatar %}<img src="{{ profile.avatar }}" alt="avatar">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}
 </button>
 <aside class="mini-menu" id="drawer">
-    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>Modules</span></div></div>
+    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>{{ tr('browser.page_label') }}</span></div></div>
     <nav>
-        <a href="/">News</a>
-        <a href="/profile">Profile</a>
-        <a href="/activity">Activity</a>
-        <a class="active" href="/browser">Modules</a>
-        <a href="/scanner">Scanner</a>
+        <a href="/">{{ tr('nav.news') }}</a>
+        <a href="/profile">{{ tr('nav.profile') }}</a>
+        <a href="/activity">{{ tr('nav.activity') }}</a>
+        <a class="active" href="/browser">{{ tr('nav.modules') }}</a>
+        <a href="/scanner">{{ tr('nav.scanner') }}</a>
     </nav>
-    <a class="logout" href="/logout">Logout</a>
+    <a class="logout" href="/logout">{{ tr('nav.logout') }}</a>
 </aside>
 <div class="overlay" id="drawerBackdrop"></div>
 
 <main class="page modules-page">
     <section class="module-top card">
         <div>
-            <p class="eyebrow">Modules</p>
-            <h1>Module Center</h1>
-            <p>Browser &middot; Installed &middot; InstallMod</p>
+            <p class="eyebrow">{{ tr('browser.hero_eyebrow') }}</p>
+            <h1>{{ tr('browser.hero_title') }}</h1>
+            <p>{{ tr('browser.hero_desc') }}</p>
         </div>
-        <input id="moduleSearch" placeholder="Search module...">
+        <input id="moduleSearch" placeholder="{{ tr('browser.search') }}">
     </section>
 
     {% if message %}<div class="toast ok">{{ message }}</div>{% endif %}
     {% if error %}<div class="toast bad">{{ error }}</div>{% endif %}
     {% if pending_warning %}
     <section class="security-warning">
-        <p class="eyebrow">Security scan</p>
-        <h2>Cannot install: dangerous code was found</h2>
-        <p>Module <b>{{ pending_warning.filename }}</b> was stopped by the scanner. Review lines before deciding.</p>
+        <p class="eyebrow">{{ tr('browser.security_scan') }}</p>
+        <h2>{{ tr('browser.cannot_install') }}</h2>
+        <p>{{ tr('browser.review_lines', filename=pending_warning.filename) }}</p>
         <div class="finding-list">
             {% for finding in pending_warning.report.findings %}
             <div class="finding-line">
-                <b>Line {{ finding.line }} &middot; {{ finding.reason }}</b>
+                <b>{{ tr('browser.line_reason', line=finding.line, reason=finding.reason) }}</b>
                 {% if finding.code %}<code>{{ finding.code }}</code>{% endif %}
             </div>
             {% endfor %}
@@ -57,20 +57,20 @@
         <div class="actions">
             <form method="post" action="/modules/pending/{{ pending_warning.token }}/delete">
                 <input type="hidden" name="return_to" value="browser">
-                <button class="small danger" type="submit">Delete</button>
+                <button class="small danger" type="submit">{{ tr('browser.delete') }}</button>
             </form>
             <form method="post" action="/modules/pending/{{ pending_warning.token }}/continue">
                 <input type="hidden" name="return_to" value="browser">
-                <button class="small ghost" type="submit">Continue install</button>
+                <button class="small ghost" type="submit">{{ tr('browser.continue_install') }}</button>
             </form>
         </div>
     </section>
     {% endif %}
 
     <section class="section-tabs module-tabs">
-        <button type="button" class="active" data-tab="browserPane">Browser</button>
-        <button type="button" data-tab="installedPane">Installed</button>
-        <button type="button" data-tab="installPane">InstallMod</button>
+        <button type="button" class="active" data-tab="browserPane">{{ tr('browser.tab_browser') }}</button>
+        <button type="button" data-tab="installedPane">{{ tr('browser.tab_installed') }}</button>
+        <button type="button" data-tab="installPane">{{ tr('browser.tab_install') }}</button>
     </section>
 
     <section id="browserPane" class="module-pane active">
@@ -81,12 +81,12 @@
                 <div class="module-card-glow"></div>
                 <div class="module-head">
                     <h2>{{ mod.name }}</h2>
-                    {% if mod.verified %}<span class="verified-pill">verified</span>{% endif %}
+                    {% if mod.verified %}<span class="verified-pill">{{ tr('browser.verified') }}</span>{% endif %}
                 </div>
-                <p class="module-note">{{ mod.source_label or 'External source' }}</p>
+                <p class="module-note">{{ mod.source_label or tr('browser.external_source') }}</p>
                 <p>{{ mod.description }}</p>
                 <div class="module-actions repo-actions">
-                    <a class="small ghost info-link" href="/repo-modules/{{ mod.name }}">Info</a>
+                    <a class="small ghost info-link" href="/repo-modules/{{ mod.name }}">{{ tr('browser.info') }}</a>
                     <form method="post" action="/modules/download">
                         <input type="hidden" name="link" value="{{ mod.link or mod.raw or mod.url }}">
                         <input type="hidden" name="image" value="{{ image }}">
@@ -94,15 +94,15 @@
                         <input type="hidden" name="author" value="{{ mod.author or 'DTG' }}">
                         <input type="hidden" name="version" value="{{ mod.version or 'latest' }}">
                         <input type="hidden" name="return_to" value="browser">
-                        <button class="small" type="submit">Install</button>
+                        <button class="small" type="submit">{{ tr('browser.install') }}</button>
                     </form>
                 </div>
             </article>
             {% endfor %}
             {% if not browser_modules %}
             <article class="module-empty">
-                <h2>DTG_Modules unavailable</h2>
-                <p>Module index is not available yet.</p>
+                <h2>{{ tr('browser.unavailable') }}</h2>
+                <p>{{ tr('browser.unavailable_desc') }}</p>
             </article>
             {% endif %}
         </div>
@@ -114,26 +114,26 @@
         </div>
         {% endif %}
         <article class="card panel inline-bridge-card">
-            <p class="eyebrow">Inline bridge</p>
-            <h2>Module connector</h2>
+            <p class="eyebrow">{{ tr('browser.inline_bridge') }}</p>
+            <h2>{{ tr('browser.module_connector') }}</h2>
             <div class="bot-grid">
                 {% for bot in startup.bots %}
-                <p class="module-note"><b>{{ bot.role or 'bot' }}</b>: <code>@{{ bot.username or 'missing' }}</code> <span>{{ 'ready' if bot.username and bot.valid_username else 'not configured' }}</span></p>
+                <p class="module-note"><b>{{ bot.role or 'bot' }}</b>: <code>@{{ bot.username or 'missing' }}</code> <span>{{ tr('profile.ready') if bot.username and bot.valid_username else tr('browser.not_configured') }}</span></p>
                 {% endfor %}
             </div>
-            <p class="module-note">Modules use <code>self.inline_send(...)</code>. The inline bot stays a technical layer and never leaks to module code.</p>
+            <p class="module-note">{{ tr('browser.inline_note') }}</p>
         </article>
     </section>
 
     <section id="installedPane" class="module-pane">
         <div class="pane-head">
             <div>
-                <p class="eyebrow">Installed</p>
-                <h2>Installed modules</h2>
+                <p class="eyebrow">{{ tr('browser.installed_eyebrow') }}</p>
+                <h2>{{ tr('browser.installed_title') }}</h2>
             </div>
             <form method="post" action="/modules/update-all">
                 <input type="hidden" name="return_to" value="installed_tab">
-                <button class="ghost" type="submit">Update all</button>
+                <button class="ghost" type="submit">{{ tr('browser.update_all') }}</button>
             </form>
         </div>
         <div class="module-grid installed-grid">
@@ -146,21 +146,21 @@
                 <div class="module-card-glow"></div>
                 <div class="module-head">
                     <h2>{% if module in protected %}[core]{% else %}[ext]{% endif %} {{ module }}</h2>
-                    {% if card.get('verified') %}<span class="verified-pill">verified</span>{% endif %}
+                    {% if card.get('verified') %}<span class="verified-pill">{{ tr('browser.verified') }}</span>{% endif %}
                 </div>
                 <p class="module-note">{{ card.get('description') or meta.get('description') or ('Protected DeathTG module' if module in protected else 'Installed external module') }}</p>
                 <div class="module-command-cloud compact">
                     {% for cmd in commands %}<span>.{{ cmd.name }}</span>{% endfor %}
-                    {% if not commands %}<span>No commands</span>{% endif %}
+                    {% if not commands %}<span>{{ tr('browser.no_commands') }}</span>{% endif %}
                 </div>
                 <div class="module-actions">
-                    <a class="small ghost info-link" href="/modules/{{ module }}">Info</a>
+                    <a class="small ghost info-link" href="/modules/{{ module }}">{{ tr('browser.info') }}</a>
                     {% if module not in protected %}
-                    <form method="post" action="/modules/{{ module }}/update"><input type="hidden" name="return_to" value="installed_tab"><button class="small ghost" type="submit">Update</button></form>
-                    <form method="post" action="/modules/{{ module }}/unload"><input type="hidden" name="return_to" value="installed_tab"><button class="small ghost" type="submit">Unload</button></form>
-                    <form method="post" action="/modules/{{ module }}/delete"><input type="hidden" name="return_to" value="installed_tab"><button class="small danger" type="submit">Delete</button></form>
+                    <form method="post" action="/modules/{{ module }}/update"><input type="hidden" name="return_to" value="installed_tab"><button class="small ghost" type="submit">{{ tr('browser.update') }}</button></form>
+                    <form method="post" action="/modules/{{ module }}/unload"><input type="hidden" name="return_to" value="installed_tab"><button class="small ghost" type="submit">{{ tr('browser.unload') }}</button></form>
+                    <form method="post" action="/modules/{{ module }}/delete"><input type="hidden" name="return_to" value="installed_tab"><button class="small danger" type="submit">{{ tr('browser.delete') }}</button></form>
                     {% else %}
-                    <span class="lock-pill">protected</span>
+                    <span class="lock-pill">{{ tr('browser.protected') }}</span>
                     {% endif %}
                 </div>
             </article>
@@ -171,29 +171,29 @@
     <section id="installPane" class="module-pane">
         <div class="pane-head">
             <div>
-                <p class="eyebrow">InstallMod</p>
-                <h2>Add module</h2>
+                <p class="eyebrow">{{ tr('browser.installmod') }}</p>
+                <h2>{{ tr('browser.add_module') }}</h2>
             </div>
-            <a class="btn ghost" href="/scanner">Scanner</a>
+            <a class="btn ghost" href="/scanner">{{ tr('nav.scanner') }}</a>
         </div>
         <div class="grid2">
             <form class="stack" method="post" action="/modules/download">
-                <label>Module URL</label>
+                <label>{{ tr('browser.module_url') }}</label>
                 <input type="text" name="link" placeholder="https://.../module.py" required>
                 <input type="hidden" name="return_to" value="install_tab">
-                <button type="submit">Install from URL</button>
+                <button type="submit">{{ tr('browser.install_from_url') }}</button>
             </form>
             <form class="stack" method="post" action="/modules/upload" enctype="multipart/form-data">
-                <label class="file-drop">Choose .py file<input type="file" name="file" accept=".py" required></label>
+                <label class="file-drop">{{ tr('browser.choose_py') }}<input type="file" name="file" accept=".py" required></label>
                 <input type="hidden" name="return_to" value="install_tab">
-                <button type="submit">Upload module</button>
+                <button type="submit">{{ tr('browser.upload_module') }}</button>
             </form>
         </div>
         <article class="card panel" style="margin-top:16px">
-            <p class="eyebrow">Module contract</p>
-            <h2>Folder modules are supported</h2>
-            <p class="module-note">Local module can be a single <code>.py</code> file or a folder like <code>modules/MyModule/</code> with <code>MyModule.py</code>, <code>main.py</code> or <code>__init__.py</code> plus optional <code>Module.png</code> (16:9).</p>
-            <p class="module-note">If a module has no own image, DeathTG falls back to <code>images/modules/&lt;module_name&gt;.png</code> or shared <code>images/modules/Module.png</code>.</p>
+            <p class="eyebrow">{{ tr('browser.contract') }}</p>
+            <h2>{{ tr('browser.folder_supported') }}</h2>
+            <p class="module-note">{{ tr('browser.folder_desc_1') }}</p>
+            <p class="module-note">{{ tr('browser.folder_desc_2') }}</p>
         </article>
     </section>
 </main>

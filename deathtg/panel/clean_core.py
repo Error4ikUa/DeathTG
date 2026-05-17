@@ -38,6 +38,7 @@ from fastapi.templating import Jinja2Templates
 
 from deathtg.assets import IMAGES_DIR, MODULE_IMAGES_DIR, local_module_image_path, module_image_path, resolve_module_entry, shared_module_image_path
 from deathtg.config import MODULES_DIR, ROOT_DIR, RUNTIME_DIR, load_config
+from deathtg.i18n import jinja_translate
 from deathtg.loader import ModuleLoader
 from deathtg.metrics import installed_days, level_info, top_modules, usage_by_day, usage_total
 from deathtg.profile_store import profile_settings
@@ -62,6 +63,7 @@ MODULE_REPO_API = os.getenv(
 PROTECTED_BASE_MODULES = {"core", "root", "info", "system", "antivirus", "terminal"}
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+templates.env.globals["tr"] = jinja_translate
 registry = CommandRegistry()
 loader = ModuleLoader(registry, MODULES_DIR)
 

@@ -289,6 +289,7 @@ async def save_profile(
     info_text: str = Form(""),
     accent: str = Form("blue"),
     role: str = Form("user"),
+    language: str = Form("en"),
     command_prefix: str = Form("."),
 ):
     blocked = _require_auth(request)
@@ -312,6 +313,7 @@ async def save_profile(
         info_text=info_text,
         accent=accent,
         role=role,
+        language=language,
     )
     if command_prefix:
         update_env_value("COMMAND_PREFIX", command_prefix)

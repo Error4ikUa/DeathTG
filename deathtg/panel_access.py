@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
 import re
 import secrets
 import socket
+import subprocess
 import time
 from pathlib import Path
 
@@ -36,12 +38,68 @@ def local_network_ip() -> str:
     override = _env("PANEL_LOCAL_IP")
     if override:
         return override
+    if running_in_wsl():
+        host_ip = _wsl_windows_host_ip()
+        if host_ip:
+            return host_ip
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.connect(("8.8.8.8", 80))
             host = sock.getsockname()[0]
-        if host and host not in {"127.0.0.1", "0.0.0.0"}:
+        if _usable_ipv4(host):
             return host
+    except Exception:
+        pass
+    return ""
+
+
+def _usable_ipv4(value: str) -> bool:
+    raw = (value or "").strip()
+    try:
+        ip = ipaddress.ip_address(raw)
+    except Exception:
+        return False
+    if ip.version != 4:
+        return False
+    if ip.is_loopback or ip.is_unspecified or ip.is_link_local or ip.is_multicast:
+        return False
+    last_octet = raw.rsplit(".", 1)[-1]
+    if last_octet in {"0", "255"}:
+        return False
+    return True
+
+
+def _wsl_windows_host_ip() -> str:
+    commands = [
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-Command",
+            "$ip = Get-NetIPAddress -AddressFamily IPv4 | "
+            "Where-Object { $_.IPAddress -notmatch '^(127\\.|169\\.254\\.)' } | "
+            "Sort-Object -Property InterfaceMetric,SkipAsSource | "
+            "Select-Object -First 1 -ExpandProperty IPAddress; "
+            "if ($ip) { $ip }",
+        ],
+        ["cmd.exe", "/c", "ipconfig"],
+    ]
+    for command in commands:
+        try:
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=8, check=False)
+        except Exception:
+            continue
+        output = f"{completed.stdout}\n{completed.stderr}"
+        for candidate in re.findall(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", output):
+            if _usable_ipv4(candidate):
+                return candidate
+    try:
+        resolv = Path("/etc/resolv.conf")
+        if resolv.exists():
+            for line in resolv.read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.strip().startswith("nameserver "):
+                    candidate = line.split(None, 1)[1].strip()
+                    if _usable_ipv4(candidate):
+                        return candidate
     except Exception:
         pass
     return ""

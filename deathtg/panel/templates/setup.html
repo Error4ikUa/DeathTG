@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ lang or 'en' }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DeathTG Setup</title>
+  <title>{{ tr('setup.title') }}</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/layout.css">
   <style>
@@ -15,49 +15,49 @@
   <main class="login-shell">
     <section class="glass-card login-card setup-card">
       <div class="brand-mark">DTG</div>
-      <p class="eyebrow">First launch</p>
-      <h1>DeathTG Setup</h1>
-      <p>Enter your API data, continue through QR login, and enter 2FA here only if Telegram asks for it.</p>
+      <p class="eyebrow">DTG</p>
+      <h1>{{ tr('setup.title') }}</h1>
+      <p>{{ tr('setup.intro') }}</p>
       {% if panel_url %}
-      <small style="display:block;margin-top:-4px;margin-bottom:10px;color:#9fc7ae">Current panel address: {{ panel_url }}</small>
+      <small style="display:block;margin-top:-4px;margin-bottom:10px;color:#9fc7ae">{{ tr('setup.current_address') }}: {{ panel_url }}</small>
       {% endif %}
       {% if panel_remote_access_ready %}
-      <small style="display:block;margin-bottom:12px;color:#9fc7ae">This panel can be opened from your other devices on the same network or through your public URL.</small>
+      <small style="display:block;margin-bottom:12px;color:#9fc7ae">{{ tr('setup.remote_ready') }}</small>
       {% endif %}
       {% if message %}<div class="alert success">{{ message }}</div>{% endif %}
       {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
       {% if step == "start" %}
       <form method="post" action="/setup/save" class="form-stack">
         <input type="hidden" name="setup_token" value="{{ setup_token or '' }}">
-        <label>API ID</label>
+        <label>{{ tr('setup.api_id') }}</label>
         <input type="number" name="api_id" placeholder="123456" required>
-        <label>API HASH</label>
+        <label>{{ tr('setup.api_hash') }}</label>
         <input type="text" name="api_hash" placeholder="your_api_hash" required>
-        <label>Session name</label>
+        <label>{{ tr('setup.session_name') }}</label>
         <input type="text" name="session_name" value="deathtg" required>
-        <button type="submit">Confirm</button>
+        <button type="submit">{{ tr('setup.confirm') }}</button>
       </form>
       {% elif step == "qr" %}
       <div class="form-stack">
-        <label>QR login</label>
+        <label>{{ tr('setup.qr_login') }}</label>
         {% if qr_data_url %}
         <div style="display:flex;justify-content:center;padding:8px 0 4px">
           <img src="{{ qr_data_url }}" alt="DeathTG QR Login" style="width:min(100%,320px);height:auto;background:#fff;border-radius:18px;padding:14px">
         </div>
         {% endif %}
-        <small>Open Telegram on your phone, then scan this QR code to connect your DeathTG session.</small>
-        <small id="qr-status-text">Waiting for Telegram scan...</small>
+        <small>{{ tr('setup.qr_help') }}</small>
+        <small id="qr-status-text">{{ tr('setup.qr_wait') }}</small>
       </div>
       <form method="post" action="/setup/qr-refresh" class="form-stack delayed-action" id="qr-refresh-form" hidden style="margin-top:12px">
-        <button type="submit">Refresh QR</button>
+        <button type="submit">{{ tr('setup.qr_refresh') }}</button>
       </form>
       {% elif step == "secret" %}
       <form method="post" action="/setup/secret" class="form-stack">
-        <label>2FA password</label>
-        <input type="password" name="secret_value" placeholder="Two-step verification password" autofocus required>
-        <button type="submit">Confirm 2FA</button>
+        <label>{{ tr('setup.2fa') }}</label>
+        <input type="password" name="secret_value" placeholder="{{ tr('setup.2fa_placeholder') }}" autofocus required>
+        <button type="submit">{{ tr('setup.2fa_confirm') }}</button>
       </form>
-      <small>Enter your Telegram two-step verification password.</small>
+      <small>{{ tr('setup.2fa_help') }}</small>
       {% endif %}
     </section>
   </main>
@@ -77,17 +77,17 @@
             return;
           }
           if (data.qr_state === "expired") {
-            if (qrStatusText) qrStatusText.textContent = data.qr_error || "QR code expired.";
+            if (qrStatusText) qrStatusText.textContent = data.qr_error || "{{ tr('setup.qr_refresh') }}";
             qrRefreshForm.hidden = false;
             return;
           }
           if (data.qr_state === "error") {
-            if (qrStatusText) qrStatusText.textContent = data.qr_error || "QR login failed.";
+            if (qrStatusText) qrStatusText.textContent = data.qr_error || "{{ tr('setup.qr_failed') }}";
             qrRefreshForm.hidden = false;
             return;
           }
         } catch (error) {
-          if (qrStatusText) qrStatusText.textContent = "Waiting for scan...";
+          if (qrStatusText) qrStatusText.textContent = "{{ tr('setup.qr_wait') }}";
         }
         window.setTimeout(poll, 2000);
       };

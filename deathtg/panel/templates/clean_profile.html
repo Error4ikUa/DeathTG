@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ lang or 'en' }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DeathTG Profile</title>
+    <title>{{ tr('profile.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
     <link rel="stylesheet" href="/static/clean_patch.css">
     <link rel="stylesheet" href="/static/accent_fix.css">
@@ -92,9 +92,9 @@
     {% endif %}
 </button>
 <aside class="mini-menu" id="drawer">
-    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>Profile</span></div></div>
-    <nav><a href="/">News</a><a class="active" href="/profile">Profile</a><a href="/activity">Activity</a><a href="/browser">Modules</a><a href="/scanner">Scanner</a></nav>
-    <a class="logout" href="/logout">Logout</a>
+    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>{{ tr('profile.page_label') }}</span></div></div>
+    <nav><a href="/">{{ tr('nav.news') }}</a><a class="active" href="/profile">{{ tr('nav.profile') }}</a><a href="/activity">{{ tr('nav.activity') }}</a><a href="/browser">{{ tr('nav.modules') }}</a><a href="/scanner">{{ tr('nav.scanner') }}</a></nav>
+    <a class="logout" href="/logout">{{ tr('nav.logout') }}</a>
 </aside>
 <div class="overlay" id="drawerBackdrop"></div>
 
@@ -107,15 +107,15 @@
             <div class="hero-avatar empty-avatar">{{ (profile.name or "D")[0] }}</div>
             {% endif %}
             <div class="hero-copy">
-                <p class="eyebrow">Profile</p>
-                <h1 class="hero-title">{{ profile.profile_title or "DeathTG Operator" }}</h1>
+                <p class="eyebrow">{{ tr('profile.hero_eyebrow') }}</p>
+                <h1 class="hero-title">{{ profile.profile_title or tr('profile.operator_title') }}</h1>
                 <div class="hero-sub">
-                    <p class="profile-meta">@{{ profile.username or "not connected" }}</p>
+                    <p class="profile-meta">@{{ profile.username or tr('profile.not_connected') }}</p>
                     <span class="role-pill {% if profile.role == 'developer' %}developer{% endif %}">{{ profile.role or "user" }}</span>
                 </div>
             </div>
             <div class="hero-actions">
-                <button type="button" class="ghost" data-modal-open="editorModal">Edit profile</button>
+                <button type="button" class="ghost" data-modal-open="editorModal">{{ tr('profile.edit_profile') }}</button>
             </div>
         </section>
 
@@ -123,93 +123,93 @@
         {% if error %}<div class="toast bad">{{ error }}</div>{% endif %}
 
         <section class="stat-ribbon">
-            <article class="stat-card"><span>Prefix</span><b>{{ status.prefix }}</b></article>
-            <article class="stat-card"><span>Role</span><b>{{ profile.role or "user" }}</b></article>
-            <article class="stat-card"><span>Modules</span><b>{{ status.modules_count }}</b></article>
-            <article class="stat-card"><span>Commands</span><b>{{ status.commands_count }}</b></article>
-            <article class="stat-card"><span>Level</span><b>{{ status.level.level }}</b></article>
-            <article class="stat-card"><span>Age</span><b>{{ status.days }}d</b></article>
+            <article class="stat-card"><span>{{ tr('profile.prefix') }}</span><b>{{ status.prefix }}</b></article>
+            <article class="stat-card"><span>{{ tr('profile.role') }}</span><b>{{ profile.role or "user" }}</b></article>
+            <article class="stat-card"><span>{{ tr('profile.modules') }}</span><b>{{ status.modules_count }}</b></article>
+            <article class="stat-card"><span>{{ tr('profile.commands') }}</span><b>{{ status.commands_count }}</b></article>
+            <article class="stat-card"><span>{{ tr('home.level') }}</span><b>{{ status.level.level }}</b></article>
+            <article class="stat-card"><span>{{ tr('profile.age') }}</span><b>{{ status.days }}d</b></article>
         </section>
 
         <section class="profile-grid">
             <article class="card profile-card">
-                <p class="eyebrow">About</p>
-                <h2>{{ profile.profile_title or "DeathTG Operator" }}</h2>
-                <p>{{ profile.description or "DeathTG userbot online. Configure profile, role, prefix, bot sync, and modules from one panel." }}</p>
+                <p class="eyebrow">{{ tr('profile.about') }}</p>
+                <h2>{{ profile.profile_title or tr('profile.operator_title') }}</h2>
+                <p>{{ profile.description or tr('profile.about_fallback') }}</p>
             </article>
             <article class="card profile-card">
-                <p class="eyebrow">Identity</p>
+                <p class="eyebrow">{{ tr('profile.identity') }}</p>
                 <div class="meta-grid">
-                    <div class="meta-chip"><span>Username</span><b>@{{ profile.username or "not connected" }}</b></div>
-                    <div class="meta-chip"><span>ID</span><b>{{ profile.id }}</b></div>
-                    <div class="meta-chip"><span>Session</span><b>{{ "OK" if status.session_ok else "BAD" }}</b></div>
-                    <div class="meta-chip"><span>Accent</span><b>{{ profile.accent or "blue" }}</b></div>
+                    <div class="meta-chip"><span>{{ tr('profile.username') }}</span><b>@{{ profile.username or tr('profile.not_connected') }}</b></div>
+                    <div class="meta-chip"><span>{{ tr('profile.id') }}</span><b>{{ profile.id }}</b></div>
+                    <div class="meta-chip"><span>{{ tr('profile.session') }}</span><b>{{ "OK" if status.session_ok else "BAD" }}</b></div>
+                    <div class="meta-chip"><span>{{ tr('profile.accent') }}</span><b>{{ profile.accent or "blue" }}</b></div>
                 </div>
             </article>
         </section>
 
         <section class="profile-grid">
             <article class="card profile-card">
-                <p class="eyebrow">Runtime</p>
+                <p class="eyebrow">{{ tr('profile.runtime') }}</p>
                 <div class="runtime-head">
-                    <h2>Inline and channels</h2>
-                    <form method="post" action="/runtime/sync"><button type="submit" class="ghost">Run sync now</button></form>
+                    <h2>{{ tr('profile.runtime_channels') }}</h2>
+                    <form method="post" action="/runtime/sync"><button type="submit" class="ghost">{{ tr('profile.run_sync') }}</button></form>
                 </div>
                 <div class="runtime-list">
                     {% for bot in startup.bots %}
                     <div class="runtime-row">
                         <div>
-                            <b>{{ "Inline bot" if bot.role == "inline" else ("Helper bot" if bot.role == "helper" else "Community bot") }}</b>
-                            <p class="helper">@{{ bot.username or "not set" }}{% if bot.error %} &middot; {{ bot.error }}{% endif %}</p>
-                            <p class="helper">Expected: {{ bot.expected_prefix or "n/a" }}*_bot</p>
-                            <p class="helper">Commands: {{ "ok" if bot.commands_synced else "pending" }} &middot; Avatar: {{ "ok" if bot.avatar_synced else "pending" }}{% if bot.role == "inline" %} &middot; Inline: {{ "ok" if bot.inline_synced else "pending" }}{% endif %}</p>
+                            <b>{{ tr('profile.inline_bot') if bot.role == "inline" else (tr('profile.helper_bot') if bot.role == "helper" else tr('profile.community_bot')) }}</b>
+                            <p class="helper">@{{ bot.username or tr('profile.not_set') }}{% if bot.error %} &middot; {{ bot.error }}{% endif %}</p>
+                            <p class="helper">{{ tr('profile.expected') }}: {{ bot.expected_prefix or tr('profile.na') }}*_bot</p>
+                            <p class="helper">{{ tr('profile.commands_status') }}: {{ tr('profile.ok') if bot.commands_synced else tr('profile.pending') }} &middot; {{ tr('profile.avatar_status') }}: {{ tr('profile.ok') if bot.avatar_synced else tr('profile.pending') }}{% if bot.role == "inline" %} &middot; {{ tr('profile.inline_status') }}: {{ tr('profile.ok') if bot.inline_synced else tr('profile.pending') }}{% endif %}</p>
                         </div>
-                        <span class="runtime-badge {{ 'ok' if bot.configured and bot.username and bot.valid_username else 'bad' }}">{{ 'ready' if bot.configured and bot.username and bot.valid_username else 'missing' }}</span>
+                        <span class="runtime-badge {{ 'ok' if bot.configured and bot.username and bot.valid_username else 'bad' }}">{{ tr('profile.ready') if bot.configured and bot.username and bot.valid_username else tr('profile.missing') }}</span>
                     </div>
                     {% endfor %}
                     {% for channel in startup.channels %}
                     <div class="runtime-row">
                         <div><b>{{ channel.title or ('@' ~ channel.username) }}</b><p class="helper">@{{ channel.username }}</p></div>
-                        <span class="runtime-badge {{ 'ok' if channel.joined else 'warn' }}">{{ 'joined' if channel.joined else 'check' }}</span>
+                        <span class="runtime-badge {{ 'ok' if channel.joined else 'warn' }}">{{ tr('profile.joined') if channel.joined else tr('profile.check') }}</span>
                     </div>
                     {% endfor %}
                     {% if not startup.channels %}
                     <div class="runtime-row">
-                        <div><b>Channels</b><p class="helper">Startup sync has not collected channel status yet.</p></div>
-                        <span class="runtime-badge warn">pending</span>
+                        <div><b>{{ tr('profile.channels') }}</b><p class="helper">{{ tr('profile.channels_pending') }}</p></div>
+                        <span class="runtime-badge warn">{{ tr('profile.pending') }}</span>
                     </div>
                     {% endif %}
                     <div class="runtime-row">
                         <div>
-                            <b>Folder {{ startup.folder.name }}</b>
-                            <p class="helper">{{ startup.folder.error or "Dialog folder in Telegram" }}</p>
+                            <b>{{ tr('profile.folder') }} {{ startup.folder.name }}</b>
+                            <p class="helper">{{ startup.folder.error or tr('profile.dialog_folder') }}</p>
                             {% if startup.folder.include_usernames %}
-                            <p class="helper">Targets: {{ startup.folder.include_usernames|join(', ') }}</p>
+                            <p class="helper">{{ tr('profile.targets') }}: {{ startup.folder.include_usernames|join(', ') }}</p>
                             {% endif %}
                         </div>
-                        <span class="runtime-badge {{ 'ok' if startup.folder.ok else 'warn' }}">{{ 'ready' if startup.folder.ok else 'check' }}</span>
+                        <span class="runtime-badge {{ 'ok' if startup.folder.ok else 'warn' }}">{{ tr('profile.ready') if startup.folder.ok else tr('profile.check') }}</span>
                     </div>
                     <div class="runtime-row">
-                        <div><b>Last sync</b><p class="helper">{{ startup.last_sync_error or "No runtime sync error" }}</p></div>
-                        <span class="runtime-badge {{ 'ok' if not startup.last_sync_error else 'warn' }}">{{ startup.last_sync_at or "pending" }}</span>
+                        <div><b>{{ tr('profile.last_sync') }}</b><p class="helper">{{ startup.last_sync_error or tr('profile.sync_error_none') }}</p></div>
+                        <span class="runtime-badge {{ 'ok' if not startup.last_sync_error else 'warn' }}">{{ startup.last_sync_at or tr('profile.pending') }}</span>
                     </div>
                 </div>
             </article>
 
             <article class="card profile-card">
-                <p class="eyebrow">Stats</p>
-                <h2>Top modules</h2>
+                <p class="eyebrow">{{ tr('profile.stats') }}</p>
+                <h2>{{ tr('profile.top_modules') }}</h2>
                 <div class="profile-list">
                     {% for mod in top_modules[:4] %}
                     <div class="item">
                         <b>{{ mod.module }}</b>
-                        <span class="helper">{{ mod.count }} uses</span>
+                        <span class="helper">{{ mod.count }} {{ tr('profile.uses') }}</span>
                     </div>
                     {% endfor %}
                     {% if not top_modules %}
                     <div class="item">
-                        <b>No usage data yet</b>
-                        <p>Start using commands and this list will fill automatically.</p>
+                        <b>{{ tr('profile.no_usage') }}</b>
+                        <p>{{ tr('profile.no_usage_desc') }}</p>
                     </div>
                     {% endif %}
                 </div>
@@ -218,28 +218,28 @@
 
         <section class="profile-grid">
             <article class="card profile-card">
-                <p class="eyebrow">Devices</p>
+                <p class="eyebrow">{{ tr('profile.devices') }}</p>
                 <div class="runtime-head">
-                    <h2>Trusted access</h2>
+                    <h2>{{ tr('profile.trusted_access') }}</h2>
                     <form method="post" action="/devices/link" style="display:flex;gap:8px;flex-wrap:wrap">
-                        <input type="text" name="device_name" placeholder="Phone, Laptop, iPad" style="min-width:220px">
-                        <button type="submit" class="ghost">Create secure link</button>
+                        <input type="text" name="device_name" placeholder="{{ tr('profile.device_placeholder') }}" style="min-width:220px">
+                        <button type="submit" class="ghost">{{ tr('profile.create_secure_link') }}</button>
                     </form>
                 </div>
                 {% if public_panel_enabled %}
-                <p class="helper" style="margin-bottom:12px">Public access is enabled. Remote devices should use one-time secure links, not the panel password.</p>
-                <p class="helper" style="margin-bottom:12px">Current panel address: <code>{{ panel_url }}</code></p>
+                <p class="helper" style="margin-bottom:12px">{{ tr('profile.public_access_note') }}</p>
+                <p class="helper" style="margin-bottom:12px">{{ tr('profile.current_panel_address') }}: <code>{{ panel_url }}</code></p>
                 {% elif panel_remote_access_ready %}
-                <p class="helper" style="margin-bottom:12px">This panel is reachable on your network. Use secure links for phones, tablets and laptops.</p>
-                <p class="helper" style="margin-bottom:12px">Current panel address: <code>{{ panel_url }}</code></p>
+                <p class="helper" style="margin-bottom:12px">{{ tr('profile.network_access_note') }}</p>
+                <p class="helper" style="margin-bottom:12px">{{ tr('profile.current_panel_address') }}: <code>{{ panel_url }}</code></p>
                 {% else %}
-                <p class="helper" style="margin-bottom:12px">Remote access is not ready yet. Set a LAN or public address before expecting phone links to work outside this machine.</p>
-                <p class="helper" style="margin-bottom:12px">Current panel address: <code>{{ panel_url }}</code></p>
+                <p class="helper" style="margin-bottom:12px">{{ tr('profile.local_access_note') }}</p>
+                <p class="helper" style="margin-bottom:12px">{{ tr('profile.current_panel_address') }}: <code>{{ panel_url }}</code></p>
                 {% endif %}
                 {% if device_link %}
                 <div class="item" style="margin-bottom:12px">
-                    <b>Fresh secure link</b>
-                    <p class="helper">Open this on the target device. It is signed, unique and one-time use.</p>
+                    <b>{{ tr('profile.fresh_secure_link') }}</b>
+                    <p class="helper">{{ tr('profile.secure_link_desc') }}</p>
                     <input type="text" value="{{ device_link }}" readonly onclick="this.select()" style="margin-top:10px">
                 </div>
                 {% endif %}
@@ -248,17 +248,17 @@
                     <div class="item">
                         <div class="runtime-row" style="padding:0;border:0">
                             <div>
-                                <b>{{ device.label or "Browser" }}{% if current_device and current_device.session_id == device.session_id %} · current{% endif %}</b>
-                                <p class="helper">{{ device.auth_method or "session" }} · {{ device.last_ip or "unknown ip" }}</p>
-                                <p class="helper">Last seen: {{ device.last_seen_at or device.created_at or "n/a" }}</p>
+                                <b>{{ device.label or tr('profile.browser_device') }}{% if current_device and current_device.session_id == device.session_id %} &middot; {{ tr('profile.this_device') }}{% endif %}</b>
+                                <p class="helper">{{ device.auth_method or tr('profile.session_method') }} &middot; {{ device.last_ip or tr('profile.unknown_ip') }}</p>
+                                <p class="helper">{{ tr('profile.last_seen_label') }}: {{ device.last_seen_at or device.created_at or tr('profile.na') }}</p>
                             </div>
                             <div>
                                 {% if not current_device or current_device.session_id != device.session_id %}
                                 <form method="post" action="/devices/{{ device.session_id }}/revoke">
-                                    <button type="submit" class="ghost">Revoke</button>
+                                    <button type="submit" class="ghost">{{ tr('profile.revoke') }}</button>
                                 </form>
                                 {% else %}
-                                <span class="runtime-badge ok">active</span>
+                                <span class="runtime-badge ok">{{ tr('profile.active') }}</span>
                                 {% endif %}
                             </div>
                         </div>
@@ -266,26 +266,26 @@
                     {% endfor %}
                     {% if not devices %}
                     <div class="item">
-                        <b>No trusted devices yet</b>
-                        <p>Create a secure link for your phone, laptop or another browser.</p>
+                        <b>{{ tr('profile.no_devices') }}</b>
+                        <p>{{ tr('profile.no_devices_desc') }}</p>
                     </div>
                     {% endif %}
                 </div>
             </article>
 
             <article class="card profile-card">
-                <p class="eyebrow">System</p>
+                <p class="eyebrow">{{ tr('profile.system') }}</p>
                 <div class="runtime-head">
-                    <h2>Update and restart</h2>
-                    <form method="post" action="/system/update/check"><button type="submit" class="ghost">Check update</button></form>
+                    <h2>{{ tr('profile.update_restart') }}</h2>
+                    <form method="post" action="/system/update/check"><button type="submit" class="ghost">{{ tr('profile.check_update') }}</button></form>
                 </div>
                 {% if update_info %}
                 <div class="profile-list">
                     <div class="item">
                         <b>{{ update_info.message }}</b>
                         {% if update_info.ok %}
-                        <p class="helper">Branch: {{ update_info.branch }} · behind: {{ update_info.behind }} · ahead: {{ update_info.ahead }}</p>
-                        <p class="helper">Current: {{ (update_info.current or '')[:10] }}{% if update_info.upcoming %} · Remote: {{ (update_info.upcoming or '')[:10] }}{% endif %}</p>
+                        <p class="helper">{{ tr('profile.branch') }}: {{ update_info.branch }} &middot; {{ tr('profile.behind') }}: {{ update_info.behind }} &middot; {{ tr('profile.ahead') }}: {{ update_info.ahead }}</p>
+                        <p class="helper">{{ tr('profile.current') }}: {{ (update_info.current or '')[:10] }}{% if update_info.upcoming %} &middot; {{ tr('profile.remote') }}: {{ (update_info.upcoming or '')[:10] }}{% endif %}</p>
                         {% else %}
                         <p class="helper">{{ update_info.message }}</p>
                         {% endif %}
@@ -294,13 +294,13 @@
                 {% endif %}
                 <div class="profile-list">
                     <div class="item">
-                        <b>Safe update flow</b>
-                        <p class="helper">DeathTG checks remote git state, notifies you in Telegram when a new build appears, then lets you apply and restart only on demand.</p>
+                        <b>{{ tr('profile.safe_update_flow') }}</b>
+                        <p class="helper">{{ tr('profile.safe_update_desc') }}</p>
                     </div>
                 </div>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
-                    <form method="post" action="/system/update/apply"><button type="submit">Apply update</button></form>
-                    <form method="post" action="/system/restart"><button type="submit" class="ghost">Restart DeathTG</button></form>
+                    <form method="post" action="/system/update/apply"><button type="submit">{{ tr('profile.apply_update') }}</button></form>
+                    <form method="post" action="/system/restart"><button type="submit" class="ghost">{{ tr('profile.restart') }}</button></form>
                 </div>
             </article>
         </section>
@@ -310,11 +310,11 @@
 <div class="modal editor-modal" id="editorModal">
     <div class="card modal-card">
         <button class="modal-close" type="button" data-modal-close>x</button>
-        <p class="eyebrow">Edit profile</p>
-        <h2 style="margin:0">Avatar, role and prefix</h2>
+        <p class="eyebrow">{{ tr('profile.edit_modal_title') }}</p>
+        <h2 style="margin:0">{{ tr('profile.edit_modal_subtitle') }}</h2>
         <div class="editor-shell">
             <section class="editor-panel">
-                <h3>Avatar</h3>
+                <h3>{{ tr('profile.avatar') }}</h3>
                 <div class="avatar-box">
                     {% if profile.avatar %}
                     <img data-avatar-img src="{{ profile.avatar }}" alt="avatar">
@@ -322,69 +322,75 @@
                     <div class="hero-avatar empty-avatar" style="width:100%;height:100%;border-radius:0">{{ (profile.name or "D")[0] }}</div>
                     {% endif %}
                 </div>
-                <p class="helper" style="margin-top:12px">Preview uses the exact crop selection.</p>
+                <p class="helper" style="margin-top:12px">{{ tr('profile.avatar_preview_note') }}</p>
                 <div style="margin-top:12px">
-                    <button type="button" class="ghost" data-modal-open="cropModal">Open crop studio</button>
+                    <button type="button" class="ghost" data-modal-open="cropModal">{{ tr('profile.crop_studio') }}</button>
                 </div>
             </section>
 
             <form class="editor-form" action="/profile/save" method="post">
                 <section class="editor-panel">
-                    <h3 style="margin:0 0 12px">Identity</h3>
+                    <h3 style="margin:0 0 12px">{{ tr('profile.identity_section') }}</h3>
                     <div class="editor-grid">
-                        <label class="wide">Profile title
+                        <label class="wide">{{ tr('profile.profile_title') }}
                             <input type="text" name="profile_title" value="{{ profile.profile_title or '' }}">
                         </label>
-                        <label>Role
+                        <label>{{ tr('profile.role') }}
                             <select name="role">
-                                <option value="user" {% if profile.role == "user" %}selected{% endif %}>User</option>
-                                <option value="admin" {% if profile.role == "admin" %}selected{% endif %}>Admin</option>
-                                <option value="developer" {% if profile.role == "developer" %}selected{% endif %}>Developer</option>
+                                <option value="user" {% if profile.role == "user" %}selected{% endif %}>{{ tr('profile.role_user') }}</option>
+                                <option value="admin" {% if profile.role == "admin" %}selected{% endif %}>{{ tr('profile.role_admin') }}</option>
+                                <option value="developer" {% if profile.role == "developer" %}selected{% endif %}>{{ tr('profile.role_developer') }}</option>
                             </select>
                         </label>
-                        <label>Command prefix
+                        <label>{{ tr('profile.command_prefix') }}
                             <input type="text" name="command_prefix" value="{{ status.prefix or '.' }}" maxlength="4">
                         </label>
                         <div class="wide accent-set">
-                            <span>Accent</span>
+                            <span>{{ tr('profile.accent') }}</span>
                             <div class="accent-grid">
                                 <div class="accent-item">
                                     <input id="accent-green" type="radio" name="accent" value="green" {% if profile.accent == "green" %}checked{% endif %}>
-                                    <label for="accent-green"><span class="accent-dot" style="background:linear-gradient(135deg,#52ff8b,#1fd866)"></span>Green</label>
+                                    <label for="accent-green"><span class="accent-dot" style="background:linear-gradient(135deg,#52ff8b,#1fd866)"></span>{{ tr('profile.accent_green') }}</label>
                                 </div>
                                 <div class="accent-item">
                                     <input id="accent-blue" type="radio" name="accent" value="blue" {% if profile.accent == "blue" %}checked{% endif %}>
-                                    <label for="accent-blue"><span class="accent-dot accent-blue"></span>Blue</label>
+                                    <label for="accent-blue"><span class="accent-dot accent-blue"></span>{{ tr('profile.accent_blue') }}</label>
                                 </div>
                                 <div class="accent-item">
                                     <input id="accent-red" type="radio" name="accent" value="red" {% if profile.accent == "red" %}checked{% endif %}>
-                                    <label for="accent-red"><span class="accent-dot accent-red"></span>Red</label>
+                                    <label for="accent-red"><span class="accent-dot accent-red"></span>{{ tr('profile.accent_red') }}</label>
                                 </div>
                                 <div class="accent-item">
                                     <input id="accent-gold" type="radio" name="accent" value="gold" {% if profile.accent == "gold" %}checked{% endif %}>
-                                    <label for="accent-gold"><span class="accent-dot accent-gold"></span>Gold</label>
+                                    <label for="accent-gold"><span class="accent-dot accent-gold"></span>{{ tr('profile.accent_gold') }}</label>
                                 </div>
                                 <div class="accent-item">
                                     <input id="accent-purple" type="radio" name="accent" value="purple" {% if profile.accent == "purple" %}checked{% endif %}>
-                                    <label for="accent-purple"><span class="accent-dot" style="background:linear-gradient(135deg,#a879ff,#d0b7ff)"></span>Purple</label>
+                                    <label for="accent-purple"><span class="accent-dot" style="background:linear-gradient(135deg,#a879ff,#d0b7ff)"></span>{{ tr('profile.accent_purple') }}</label>
                                 </div>
                                 <div class="accent-item">
                                     <input id="accent-dark" type="radio" name="accent" value="dark" {% if profile.accent == "dark" %}checked{% endif %}>
-                                    <label for="accent-dark"><span class="accent-dot" style="background:linear-gradient(135deg,#9aa6ba,#d7e0ed)"></span>Dark</label>
+                                    <label for="accent-dark"><span class="accent-dot" style="background:linear-gradient(135deg,#9aa6ba,#d7e0ed)"></span>{{ tr('profile.accent_dark') }}</label>
                                 </div>
                             </div>
-                            <span class="helper">Green, blue, red, gold, purple and dark themes are available. Admin and developer roles are confirmed only through the DeathTG community bot.</span>
+                            <span class="helper">{{ tr('profile.accent_help') }}</span>
                         </div>
-                        <label class="wide">Description
+                        <label>{{ tr('profile.language') }}
+                            <select name="language">
+                                <option value="en" {% if (profile.language or lang or 'en') == "en" %}selected{% endif %}>{{ tr('lang.english') }}</option>
+                                <option value="ru" {% if (profile.language or lang or 'en') == "ru" %}selected{% endif %}>{{ tr('lang.russian') }}</option>
+                            </select>
+                        </label>
+                        <label class="wide">{{ tr('profile.description') }}
                             <textarea name="description">{{ profile.description or '' }}</textarea>
                         </label>
-                        <label class="wide">Info text
-                            <textarea name="info_text" placeholder="Supports placeholders like {title}, {username}, {uses}, {level} and Telegram premium emoji HTML like <emoji id=&quot;123&quot;>⭐️</emoji>">{{ profile.info_text or '' }}</textarea>
-                            <span class="helper">This text is used by the `.info` card caption. Site saves it as-is, DeathTG uses it in Telegram output.</span>
+                        <label class="wide">{{ tr('profile.info_text') }}
+                            <textarea name="info_text" placeholder="{{ tr('profile.info_placeholder') }}">{{ profile.info_text or '' }}</textarea>
+                            <span class="helper">{{ tr('profile.info_help') }}</span>
                         </label>
                     </div>
                 </section>
-                <div class="editor-submit"><button type="submit">Save profile</button></div>
+                <div class="editor-submit"><button type="submit">{{ tr('profile.save') }}</button></div>
             </form>
         </div>
     </div>
@@ -393,13 +399,13 @@
 <div class="modal" id="cropModal">
     <div class="card modal-card crop-modal">
         <button class="modal-close" type="button" data-modal-close>x</button>
-        <h2>Crop image</h2>
+        <h2>{{ tr('profile.crop_image') }}</h2>
         <form id="avatarForm" action="/profile/avatar" method="post" enctype="multipart/form-data" class="crop-workspace">
-            <label class="file-drop compact-drop upload-wide crop-picker">Choose image
+            <label class="file-drop compact-drop upload-wide crop-picker">{{ tr('profile.choose_image') }}
                 <input id="avatarInput" type="file" name="avatar_file" accept="image/*" required>
             </label>
             <div class="crop-frame">
-                <div id="cropPlaceholder" class="crop-placeholder">Choose image to start</div>
+                <div id="cropPlaceholder" class="crop-placeholder">{{ tr('profile.choose_image_start') }}</div>
                 <img id="cropImage" alt="crop target">
                 <div id="cropBox" class="crop-box">
                     <span class="handle nw"></span>
@@ -413,8 +419,8 @@
                 </div>
             </div>
             <div class="crop-actions">
-                <button type="button" class="ghost" id="avatarReset">Reset</button>
-                <button id="avatarSave" type="submit" disabled>Save avatar</button>
+                <button type="button" class="ghost" id="avatarReset">{{ tr('profile.reset') }}</button>
+                <button id="avatarSave" type="submit" disabled>{{ tr('profile.save_avatar') }}</button>
             </div>
         </form>
     </div>

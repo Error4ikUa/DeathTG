@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ lang or 'en' }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DeathTG News</title>
+    <title>{{ tr('home.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
     <link rel="stylesheet" href="/static/clean_patch.css">
     <link rel="stylesheet" href="/static/accent_fix.css">
@@ -16,60 +16,60 @@
 </button>
 
 <aside class="mini-menu" id="drawer">
-    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>News</span></div></div>
+    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>{{ tr('home.page_label') }}</span></div></div>
     <nav>
-        <a class="active" href="/">News</a>
-        <a href="/profile">Profile</a>
-        <a href="/activity">Activity</a>
-        <a href="/browser">Modules</a>
-        <a href="/scanner">Scanner</a>
+        <a class="active" href="/">{{ tr('nav.news') }}</a>
+        <a href="/profile">{{ tr('nav.profile') }}</a>
+        <a href="/activity">{{ tr('nav.activity') }}</a>
+        <a href="/browser">{{ tr('nav.modules') }}</a>
+        <a href="/scanner">{{ tr('nav.scanner') }}</a>
     </nav>
-    <a class="logout" href="/logout">Logout</a>
+    <a class="logout" href="/logout">{{ tr('nav.logout') }}</a>
 </aside>
 <div class="overlay" id="drawerBackdrop"></div>
 
 <main class="page">
     <section class="hero card">
         <div>
-            <p class="eyebrow">DeathTG Core</p>
-            <h1>News</h1>
-            <p>Core updates, Telegram update alerts, runtime status, module center, and quick actions in one clean panel.</p>
+            <p class="eyebrow">{{ tr('home.hero_eyebrow') }}</p>
+            <h1>{{ tr('home.hero_title') }}</h1>
+            <p>{{ tr('home.hero_desc') }}</p>
         </div>
-        <form method="post" action="/system/update/check"><button class="btn ghost" type="submit">Check update</button></form>
+        <form method="post" action="/system/update/check"><button class="btn ghost" type="submit">{{ tr('home.check_update') }}</button></form>
     </section>
 
     {% if message %}<div class="toast ok">{{ message }}</div>{% endif %}
     {% if error %}<div class="toast bad">{{ error }}</div>{% endif %}
 
     <section class="stats">
-        <article class="card stat"><span>Config</span><b>{{ 'OK' if status.config_ok else 'FAIL' }}</b></article>
-        <article class="card stat"><span>Session</span><b>{{ 'OK' if status.session_ok else 'BAD' }}</b></article>
-        <article class="card stat"><span>Modules</span><b>{{ status.modules_count }}</b></article>
-        <article class="card stat"><span>Commands</span><b>{{ status.commands_count }}</b></article>
-        <article class="card stat"><span>Level</span><b>{{ status.level.level }}</b></article>
-        <article class="card stat"><span>Account age</span><b>{{ status.days }}d</b></article>
+        <article class="card stat"><span>{{ tr('home.config') }}</span><b>{{ 'OK' if status.config_ok else 'FAIL' }}</b></article>
+        <article class="card stat"><span>{{ tr('home.session') }}</span><b>{{ 'OK' if status.session_ok else 'BAD' }}</b></article>
+        <article class="card stat"><span>{{ tr('home.modules') }}</span><b>{{ status.modules_count }}</b></article>
+        <article class="card stat"><span>{{ tr('home.commands') }}</span><b>{{ status.commands_count }}</b></article>
+        <article class="card stat"><span>{{ tr('home.level') }}</span><b>{{ status.level.level }}</b></article>
+        <article class="card stat"><span>{{ tr('home.account_age') }}</span><b>{{ status.days }}d</b></article>
     </section>
 
     {% if not status.session_ok %}<section class="toast bad">Session error. <a href="/reconnect">Reconnect</a></section>{% endif %}
 
     <section class="grid2">
         <article class="card panel">
-            <p class="eyebrow">What's new</p>
-            <h2>Current build</h2>
+            <p class="eyebrow">{{ tr('home.whats_new') }}</p>
+            <h2>{{ tr('home.current_build') }}</h2>
             <div class="news">
-                <div><b>Inline forms</b><p>Modules can show callback buttons in the original chat through the core inline bridge.</p></div>
-                <div><b>Module cards</b><p>Installed and repository modules now share verified badges, detail pages, and optional Module.png / Image.png backgrounds.</p></div>
-                <div><b>Account level</b><p>Level is based on account age and runtime stability, not command spam.</p></div>
+                <div><b>{{ tr('home.inline_forms') }}</b><p>{{ tr('home.inline_forms_desc') }}</p></div>
+                <div><b>{{ tr('home.module_cards') }}</b><p>{{ tr('home.module_cards_desc') }}</p></div>
+                <div><b>{{ tr('home.account_level') }}</b><p>{{ tr('home.account_level_desc') }}</p></div>
             </div>
         </article>
         <article class="card panel">
-            <p class="eyebrow">Quick actions</p>
-            <h2>Actions</h2>
+            <p class="eyebrow">{{ tr('home.quick_actions') }}</p>
+            <h2>{{ tr('home.actions') }}</h2>
             <div class="quick">
-                <a href="/browser">Modules</a>
-                <a href="/scanner">Scanner</a>
-                <a href="/activity">Activity</a>
-                <a href="/profile">Profile</a>
+                <a href="/browser">{{ tr('nav.modules') }}</a>
+                <a href="/scanner">{{ tr('nav.scanner') }}</a>
+                <a href="/activity">{{ tr('nav.activity') }}</a>
+                <a href="/profile">{{ tr('nav.profile') }}</a>
             </div>
         </article>
     </section>
