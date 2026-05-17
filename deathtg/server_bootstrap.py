@@ -34,6 +34,10 @@ def random_panel_secret() -> str:
     return secrets.token_urlsafe(48)
 
 
+def random_panel_site_id() -> str:
+    return secrets.token_urlsafe(10).replace("-", "").replace("_", "")
+
+
 def secure_panel_password(preferred: str = "") -> str:
     value = _strip(preferred)
     if value.lower() in INSECURE_PASSWORDS:
@@ -120,6 +124,7 @@ def ensure_server_env(*, path: Path = ENV_PATH, panel_host: str = "", panel_port
     desired_defaults = {
         "SESSION_NAME": current.get("SESSION_NAME", "deathtg") or "deathtg",
         "COMMAND_PREFIX": current.get("COMMAND_PREFIX", ".") or ".",
+        "PANEL_SITE_ID": current.get("PANEL_SITE_ID", random_panel_site_id()) or random_panel_site_id(),
         "PANEL_HOST": resolved_panel_host,
         "PANEL_PORT": panel_port or current.get("PANEL_PORT", "8080") or "8080",
         "PANEL_SCHEME": "https" if (effective_public_host or effective_public_url) else (current.get("PANEL_SCHEME", "http") or "http"),
