@@ -132,6 +132,59 @@ def _preferred_bot_username(owner_id: int, role: str) -> str:
     return generated
 
 
+def _legacy_bot_usernames(owner_id: int) -> set[str]:
+    names = {
+        f"dtg{owner_id}_inline_bot",
+        f"dtg{owner_id}_helper_bot",
+        preferred_community_bot_username(owner_id).lstrip("@"),
+    }
+    for env_key in ("INLINE_BOT_USERNAME", "HELPER_BOT_USERNAME", "COMMUNITY_BOT_USERNAME"):
+        raw = _env(env_key).lstrip("@").strip()
+        if raw:
+            names.add(raw)
+    return {name for name in names if name}
+
+
+async def _discover_service_bot_peers(client, owner_id: int, current_usernames: list[str]) -> tuple[list, list[str]]:
+    include_peers: list = []
+    include_usernames: list[str] = []
+    seen: set[tuple] = set()
+    known_usernames = {str(item).lstrip("@").strip().lower() for item in current_usernames if str(item).strip()}
+    known_usernames.update(name.lower() for name in _legacy_bot_usernames(owner_id))
+    title_prefixes = (
+        "deathtg inline",
+        "deathtg helper",
+        "deathtg community",
+        "inline",
+        "helper",
+        "comunity",
+        "community",
+    )
+    async for dialog in client.iter_dialogs(ignore_pinned=False, archived=None):
+        entity = getattr(dialog, "entity", None)
+        if not entity or not getattr(entity, "bot", False):
+            continue
+        username = str(getattr(entity, "username", "") or "").strip()
+        title = str(getattr(entity, "title", "") or "").strip().lower()
+        username_l = username.lower()
+        matches_username = bool(username and (_bot_username_re(owner_id).fullmatch(username) or username_l in known_usernames))
+        matches_title = any(title.startswith(prefix) for prefix in title_prefixes)
+        if not (matches_username or matches_title):
+            continue
+        try:
+            peer = await client.get_input_entity(entity)
+        except Exception:
+            continue
+        key = _peer_key(peer)
+        if key in seen:
+            continue
+        seen.add(key)
+        include_peers.append(peer)
+        if username:
+            include_usernames.append(f"@{username}")
+    return include_peers, include_usernames
+
+
 def _botfather_retry_seconds(text: str) -> int:
     match = BOTFATHER_RETRY_RE.search(text or "")
     if not match:
