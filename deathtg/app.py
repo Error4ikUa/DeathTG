@@ -23,6 +23,7 @@ from deathtg.inline import InlineManager
 from deathtg.loader import ModuleLoader
 from deathtg.metrics import init_metrics, record_command
 from deathtg.permissions import SecurityManager
+from deathtg.premium_emoji import premium_emoji
 from deathtg.registry import CommandRegistry, PROTECTED_MODULES
 from deathtg.startup_sync import run_startup_sync
 from deathtg.startup_sync import check_runtime_integrity
@@ -37,7 +38,7 @@ from deathtg.update_manager import (
     update_notify_enabled,
     update_notify_interval,
 )
-from deathtg.ui import CONSOLE_BANNER, fail
+from deathtg.ui import fail
 
 log = logging.getLogger("deathtg")
 CORE_MODULES = ["core", "root", "info", "system", "antivirus", "terminal"]
@@ -63,13 +64,14 @@ class DeathTG:
         self._update_watch_task: asyncio.Task | None = None
         self._integrity_watch_task: asyncio.Task | None = None
         self._bootstrap_task: asyncio.Task | None = None
+        self.owner_premium: bool = False
 
     async def start(self) -> None:
-        print(CONSOLE_BANNER)
         await init_metrics()
         await self.client.start()
 
         me = await self.client.get_me()
+        self.owner_premium = bool(getattr(me, "premium", False))
         if self.config.owner_id is None:
             self.config.owner_id = me.id
 
@@ -85,7 +87,7 @@ class DeathTG:
         self._update_watch_task = asyncio.create_task(self._update_watch_loop())
         self._integrity_watch_task = asyncio.create_task(self._integrity_watch_loop())
         self._bootstrap_task = asyncio.create_task(self._bootstrap_services())
-        log.info("DeathTG started as @%s", getattr(me, "username", None) or me.id)
+        log.info("%s DeathTG started as @%s", premium_emoji("check", self.owner_premium), getattr(me, "username", None) or me.id)
         try:
             await self.client.run_until_disconnected()
         finally:

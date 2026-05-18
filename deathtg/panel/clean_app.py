@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import ipaddress
 import os
 import secrets
@@ -302,9 +303,13 @@ def _render_info_preview(profile: dict, st: dict, lang: str) -> str:
         }
     )
     try:
-        return template.format_map(values)
+        rendered = template.format_map(values)
     except Exception:
-        return template
+        rendered = template
+    rendered = re.sub(r"<br\s*/?>", "\n", rendered, flags=re.IGNORECASE)
+    rendered = re.sub(r"</?blockquote(?:\s+expandable)?\s*>", "", rendered, flags=re.IGNORECASE)
+    rendered = re.sub(r"</?(?:b|strong|i|em|u|s|code|pre)\s*>", "", rendered, flags=re.IGNORECASE)
+    return html.unescape(rendered).strip()
 
 
 @app.get("/setup", response_class=HTMLResponse)

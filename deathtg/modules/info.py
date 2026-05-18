@@ -70,12 +70,12 @@ def _info_caption(settings: dict[str, str], payload: dict[str, object]) -> str:
     if template:
         return template.format_map(_InfoFormatMap(payload))
     return (
-        f"{payload['title']}\n"
-        f"{payload['name']} {payload['username']}\n\n"
-        f"Role: {payload['role']}\n"
-        f"Prefix: {payload['prefix']}\n"
-        f"Actions: {payload['uses']}\n"
-        f"Level: {payload['level']} ({payload['level_current']}/100)"
+        f"<blockquote><b>⬛️ {payload['title']}</b>\n"
+        f"⌚️ {payload['username']}\n"
+        f"🏴‍☠️ {payload['role']}\n"
+        f"💻 <b>Prefix</b>: <code>{payload['prefix']}</code>\n"
+        f"⌛️ <b>Level</b>: <code>{payload['level']}</code>\n"
+        f"💾 <b>Uses</b>: <code>{payload['uses']}</code></blockquote>"
     )
 
 
@@ -161,6 +161,7 @@ async def info_cmd(event, args: list[str]) -> None:
             file=str(card_path),
             caption="\n".join(caption_lines),
             buttons=buttons,
+            parse_mode="html",
         )
         with contextlib.suppress(Exception):
             await status.delete()

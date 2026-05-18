@@ -49,7 +49,7 @@ from deathtg.config import MODULES_DIR, ROOT_DIR, RUNTIME_DIR, load_config
 from deathtg.i18n import jinja_translate
 from deathtg.loader import ModuleLoader
 from deathtg.metrics import installed_days, level_info, top_modules, usage_by_day, usage_total
-from deathtg.module_repo import fetch_module_bundle, parse_requirements_text
+from deathtg.module_repo import fetch_module_bundle, fetch_repo_modules, parse_requirements_text
 from deathtg.profile_store import profile_settings
 from deathtg.registry import CommandRegistry
 from deathtg.security import is_trusted_module_link
@@ -438,22 +438,22 @@ async def _module_repo_from_github_contents(
 async def module_repo() -> list[dict]:
     """Return a list of available modules from the configured repository."""
     try:
-        async with aiohttp.ClientSession() as s:
-            indexed = await _module_repo_from_index(s)
-            items = indexed or await _module_repo_from_github_contents(s)
-            for item in items:
-                link = str(item.get("link") or item.get("raw") or item.get("url") or "")
-                if not item.get("image") and link:
-                    stem = Path(link.split("?", 1)[0]).stem
-                    item["image"] = await _discover_image(s, link, stem)
-                    item["modul_png"] = item["image"]
-                item["image"] = repo_module_image_url(str(item.get("name") or ""), str(item.get("image") or ""))
-                item["modul_png"] = item["image"]
-                item["verified"] = is_trusted_module_link(link)
-                item["source_label"] = "Verified by DTG" if item["verified"] else "External source"
-            return items
+        items = await fetch_repo_modules()
     except Exception:
         return []
+    normalized: list[dict] = []
+    for item in items:
+        try:
+            prepared = dict(item)
+            link = str(prepared.get("link") or prepared.get("raw_link") or prepared.get("raw") or prepared.get("url") or "")
+            prepared["image"] = repo_module_image_url(str(prepared.get("name") or ""), str(prepared.get("image") or ""))
+            prepared["modul_png"] = prepared["image"]
+            prepared["verified"] = bool(prepared.get("verified")) or is_trusted_module_link(link)
+            prepared["source_label"] = "Verified by DTG" if prepared["verified"] else "External source"
+            normalized.append(prepared)
+        except Exception:
+            continue
+    return normalized
 
 
 async def activity_points() -> list[dict]:

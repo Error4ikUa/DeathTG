@@ -26,6 +26,7 @@ from deathtg.community_roles import (
     preferred_community_bot_username,
 )
 from deathtg.panel_access import issue_device_grant, panel_remote_access_ready
+from deathtg.premium_emoji import emoji_line
 from deathtg.profile_store import profile_settings, update_env_value
 
 
@@ -36,6 +37,7 @@ BOT_TOKEN_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b")
 BOTFATHER_RETRY_RE = re.compile(r"too many attempts.*?try again in\s+(\d+)\s+seconds?", re.IGNORECASE)
 BOT_AVATAR = default_avatar_path() or (ROOT_DIR / "deathtg" / "panel" / "static" / "default_avatar.png")
 BOTFATHER_CREATE_TIMEOUT = 35
+AUTO_BOT_REPAIR_INTERVAL = 60 * 15
 
 
 def _env(name: str) -> str:
@@ -107,9 +109,27 @@ def _is_valid_bot_username(username: str, owner_id: int) -> bool:
 
 
 def _random_bot_username(owner_id: int, role: str = "inline") -> str:
-    role_prefix = "h" if role == "helper" else ""
+    role_prefix = {"inline": "i", "helper": "h", "community": "c"}.get(role, "x")
     suffix = "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6))
     return f"dtg{owner_id}_{role_prefix}{suffix}_bot"
+
+
+def _bot_username_env_key(role: str) -> str:
+    return {
+        "inline": "INLINE_BOT_USERNAME",
+        "helper": "HELPER_BOT_USERNAME",
+        "community": "COMMUNITY_BOT_USERNAME",
+    }.get(role, "INLINE_BOT_USERNAME")
+
+
+def _preferred_bot_username(owner_id: int, role: str) -> str:
+    env_key = _bot_username_env_key(role)
+    raw = _env(env_key).lstrip("@")
+    if _is_valid_bot_username(raw, owner_id):
+        return raw
+    generated = _random_bot_username(owner_id, role)
+    update_env_value(env_key, generated)
+    return generated
 
 
 def _botfather_retry_seconds(text: str) -> int:
@@ -139,7 +159,7 @@ def manual_bot_blueprints(owner_id: int) -> list[dict[str, str]]:
             "label": "Inline bot",
             "env_key": "BOT_TOKEN",
             "display_name": f"DeathTG Inline {owner_id}",
-            "username": f"dtg{owner_id}_inline_bot",
+            "username": _preferred_bot_username(owner_id, "inline"),
             "purpose_en": "Main owner bot, startup actions, private panel link, inline bridge.",
             "purpose_ru": "Главный бот владельца, стартовые действия, приватная ссылка на панель, inline-мост.",
         },
@@ -149,7 +169,7 @@ def manual_bot_blueprints(owner_id: int) -> list[dict[str, str]]:
             "label": "Helper bot",
             "env_key": "BOT_TOKEN_HELPER",
             "display_name": f"DeathTG Helper {owner_id}",
-            "username": f"dtg{owner_id}_helper_bot",
+            "username": _preferred_bot_username(owner_id, "helper"),
             "purpose_en": "Fallback delivery channel, helper notifications, extra Telegram bridge.",
             "purpose_ru": "Резервный канал доставки, helper-уведомления, дополнительный Telegram-мост.",
         },
@@ -159,7 +179,7 @@ def manual_bot_blueprints(owner_id: int) -> list[dict[str, str]]:
             "label": "Community bot",
             "env_key": "BOT_TOKEN_COMMUNITY",
             "display_name": community_bot_display_name(),
-            "username": preferred_community_bot_username(),
+            "username": _preferred_bot_username(owner_id, "community"),
             "purpose_en": "Owner-only role verification for admin/developer approvals.",
             "purpose_ru": "Owner-only проверка ролей для подтверждения admin/developer.",
         },
@@ -275,6 +295,19 @@ def _integrity_failures(status: dict) -> list[dict]:
     return failures
 
 
+def _creation_needed_failures(status: dict) -> list[dict]:
+    failures: list[dict] = []
+    for item in list(status.get("bots") or []):
+        if not isinstance(item, dict):
+            continue
+        configured = bool(item.get("configured"))
+        valid_username = bool(item.get("valid_username"))
+        error = str(item.get("error") or "")
+        if not configured or not valid_username or "missing" in error.lower():
+            failures.append(item)
+    return failures
+
+
 async def _send_saved_message(client, text: str) -> tuple[bool, str | None]:
     try:
         await client.send_message("me", text)
@@ -353,6 +386,63 @@ async def _notify_integrity_if_needed(client, owner_id: int, status: dict, previ
     status["integrity"] = {"last_alert_signature": "", "last_alert_error": None, "healthy": True}
 
 
+def _auto_repair_state(previous_status: dict | None) -> dict:
+    previous_status = previous_status or {}
+    state = previous_status.get("auto_repair", {})
+    return state if isinstance(state, dict) else {}
+
+
+def _auto_repair_allowed(previous_status: dict | None) -> tuple[bool, int]:
+    state = _auto_repair_state(previous_status)
+    last_attempt_at = int(state.get("last_attempt_at", 0) or 0)
+    now = int(time.time())
+    if not last_attempt_at or now - last_attempt_at >= AUTO_BOT_REPAIR_INTERVAL:
+        return True, 0
+    return False, AUTO_BOT_REPAIR_INTERVAL - (now - last_attempt_at)
+
+
+async def _send_auto_repair_notice(client, owner_id: int, failures: list[dict]) -> None:
+    labels = {"inline": "Inline", "helper": "Helper", "community": "Community"}
+    bot_list = ", ".join(labels.get(str(item.get("role") or ""), "Bot") for item in failures) or "Bots"
+    text = _msg(
+        f"DeathTG is trying to recreate missing bots automatically via BotFather.\n\nTargets: {bot_list}\n\nIf Telegram rate-limits BotFather, DeathTG will keep the manual recovery commands as a fallback.",
+        f"DeathTG пытается автоматически пересоздать отсутствующих ботов через BotFather.\n\nЦели: {bot_list}\n\nЕсли Telegram ограничит BotFather, DeathTG оставит ручные команды восстановления как запасной вариант.",
+    )
+    await _send_saved_message(client, text)
+
+
+async def _attempt_missing_bot_repair(client, owner_id: int, status: dict, previous_status: dict | None = None) -> dict | None:
+    failures = _creation_needed_failures(status)
+    if not failures:
+        return None
+    allowed, wait_left = _auto_repair_allowed(previous_status)
+    if not allowed:
+        status["auto_repair"] = {
+            "last_attempt_at": int(_auto_repair_state(previous_status).get("last_attempt_at", 0) or 0),
+            "last_result": f"cooldown ({wait_left}s left)",
+            "healthy": False,
+        }
+        return None
+    await _send_auto_repair_notice(client, owner_id, failures)
+    try:
+        repaired = await run_startup_sync(client)
+    except Exception as exc:
+        status["auto_repair"] = {
+            "last_attempt_at": int(time.time()),
+            "last_result": str(exc),
+            "healthy": False,
+        }
+        _write_status(status)
+        return status
+    repaired["auto_repair"] = {
+        "last_attempt_at": int(time.time()),
+        "last_result": "ok" if not _creation_needed_failures(repaired) else "partial",
+        "healthy": not _creation_needed_failures(repaired),
+    }
+    _write_status(repaired)
+    return repaired
+
+
 async def _botfather_step(conv, message: str, *, retries: int = 4):
     last_response = None
     for _ in range(max(1, retries)):
@@ -425,12 +515,17 @@ async def _create_bot_with_botfather(client, owner_id: int, role: str = "inline"
             with contextlib.suppress(Exception):
                 getattr(first, "raw_text", "")
             display_role = "Helper" if role == "helper" else "Inline"
+            log_text = f"BotFather: creating {role} bot for owner {owner_id}"
+            print(log_text)
             await _botfather_step(conv, f"DeathTG {display_role} {owner_id}")
-            for _ in range(20):
-                response = await _botfather_step(conv, _random_bot_username(owner_id, role))
+            candidates = [_preferred_bot_username(owner_id, role)]
+            candidates.extend(_random_bot_username(owner_id, role) for _ in range(19))
+            for candidate in candidates:
+                response = await _botfather_step(conv, candidate)
                 text = getattr(response, "raw_text", "") or ""
                 match = BOT_TOKEN_RE.search(text)
                 if match:
+                    update_env_value(_bot_username_env_key(role), candidate)
                     return match.group(0), None
                 lower = text.lower()
                 if all(word not in lower for word in ("taken", "sorry", "username", "invalid")):
@@ -454,6 +549,7 @@ async def _create_named_bot_with_botfather(client, display_name: str, username: 
             first_text = getattr(first, "raw_text", "") or ""
             if "create and manage telegram bots" in first_text.lower():
                 first = await _botfather_step(conv, "/newbot")
+            print(f"BotFather: creating named bot @{username}")
             await _botfather_step(conv, display_name)
             response = await _botfather_step(conv, username)
             text = getattr(response, "raw_text", "") or ""
@@ -616,6 +712,9 @@ async def check_runtime_integrity(client, *, notify: bool = True) -> dict:
     runtime_status["helper_bot"] = next((item for item in bots if item.get("role") == "helper"), {})
     runtime_status["community_bot"] = next((item for item in bots if item.get("role") == "community"), {})
     runtime_status["last_runtime_check_at"] = int(time.time())
+    repaired_status = await _attempt_missing_bot_repair(client, owner_id, runtime_status, previous_status)
+    if repaired_status is not None:
+        return repaired_status
     if notify:
         await _notify_integrity_if_needed(client, owner_id, runtime_status, previous_status)
     _write_status(runtime_status)
@@ -726,6 +825,8 @@ async def _ensure_bot(
 
     update_env_value(env_key, token)
     username, token_error = await _fetch_bot_username(token, env_key=env_key)
+    if _is_valid_bot_username(username, owner_id):
+        update_env_value(_bot_username_env_key(role), username)
     status.update(
         {
             "configured": True,
@@ -741,7 +842,6 @@ async def _ensure_bot(
 
 
 async def _ensure_community_bot(client, owner_id: int, *, allow_create: bool = False) -> tuple[str, dict]:
-    username_target = preferred_community_bot_username()
     bot_token = _env("BOT_TOKEN_COMMUNITY")
     username, token_error = await _fetch_bot_username(bot_token, env_key="BOT_TOKEN_COMMUNITY")
     status = {
@@ -750,8 +850,8 @@ async def _ensure_community_bot(client, owner_id: int, *, allow_create: bool = F
         "env_key": "BOT_TOKEN_COMMUNITY",
         "username": username,
         "created": False,
-        "valid_username": bool(username),
-        "expected_prefix": username_target,
+        "valid_username": _is_valid_bot_username(username, owner_id),
+        "expected_prefix": _expected_prefix(owner_id),
         "owner_id": owner_id,
         "error": token_error,
     }
@@ -763,15 +863,11 @@ async def _ensure_community_bot(client, owner_id: int, *, allow_create: bool = F
         if not bot_token:
             status["error"] = "BOT_TOKEN_COMMUNITY is missing"
         elif not status["error"]:
-            status["error"] = f"community bot username must be @{username_target}"
+            status["error"] = "community bot username must match the owner-bound pattern"
         return bot_token, status
     try:
         token, error = await asyncio.wait_for(
-            _create_named_bot_with_botfather(
-                client,
-                community_bot_display_name(),
-                username_target,
-            ),
+            _create_bot_with_botfather(client, owner_id, "community"),
             timeout=BOTFATHER_CREATE_TIMEOUT,
         )
     except asyncio.TimeoutError:
@@ -781,19 +877,20 @@ async def _ensure_community_bot(client, owner_id: int, *, allow_create: bool = F
         status["error"] = error or token_error or "unable to create community bot"
         return bot_token, status
     update_env_value("BOT_TOKEN_COMMUNITY", token)
-    update_env_value("COMMUNITY_BOT_USERNAME", username_target)
     username, token_error = await _fetch_bot_username(token, env_key="BOT_TOKEN_COMMUNITY")
     status.update(
         {
             "configured": True,
             "username": username,
             "created": True,
-            "valid_username": bool(username and username.lower() == username_target.lower()),
+            "valid_username": _is_valid_bot_username(username, owner_id),
             "error": token_error,
         }
     )
     if not status["valid_username"] and not status["error"]:
-        status["error"] = f"community bot username must be @{username_target}"
+        status["error"] = "community bot username must match the owner-bound pattern"
+    if status["valid_username"]:
+        update_env_value("COMMUNITY_BOT_USERNAME", username)
     return token, status
 
 
@@ -828,7 +925,7 @@ async def run_startup_sync(client) -> dict:
         "username": _env("COMMUNITY_BOT_USERNAME"),
         "created": False,
         "valid_username": False,
-        "expected_prefix": preferred_community_bot_username(),
+        "expected_prefix": _expected_prefix(owner_id),
         "owner_id": owner_id,
         "error": "Community bot is owner-only",
         "commands_synced": False,
@@ -984,6 +1081,8 @@ async def run_startup_sync(client) -> dict:
             return False, cooldown_reason, ""
         panel_url = _build_panel_grant_url(owner_id)
         remote_ready = panel_remote_access_ready()
+        me = await client.get_me()
+        owner_premium = bool(getattr(me, "premium", False))
         news_url = _env("PANEL_NEWS_URL")
         support_url = _env("PANEL_SUPPORT_URL")
         personal_url = _env("PANEL_PERSONAL_URL")
@@ -1007,16 +1106,17 @@ async def run_startup_sync(client) -> dict:
             "chat_id": owner_id,
             "caption": "".join(
                 [
-                    "Welcome to DeathTG.\n\n",
-                    "Your personal private panel link is ready.\n",
-                    "Do not share this link with anyone.\n",
-                    "Open this link on your phone or on another browser if you want to trust one more device.\n",
+                    emoji_line("pirate", "Welcome to DeathTG.", owner_premium) + "\n\n",
+                    emoji_line("mail", "Your personal private panel link is ready.", owner_premium) + "\n",
+                    emoji_line("key", "Do not share this link with anyone.", owner_premium) + "\n",
+                    emoji_line("phone", "Open this link on your phone or on another browser if you want to trust one more device.", owner_premium) + "\n",
                     "If you need another device later, create a new secure link from inside the panel.",
                     remote_note,
                 ]
             ),
             "reply_markup": {"inline_keyboard": buttons},
             "disable_web_page_preview": True,
+            "parse_mode": "HTML",
         }
         welcome_image = system_image("welcome")
         if welcome_image and welcome_image.exists():
@@ -1046,6 +1146,7 @@ async def run_startup_sync(client) -> dict:
                             form_data = aiohttp.FormData()
                             form_data.add_field("chat_id", str(owner_id))
                             form_data.add_field("caption", str(payload.get("caption") or ""))
+                            form_data.add_field("parse_mode", "HTML")
                             form_data.add_field("reply_markup", json.dumps(payload["reply_markup"], ensure_ascii=False))
                             form_data.add_field("disable_web_page_preview", "true")
                             form_data.add_field("photo", welcome_image.read_bytes(), filename=welcome_image.name, content_type="image/png")
@@ -1081,15 +1182,15 @@ async def run_startup_sync(client) -> dict:
 
         try:
             direct_lines = [
-                "Welcome to DeathTG.",
+                emoji_line("pirate", "Welcome to DeathTG.", owner_premium),
                 "",
-                "Your personal private panel link is ready.",
-                "Do not share this link with anyone.",
+                emoji_line("mail", "Your personal private panel link is ready.", owner_premium),
+                emoji_line("key", "Do not share this link with anyone.", owner_premium),
                 panel_url,
             ]
             if remote_note:
                 direct_lines.extend(["", remote_note.strip()])
-            await client.send_message("me", "\n".join(direct_lines))
+            await client.send_message("me", "\n".join(direct_lines), parse_mode="html", link_preview=False)
             return True, "Bot delivery failed, shortcut was sent to Saved Messages", panel_url
         except Exception as exc:
             errors.append(f"userbot-direct: {exc}")
