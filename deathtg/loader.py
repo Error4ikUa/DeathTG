@@ -30,19 +30,20 @@ import importlib
 import importlib.util
 import inspect
 import secrets
+import shutil
 import sys
 import time
 import traceback
 import types
 from pathlib import Path
 from types import ModuleType
-from urllib.parse import urlparse
 
 import aiohttp
 from deathtg.assets import resolve_module_entry
 from deathtg.command import Command, command
 from deathtg.module_config import ConfigValue, ModuleConfig, ValidationError, validators
 from deathtg.module_db import ModuleDatabase
+from deathtg.module_repo import fetch_module_bundle
 from deathtg.registry import CommandRegistry
 from deathtg.security import scan_module_source
 
@@ -515,26 +516,41 @@ class ModuleLoader:
         return final_name
 
     async def download_module(self, link: str, *, force: bool = False) -> Path:
-        url = self._normalize_github_url(link)
-        filename = Path(urlparse(url).path).name or "module.py"
+        bundle = await fetch_module_bundle(link)
+        text = str(bundle.get("source") or "")
+        filename = str(bundle.get("entry_filename") or "module.py")
+        module_name = str(bundle.get("module_name") or Path(filename).stem or "module")
         if not filename.endswith(".py"):
-            raise RuntimeError("URL must point to a .py module")
-        target = self.modules_dir / filename
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=30) as response:
-                    if response.status != 200:
-                        raise RuntimeError(f"Download failed, HTTP {response.status}")
-                    text = await response.text()
-        except aiohttp.InvalidURL as exc:
-            raise RuntimeError("Invalid module URL") from exc
-        except aiohttp.ClientError as exc:
-            raise RuntimeError(f"Module download error: {exc}") from exc
+            raise RuntimeError("Module entry must end with .py")
         if self._looks_like_html(text):
-            raise RuntimeError("URL returned HTML instead of Python code. Use a raw/blob module URL.")
-        report = scan_module_source(text, trusted=force)
+            raise RuntimeError("URL returned HTML instead of Python code. Use a raw/blob module URL or a GitHub module folder.")
+        trusted = bool(force or bundle.get("trusted"))
+        report = scan_module_source(text, trusted=trusted)
         if not report.allowed and not force:
             raise RuntimeError("Module was blocked by security scan:\n" + report.pretty())
+        if str(bundle.get("kind") or "file") == "folder":
+            target = self.modules_dir / module_name
+            if target.exists():
+                if target.is_dir():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+            target.mkdir(parents=True, exist_ok=True)
+            (target / filename).write_text(text, encoding="utf-8")
+            image_url = str(bundle.get("image_url") or "")
+            if image_url:
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(image_url, timeout=20) as response:
+                            if response.status == 200:
+                                (target / "Module.png").write_bytes(await response.read())
+                except Exception:
+                    pass
+            requirements_text = str(bundle.get("requirements_text") or "")
+            if requirements_text.strip():
+                (target / "requirements.txt").write_text(requirements_text, encoding="utf-8")
+            return target
+        target = self.modules_dir / filename
         target.write_text(text, encoding="utf-8")
         return target
 

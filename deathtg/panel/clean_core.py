@@ -49,6 +49,7 @@ from deathtg.config import MODULES_DIR, ROOT_DIR, RUNTIME_DIR, load_config
 from deathtg.i18n import jinja_translate
 from deathtg.loader import ModuleLoader
 from deathtg.metrics import installed_days, level_info, top_modules, usage_by_day, usage_total
+from deathtg.module_repo import fetch_module_bundle, parse_requirements_text
 from deathtg.profile_store import profile_settings
 from deathtg.registry import CommandRegistry
 from deathtg.security import is_trusted_module_link
@@ -582,7 +583,7 @@ async def module_detail(module_name: str) -> dict:
         "description": description,
         "image": image,
         "scopes": parsed_meta["scopes"],
-        "requires": parsed_meta["requires"],
+        "requires": _merge_requirements(parsed_meta, path),
         "hikka_meta": parsed_meta["meta"],
         "config_values": config_values,
         "handler_counts": handler_counts,
@@ -626,14 +627,14 @@ async def repo_module_detail(module_name: str) -> dict:
             "repo": True,
             "install_link": "",
         }
-    link = str(selected.get("link") or selected.get("raw") or selected.get("url") or "")
+    link = str(selected.get("link") or selected.get("raw_link") or selected.get("raw") or selected.get("url") or "")
     source = ""
+    requirements_extra: list[str] = []
     if link:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(link, timeout=20) as response:
-                    if response.status == 200:
-                        source = await response.text()
+            bundle = await fetch_module_bundle(link)
+            source = str(bundle.get("source") or "")
+            requirements_extra = list(bundle.get("requirements") or [])
         except Exception:
             source = ""
     parsed_meta = _extract_module_source_meta(source)
@@ -652,7 +653,7 @@ async def repo_module_detail(module_name: str) -> dict:
         "description": str(selected.get("description") or f"{name} module from DTG_Modules"),
         "image": repo_module_image_url(name, str(selected.get("image") or selected.get("modul_png") or "")),
         "scopes": parsed_meta["scopes"],
-        "requires": parsed_meta["requires"],
+        "requires": _merge_requirements(parsed_meta, None, requirements_extra),
         "hikka_meta": parsed_meta["meta"],
         "config_values": [],
         "handler_counts": {"watchers": 0, "raw": 0, "inline": 0, "callbacks": 0},
@@ -684,6 +685,22 @@ def _extract_module_source_meta(source: str) -> dict:
         if meta_match:
             meta[meta_match.group(1).lower()] = meta_match.group(2).strip()
     return {"scopes": sorted(set(scopes)), "requires": sorted(set(requires)), "meta": meta}
+
+
+def _merge_requirements(parsed_meta: dict, source_path: Path | None = None, extra: list[str] | None = None) -> list[str]:
+    requirements = list(parsed_meta.get("requires") or [])
+    if source_path is not None:
+        requirements_file = source_path.parent / "requirements.txt"
+        if requirements_file.exists():
+            try:
+                requirements.extend(
+                    parse_requirements_text(requirements_file.read_text(encoding="utf-8", errors="replace"))
+                )
+            except Exception:
+                pass
+    if extra:
+        requirements.extend(extra)
+    return sorted(set(str(item).strip() for item in requirements if str(item).strip()))
 
 
 def _extract_source_commands(source: str) -> list[dict]:
