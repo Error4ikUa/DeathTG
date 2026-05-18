@@ -158,6 +158,10 @@ def _is_local_request(request: Request) -> bool:
     local_ip = (local_network_ip() or "").strip().lower()
     if local_ip and client_ip == local_ip:
         return True
+    if client_ip and host and client_ip == host:
+        return True
+    if client_ip and origin_host and client_ip == origin_host:
+        return True
     try:
         return ipaddress.ip_address(client_ip).is_loopback
     except Exception:
