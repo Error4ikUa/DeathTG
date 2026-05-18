@@ -66,11 +66,11 @@ body[data-accent="dark"]{
 .module-card{
   background:
     radial-gradient(120% 160% at 100% 0%, rgba(var(--accent-rgb),.10), rgba(0,0,0,0) 60%),
-    linear-gradient(180deg, rgba(var(--accent-rgb),.05), rgba(0,0,0,.22)) !important;
+    linear-gradient(180deg, rgba(18,22,29,.94), rgba(8,11,16,.96)) !important;
 }
 
 .news div{
-  background:linear-gradient(180deg,rgba(var(--accent-rgb),.07),rgba(0,0,0,.22))!important;
+  background:linear-gradient(180deg,rgba(var(--accent-rgb),.05),rgba(8,11,16,.94))!important;
 }
 
 .stat b{
@@ -129,7 +129,7 @@ body[data-accent] .accent-item input:checked + label{
 }
 
 body[data-accent] .mark{
-  background:linear-gradient(135deg,rgba(var(--accent-rgb),.24),rgba(2,18,9,.92))!important;
+  background:linear-gradient(135deg,rgba(var(--accent-rgb),.22),rgba(12,16,22,.94))!important;
   border-color:rgba(var(--accent-rgb),.40)!important;
   color:var(--accent)!important;
 }
@@ -137,7 +137,7 @@ body[data-accent] .mark{
 body[data-accent] .mini-menu{
   background:
     radial-gradient(120% 140% at 100% 0%,rgba(var(--accent-rgb),.10),rgba(0,0,0,0) 58%),
-    rgba(3,20,11,.94)!important;
+    linear-gradient(180deg,rgba(12,16,22,.96),rgba(8,11,16,.94))!important;
 }
 body[data-accent="dark"] .mini-menu{
   background:

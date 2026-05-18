@@ -65,8 +65,12 @@ def _drop_module_meta(module_name: str) -> None:
 def _redirect(path: str, *, message: str | None = None, error: str | None = None) -> RedirectResponse:
     key = "message" if message is not None else "error"
     value = message if message is not None else error
+    base, fragment = path.split("#", 1) if "#" in path else (path, "")
     if value:
-        return RedirectResponse(f"{path}?{key}={quote(str(value))}", status_code=303)
+        target = f"{base}?{key}={quote(str(value))}"
+        if fragment:
+            target += f"#{fragment}"
+        return RedirectResponse(target, status_code=303)
     return RedirectResponse(path, status_code=303)
 
 

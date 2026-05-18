@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from jinja2 import pass_context
 
@@ -176,7 +176,7 @@ TEXTS: dict[str, dict[str, str]] = {
         "profile.role_developer_desc": "Режим сборки и модулей",
         "profile.role_choice_help": "Роли меняются только после подтверждения через community-бота DeathTG.",
         "profile.language_choice_help": "Выбранный язык используется и в панели, и в боте.",
-        "profile.info_default_template": "⚙️ {title}\n👤 {username}\n✨ {role}\n• Prefix: {prefix}\n• Level: {level}\n• Uses: {uses}",
+        "profile.info_default_template": "⬛️ {title}\n⌚️ @{username}\n🏴‍☠️ {role}\n💻 Prefix: {prefix}\n⌛️ Level: {level}\n💾 Uses: {uses}",
         "profile.crop_image": "Crop image",
         "profile.choose_image": "Choose image",
         "profile.choose_image_start": "Choose image to start",
@@ -536,7 +536,7 @@ TEXTS: dict[str, dict[str, str]] = {
         "profile.role_user_desc": "\u0411\u0430\u0437\u043e\u0432\u044b\u0439 \u0434\u043e\u0441\u0442\u0443\u043f \u0431\u0435\u0437 \u043f\u043e\u0432\u044b\u0448\u0435\u043d\u043d\u044b\u0445 \u043f\u0440\u0430\u0432",
         "profile.role_admin_desc": "\u0423\u0445\u043e\u0434 \u0437\u0430 \u0441\u0438\u0441\u0442\u0435\u043c\u043e\u0439 \u0438 \u0441\u0435\u0440\u0432\u0438\u0441\u043d\u044b\u0439 \u043a\u043e\u043d\u0442\u0440\u043e\u043b\u044c",
         "profile.role_developer_desc": "\u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043d\u043d\u044b\u0439 \u043a\u043e\u043d\u0442\u0443\u0440 \u0434\u043b\u044f \u0441\u0431\u043e\u0440\u043e\u043a \u0438 \u043c\u043e\u0434\u0443\u043b\u0435\u0439",
-        "profile.info_default_template": "\u2699\ufe0f {title}\n\ud83d\udc64 {username}\n\u2728 {role}\n\u2022 Prefix: {prefix}\n\u2022 Level: {level}\n\u2022 Uses: {uses}",
+        "profile.info_default_template": "\u2b1b\ufe0f {title}\n\u231a\ufe0f @{username}\n\ud83c\udff4\u200d\u2620\ufe0f {role}\n\ud83d\udcbb Prefix: {prefix}\n\u231b\ufe0f Level: {level}\n\ud83d\udcbe Uses: {uses}",
         "profile.crop_image": "\u041a\u0430\u0434\u0440\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435",
         "profile.choose_image": "\u0412\u044b\u0431\u0440\u0430\u0442\u044c \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435",
         "profile.choose_image_start": "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435 \u0434\u043b\u044f \u043d\u0430\u0447\u0430\u043b\u0430",
@@ -757,9 +757,9 @@ TEXTS["en"].update({
     "profile.role_choice_help": "Roles are changed only after confirmation through the DeathTG community bot.",
     "profile.language_choice_help": "The selected language is used both in the panel and in the bot.",
     "profile.accent_help": "Choose the visual accent for your panel. Elevated roles are confirmed only through the DeathTG community bot.",
-    "profile.info_help": "This text becomes the main caption for your `.info` card. Placeholders are filled automatically in Telegram.",
-    "profile.info_preview_desc": "Preview of the current `.info` card after placeholders are filled in.",
-    "profile.info_default_template": "✦ {title}\n@{username}\nRole: {role}\nPrefix: {prefix}\nLevel: {level}\nUses: {uses}",
+    "profile.info_help": "This text becomes the main caption of your `.info` card. HTML is allowed, and placeholders are filled automatically.",
+    "profile.info_preview_desc": "Preview of the current `.info` quote card after placeholders are filled in.",
+    "profile.info_default_template": "<blockquote><b>⬛️ {title}</b>\n⌚️ {username}\n🏴‍☠️ Role: {role}\n💻 <b>Prefix</b>: <code>{prefix}</code>\n⌛️ <b>Level</b>: <code>{level}</code>\n💾 <b>Uses</b>: <code>{uses}</code></blockquote>",
     "profile.one_link_one_device": "One secure link works for one device only.",
     "profile.share_warning": "Do not share secure links with anyone else. DeathTG treats them as private access keys.",
 })
@@ -780,41 +780,9 @@ TEXTS["ru"].update({
     "profile.role_choice_help": "Роли меняются только после подтверждения через community-бота DeathTG.",
     "profile.language_choice_help": "Выбранный язык используется и в панели, и в боте.",
     "profile.accent_help": "Выберите визуальный акцент панели. Повышенные роли подтверждаются только через community-бота DeathTG.",
-    "profile.info_help": "Этот текст станет основной подписью вашей карточки `.info`. Плейсхолдеры подставляются автоматически.",
-    "profile.info_preview_desc": "Предпросмотр текущей карточки `.info` после подстановки плейсхолдеров.",
-    "profile.info_default_template": "✦ {title}\n@{username}\nРоль: {role}\nПрефикс: {prefix}\nУровень: {level}\nИспользований: {uses}",
+    "profile.info_help": "Этот текст станет основной подписью вашей карточки `.info`. HTML поддерживается, а плейсхолдеры подставляются автоматически.",
+    "profile.info_preview_desc": "Так будет выглядеть текущая цитатная карточка `.info` после подстановки плейсхолдеров.",
+    "profile.info_default_template": "<blockquote><b>⬛️ {title}</b>\n⌚️ {username}\n🏴‍☠️ Роль: {role}\n💻 <b>Префикс</b>: <code>{prefix}</code>\n⌛️ <b>Уровень</b>: <code>{level}</code>\n💾 <b>Использований</b>: <code>{uses}</code></blockquote>",
     "profile.one_link_one_device": "Одна безопасная ссылка работает только для одного устройства.",
     "profile.share_warning": "Не передавайте безопасные ссылки другим людям. DeathTG считает их приватными ключами доступа.",
 })
-
-
-def _looks_mojibake(value: str) -> bool:
-    if not value or "\\u" in value:
-        return False
-    broken = sum(1 for ch in value if 0x00C0 <= ord(ch) <= 0x00FF)
-    return broken >= max(4, len(value) // 6)
-
-
-def _repair_mojibake(value: str) -> str:
-    if not _looks_mojibake(value):
-        return value
-    try:
-        repaired = value.encode("latin1").decode("cp1251")
-    except Exception:
-        return value
-    repaired_cyr = sum(1 for ch in repaired if 0x0400 <= ord(ch) <= 0x04FF)
-    original_cyr = sum(1 for ch in value if 0x0400 <= ord(ch) <= 0x04FF)
-    return repaired if repaired_cyr > original_cyr else value
-
-
-def _normalize_texts(payload):
-    if isinstance(payload, dict):
-        return {key: _normalize_texts(value) for key, value in payload.items()}
-    if isinstance(payload, list):
-        return [_normalize_texts(value) for value in payload]
-    if isinstance(payload, str):
-        return _repair_mojibake(payload)
-    return payload
-
-
-TEXTS = _normalize_texts(TEXTS)

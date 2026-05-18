@@ -120,7 +120,7 @@ class CoreMod(Module):
         if not key:
             await event.edit("<b>PANEL_PASSWORD is not set.</b>", parse_mode="html")
             return
-        await event.edit(f"<b>Panel password:</b> <code>{html.escape(key)}</code>", parse_mode="html")
+        await event.edit(f"<b>{self.system_emoji('key')} Panel password:</b> <code>{html.escape(key)}</code>", parse_mode="html")
 
     @command("crebot1", description="Show or save inline bot token", usage=".crebot1 [token]", security="owner")
     async def crebot1_cmd(self, event, args):
@@ -543,17 +543,17 @@ class CoreMod(Module):
     def _module_icon(name: str) -> str:
         lowered = name.lower()
         if lowered in {"core", "help"}:
-            return "🧠"
+            return "⌚️"
         if lowered == "root":
-            return "🗂"
+            return "🏴‍☠️"
         if lowered == "info":
-            return "🧾"
+            return "💻"
         if lowered == "system":
-            return "⚡"
+            return "⌛️"
         if lowered == "antivirus":
-            return "🛡"
+            return "✅"
         if lowered == "terminal":
-            return "🖥"
+            return "💾"
         if "music" in lowered or "track" in lowered:
-            return "🎧"
-        return "📦"
+            return "🎵"
+        return "⬛️"

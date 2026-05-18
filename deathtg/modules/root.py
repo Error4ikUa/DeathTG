@@ -124,7 +124,7 @@ class RootMod(Module):
     async def _show_root_menu(self, event):
         await self.inline_send(
             event,
-            "<b>DeathTG Root</b>\nInline control panel for update, restart, terminal and help.",
+            f"<b>{self.system_emoji('pirate')} DeathTG Root</b>\n{self.system_emoji('laptop')} Inline control panel for update, restart, terminal and help.",
             reply_markup=self.inline_buttons(
                 [{"text": "Update System", "callback": self.update_menu_callback, "args": ()}],
                 [{"text": "Restart", "callback": self.restart_callback, "args": ()}],
@@ -148,7 +148,7 @@ class RootMod(Module):
 
     async def terminal_menu_callback(self, call):
         await call.edit(
-            "<b>Terminal presets</b>\nChoose a safe command.",
+            f"<b>{self.system_emoji('laptop')} Terminal presets</b>\n{self.system_emoji('search')} Choose a safe command.",
             reply_markup=self.inline_buttons(
                 [{"text": "pwd", "callback": self.run_term_callback, "args": ("pwd",)}],
                 [{"text": "ls", "callback": self.run_term_callback, "args": ("ls",)}],
@@ -163,7 +163,7 @@ class RootMod(Module):
 
     async def back_root_callback(self, call):
         await call.edit(
-            "<b>DeathTG Root</b>\nInline control panel for update, restart, terminal and help.",
+            f"<b>{self.system_emoji('pirate')} DeathTG Root</b>\n{self.system_emoji('laptop')} Inline control panel for update, restart, terminal and help.",
             reply_markup=self.inline_buttons(
                 [{"text": "Update System", "callback": self.update_menu_callback, "args": ()}],
                 [{"text": "Restart", "callback": self.restart_callback, "args": ()}],
@@ -188,7 +188,7 @@ class RootMod(Module):
     async def restart_callback(self, call):
         schedule_restart()
         await call.edit(
-            "<b>Restart scheduled.</b>\nDeathTG is restarting now. Reopen the panel or chat in a few seconds.",
+            f"<b>{self.system_emoji('sync')} Restart scheduled.</b>\n{self.system_emoji('laptop')} DeathTG is restarting now. Reopen the panel or chat in a few seconds.",
             reply_markup=None,
             parse_mode="html",
             link_preview=False,
@@ -227,9 +227,9 @@ class RootMod(Module):
     async def help_callback(self, call):
         await call.edit(
             (
-                "<b>DeathTG Help</b>\n"
-                "Use <code>.help</code> for compact text help.\n"
-                "Use <code>.helpb</code> for the button help browser."
+                f"<b>{self.system_emoji('search')} DeathTG Help</b>\n"
+                f"{self.system_emoji('mail')} Use <code>.help</code> for compact text help.\n"
+                f"{self.system_emoji('phone')} Use <code>.helpb</code> for the button help browser."
             ),
             reply_markup=self.inline_buttons(
                 [{"text": "Back", "callback": self.back_root_callback, "args": ()}],
@@ -249,7 +249,7 @@ class RootMod(Module):
         upcoming = str(info.get("upcoming") or "")[:10]
         if info.get("update_available"):
             return (
-                "<b>Update available</b>\n"
+                f"<b>{self.system_emoji('inbox')} Update available</b>\n"
                 f"Branch: <code>{html.escape(str(info.get('branch') or 'main'))}</code>\n"
                 f"Current: <code>{html.escape(current)}</code>\n"
                 f"Remote: <code>{html.escape(upcoming)}</code>\n"
@@ -257,7 +257,7 @@ class RootMod(Module):
                 "Apply git update now?"
             )
         return (
-            "<b>Already up to date</b>\n"
+            f"<b>{self.system_emoji('check')} Already up to date</b>\n"
             f"Branch: <code>{html.escape(str(info.get('branch') or 'main'))}</code>\n"
             f"Commit: <code>{html.escape(current or upcoming or 'unknown')}</code>"
         )

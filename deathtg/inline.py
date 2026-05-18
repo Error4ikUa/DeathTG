@@ -16,6 +16,7 @@ from deathtg.assets import system_image
 from deathtg.config import ENV_PATH, RUNTIME_DIR
 from deathtg.i18n import translate
 from deathtg.panel_access import issue_device_grant, panel_remote_access_ready
+from deathtg.premium_emoji import emoji_line, premium_emoji
 from deathtg.profile_store import profile_settings, save_profile_settings
 
 
@@ -88,6 +89,7 @@ class InlineManager:
         self.bot_username = ""
         self.owner_id: int | None = None
         self.owner_username = ""
+        self.owner_premium: bool = False
         self.error: str | None = "Inline bot is not configured"
         self.last_error: str = ""
         self.registry: dict[bytes, CallbackEntry] = {}
@@ -166,9 +168,11 @@ class InlineManager:
             me = await self.user_client.get_me()
             self.owner_id = int(getattr(me, "id", 0) or 0) or None
             self.owner_username = getattr(me, "username", "") or ""
+            self.owner_premium = bool(getattr(me, "premium", False))
         except Exception:
             self.owner_id = None
             self.owner_username = ""
+            self.owner_premium = False
 
     async def _drop_session_files(self) -> None:
         for path in RUNTIME_DIR.glob("inline_bot.session*"):
@@ -492,11 +496,12 @@ class InlineManager:
         await event.answer([result], cache_time=0, private=True)
 
     def _owner_line(self) -> str:
+        icon = premium_emoji("user", self.owner_premium)
         if self.owner_id and self.owner_username:
-            return f"Owner: {self.owner_id} (@{self.owner_username})"
+            return f"{icon} Owner: {self.owner_id} (@{self.owner_username})"
         if self.owner_id:
-            return f"Owner: {self.owner_id}"
-        return "Owner: unknown"
+            return f"{icon} Owner: {self.owner_id}"
+        return f"{icon} Owner: unknown"
 
     @staticmethod
     def _is_private_message(event) -> bool:
@@ -546,7 +551,7 @@ class InlineManager:
     async def _send_language_picker(self, chat_id: int, *, onboarding: bool) -> None:
         await self.push_form(
             chat_id,
-            self._t("bot.welcome", "en") + "\n\n" + self._t("bot.choose_language", "en"),
+            emoji_line("pirate", self._t("bot.welcome", "en"), self.owner_premium) + "\n\n" + emoji_line("phone", self._t("bot.choose_language", "en"), self.owner_premium),
             reply_markup=[
                 [{"text": "Рус", "callback": self._language_picker_callback, "args": ("ru", "1" if onboarding else "0")}],
                 [{"text": "Eng", "callback": self._language_picker_callback, "args": ("en", "1" if onboarding else "0")}],
@@ -566,7 +571,7 @@ class InlineManager:
         lang = "ru" if language == "ru" else "en"
         await self.push_form(
             chat_id,
-            self._t("bot.language_saved", lang) + "\n\n" + self._t("bot.backup", lang),
+            emoji_line("check", self._t("bot.language_saved", lang), self.owner_premium) + "\n\n" + emoji_line("sync", self._t("bot.backup", lang), self.owner_premium),
             reply_markup=[
                 [{"text": self._t("bot.yes", lang), "callback": self._onboarding_backup_toggle_callback, "args": (lang, "1")}],
                 [{"text": self._t("bot.no", lang), "callback": self._onboarding_backup_toggle_callback, "args": (lang, "0")}],
@@ -601,7 +606,7 @@ class InlineManager:
         lang = "ru" if language == "ru" else "en"
         if enabled != "1":
             save_profile_settings(language=lang, backup_enabled="0", onboarding_done="1")
-            await call.edit(self._t("bot.backup_off", lang) + "\n\n" + self._t("bot.ready", lang), reply_markup=None, parse_mode="html")
+            await call.edit(emoji_line("heart", self._t("bot.backup_off", lang), self.owner_premium) + "\n\n" + emoji_line("check", self._t("bot.ready", lang), self.owner_premium), reply_markup=None, parse_mode="html")
             return
         rows = []
         labels = [1, 2, 4, 6, 8, 12, 24, 48, 168]
@@ -611,7 +616,7 @@ class InlineManager:
                 row.append({"text": f"{hours}h", "callback": self._onboarding_backup_interval_callback, "args": (lang, str(hours))})
             rows.append(row)
         rows.append([{"text": self._t("bot.never", lang), "callback": self._onboarding_backup_interval_callback, "args": (lang, "0")}])
-        await call.edit(self._t("bot.choose_interval", lang), reply_markup=rows, parse_mode="html")
+        await call.edit(emoji_line("sync", self._t("bot.choose_interval", lang), self.owner_premium), reply_markup=rows, parse_mode="html")
 
     async def _onboarding_backup_interval_callback(self, call, language: str, hours: str) -> None:
         lang = "ru" if language == "ru" else "en"
@@ -619,9 +624,9 @@ class InlineManager:
         interval = hours if hours.isdigit() and int(hours) > 0 else "24"
         save_profile_settings(language=lang, backup_enabled=enabled, backup_interval_hours=interval, onboarding_done="1")
         if enabled == "1":
-            message = f"{self._t('bot.backup_saved', lang)}\n\n{self._t('bot.interval', lang)}: {interval}h\n\n{self._t('bot.ready', lang)}"
+            message = f"{emoji_line('check', self._t('bot.backup_saved', lang), self.owner_premium)}\n\n{emoji_line('sync', self._t('bot.interval', lang), self.owner_premium)}: {interval}h\n\n{emoji_line('pirate', self._t('bot.ready', lang), self.owner_premium)}"
         else:
-            message = self._t("bot.backup_off", lang) + "\n\n" + self._t("bot.ready", lang)
+            message = emoji_line("heart", self._t("bot.backup_off", lang), self.owner_premium) + "\n\n" + emoji_line("check", self._t("bot.ready", lang), self.owner_premium)
         await call.edit(message, reply_markup=None, parse_mode="html")
 
     async def _on_start(self, event) -> None:
@@ -634,37 +639,37 @@ class InlineManager:
         if self.owner_id and sender_id == self.owner_id:
             remote_hint = self._t("bot.link_phone_pc", lang) if panel_remote_access_ready() else self._t("bot.link_reachable", lang)
             text = (
-                self._t("bot.ready", lang) + "\n\n"
-                + self._t("bot.private_link_attached", lang) + "\n"
-                + self._t("bot.do_not_share", lang) + "\n"
-                + remote_hint + "\n\n"
-                + self._t("bot.lang_help", lang) + "\n\n"
+                emoji_line("pirate", self._t("bot.ready", lang), self.owner_premium) + "\n\n"
+                + emoji_line("mail", self._t("bot.private_link_attached", lang), self.owner_premium) + "\n"
+                + emoji_line("key", self._t("bot.do_not_share", lang), self.owner_premium) + "\n"
+                + emoji_line("phone", remote_hint, self.owner_premium) + "\n\n"
+                + emoji_line("sync", self._t("bot.lang_help", lang), self.owner_premium) + "\n\n"
                 + f"{self._owner_line()}\n"
                 + f"Bot: @{self.bot_username or 'unknown'}"
             )
-            await event.respond(text, buttons=self._owner_panel_buttons_native())
+            await event.respond(text, buttons=self._owner_panel_buttons_native(), parse_mode="html", link_preview=False)
             return
         text = (
-            self._t("bot.ready", lang) + "\n\n"
+            emoji_line("pirate", self._t("bot.ready", lang), self.owner_premium) + "\n\n"
             + f"{self._owner_line()}\n"
             + f"Bot: @{self.bot_username or 'unknown'}\n\n"
-            + f"{self._t('bot.commands', lang)}:\n"
-            + self._t("bot.start_help", lang) + "\n"
-            + self._t("bot.status_help", lang) + "\n"
-            + self._t("bot.lang_help", lang)
+            + f"{emoji_line('search', self._t('bot.commands', lang), self.owner_premium)}:\n"
+            + emoji_line("mail", self._t("bot.start_help", lang), self.owner_premium) + "\n"
+            + emoji_line("check", self._t("bot.status_help", lang), self.owner_premium) + "\n"
+            + emoji_line("sync", self._t("bot.lang_help", lang), self.owner_premium)
         )
-        await event.respond(text, buttons=self._help_buttons_native())
+        await event.respond(text, buttons=self._help_buttons_native(), parse_mode="html", link_preview=False)
 
     async def _on_status(self, event) -> None:
         lang = self._current_language()
         ready = self._t("bot.runtime_ready", lang) if self.ready else self._t("bot.runtime_missing", lang)
         text = (
-            self._t("bot.status", lang) + "\n"
-            + f"ready: {ready}\n"
+            emoji_line("check", self._t("bot.status", lang), self.owner_premium) + "\n"
+            + f"{emoji_line('check', 'ready', self.owner_premium)}: {ready}\n"
             + f"callbacks: {len(self.registry)}\n"
             + f"{self._owner_line()}"
         )
-        await event.respond(text, buttons=self._help_buttons_native())
+        await event.respond(text, buttons=self._help_buttons_native(), parse_mode="html", link_preview=False)
 
     async def _on_lang(self, event) -> None:
         settings = profile_settings()
@@ -678,8 +683,10 @@ class InlineManager:
         sender_id = int(getattr(event, "sender_id", 0) or 0)
         if self.owner_id and sender_id == self.owner_id:
             await event.respond(
-                self._t("bot.private", lang) + "\n\n" + self._t("bot.use_button", lang),
+                emoji_line("mail", self._t("bot.private", lang), self.owner_premium) + "\n\n" + emoji_line("key", self._t("bot.use_button", lang), self.owner_premium),
                 buttons=self._owner_panel_buttons_native(),
+                parse_mode="html",
+                link_preview=False,
             )
             return
-        await event.respond(self._t("bot.private", lang), buttons=self._help_buttons_native())
+        await event.respond(emoji_line("mail", self._t("bot.private", lang), self.owner_premium), buttons=self._help_buttons_native(), parse_mode="html", link_preview=False)

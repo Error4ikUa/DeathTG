@@ -44,6 +44,7 @@ from deathtg.command import Command, command
 from deathtg.module_config import ConfigValue, ModuleConfig, ValidationError, validators
 from deathtg.module_db import ModuleDatabase
 from deathtg.module_repo import fetch_module_bundle
+from deathtg.premium_emoji import premium_emoji
 from deathtg.registry import CommandRegistry
 from deathtg.security import scan_module_source
 
@@ -174,6 +175,9 @@ class Module:
         """Hikka-like alias for the safe DeathTG inline sender."""
 
         return await self.inline_send(event, text, **kwargs)
+
+    def system_emoji(self, name: str) -> str:
+        return premium_emoji(name, bool(getattr(self.app, "owner_premium", False)))
 
     async def inline_list(
         self,

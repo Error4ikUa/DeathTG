@@ -47,6 +47,11 @@ def _rounded(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], radius: 
     draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=width)
 
 
+def _mix(base: tuple[int, int, int], target: tuple[int, int, int], amount: float) -> tuple[int, int, int]:
+    amount = max(0.0, min(1.0, amount))
+    return tuple(int(base[i] + (target[i] - base[i]) * amount) for i in range(3))
+
+
 def _fit_text(draw: ImageDraw.ImageDraw, text: str, max_width: int, *, size: int, bold: bool = False):
     current = size
     while current >= 18:
@@ -118,9 +123,10 @@ def _draw_usage_chart(
     usage_points: list[dict],
     *,
     line_color: tuple[int, int, int] = (88, 233, 255),
+    panel_fill: tuple[int, int, int] = (32, 14, 52),
 ) -> None:
     left, top, right, bottom = rect
-    _rounded(draw, rect, 22, fill=(32, 14, 52), outline=(*line_color, 60))
+    _rounded(draw, rect, 22, fill=panel_fill, outline=(*line_color, 60))
     points = usage_points[-30:] if usage_points else []
     values = [int(item.get("count", 0)) for item in points]
     labels = [str(item.get("day", ""))[5:] for item in points]
@@ -245,8 +251,15 @@ def render_info_card(
         )
         draw.line((0, y, CARD_W, y), fill=color)
 
-    _rounded(draw, (36, 36, CARD_W - 36, CARD_H - 36), 34, fill=(41, 15, 66), outline=(132, 90, 188), width=2)
-    _rounded(draw, (64, 64, CARD_W - 64, 360), 28, fill=(52, 25, 84), outline=palette["line"], width=2)
+    shell_fill = _mix(palette["bg1"], palette["bg2"], 0.55)
+    hero_fill = _mix(palette["bg1"], palette["bg2"], 0.72)
+    stat_fill = _mix(palette["bg1"], palette["bg2"], 0.62)
+    panel_fill = _mix(palette["bg1"], (10, 12, 16), 0.28)
+    soft_text = _mix((255, 255, 255), palette["line"], 0.34)
+    accent_outline = _mix(palette["line"], (255, 255, 255), 0.18)
+
+    _rounded(draw, (36, 36, CARD_W - 36, CARD_H - 36), 34, fill=shell_fill, outline=accent_outline, width=2)
+    _rounded(draw, (64, 64, CARD_W - 64, 360), 28, fill=hero_fill, outline=palette["line"], width=2)
 
     avatar = _crop_avatar(PANEL_AVATAR, 170)
     image.paste(avatar, (92, 108), avatar)
@@ -276,12 +289,12 @@ def render_info_card(
         col = idx % 4
         x = chip_x + col * 274
         y = chip_y + row * 98
-        _rounded(draw, (x, y, x + 252, y + 78), 22, fill=(45, 21, 72), outline=(110, 90, 168))
+        _rounded(draw, (x, y, x + 252, y + 78), 22, fill=stat_fill, outline=accent_outline)
         draw.text((x + 18, y + 16), label, fill=palette["line"], font=_font(20, bold=True))
         draw.text((x + 18, y + 42), value, fill=(243, 239, 251), font=chip_font)
 
-    _draw_usage_chart(draw, (92, 598, 770, 730), usage_points, line_color=palette["line"])
-    _rounded(draw, (794, 598, 1188, 730), 22, fill=(32, 14, 52), outline=(88, 233, 255, 60))
+    _draw_usage_chart(draw, (92, 598, 770, 730), usage_points, line_color=palette["line"], panel_fill=panel_fill)
+    _rounded(draw, (794, 598, 1188, 730), 22, fill=panel_fill, outline=accent_outline)
     draw.text((820, 620), "Top modules", fill=palette["line"], font=_font(24, bold=True))
     _draw_wrapped(
         draw,
@@ -295,7 +308,7 @@ def render_info_card(
 
     uptime_seconds = max(1, int(time.time() - PROCESS_STARTED_AT))
     uptime_text = f"{uptime_seconds // 3600}:{(uptime_seconds % 3600) // 60:02d}:{uptime_seconds % 60:02d}"
-    draw.text((CARD_W - 290, 82), f"Uptime {uptime_text}", fill=(198, 185, 228), font=_font(22))
+    draw.text((CARD_W - 290, 82), f"Uptime {uptime_text}", fill=soft_text, font=_font(22))
 
     image.save(card_path)
     return card_path
