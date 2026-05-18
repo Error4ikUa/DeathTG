@@ -484,3 +484,51 @@ function drawLineChart() {
 }
 
 drawLineChart();
+
+(function setupAccentPreview() {
+  const body = document.body;
+  const accentInputs = [...document.querySelectorAll('input[name="accent"]')];
+  if (!body || !accentInputs.length) return;
+
+  const glyphs = ['✦', '✧', '✶', '✹', '✺', '✷', '✴', '✦', '+', '*'];
+
+  function emitBurst(source) {
+    const rect = (source && source.getBoundingClientRect) ? source.getBoundingClientRect() : {left: window.innerWidth / 2, top: window.innerHeight / 2, width: 0, height: 0};
+    const originX = rect.left + rect.width / 2;
+    const originY = rect.top + rect.height / 2;
+    const burst = document.createElement('div');
+    burst.className = 'theme-burst';
+    burst.style.left = originX + 'px';
+    burst.style.top = originY + 'px';
+    const amount = window.innerWidth < 700 ? 12 : 18;
+    for (let i = 0; i < amount; i += 1) {
+      const node = document.createElement('span');
+      node.textContent = glyphs[Math.floor(Math.random() * glyphs.length)];
+      const angle = (Math.PI * 2 * i) / amount + (Math.random() * 0.36 - 0.18);
+      const distance = 34 + Math.random() * (window.innerWidth < 700 ? 42 : 68);
+      node.style.setProperty('--tx', `${Math.cos(angle) * distance}px`);
+      node.style.setProperty('--ty', `${Math.sin(angle) * distance}px`);
+      node.style.setProperty('--rot', `${-120 + Math.random() * 240}deg`);
+      node.style.animationDelay = `${Math.random() * 0.08}s`;
+      burst.appendChild(node);
+    }
+    document.body.appendChild(burst);
+    window.setTimeout(() => burst.remove(), 1100);
+  }
+
+  function pulseTheme() {
+    body.classList.remove('theme-flash', 'theme-glow');
+    void body.offsetWidth;
+    body.classList.add('theme-flash', 'theme-glow');
+    window.setTimeout(() => body.classList.remove('theme-flash', 'theme-glow'), 900);
+  }
+
+  accentInputs.forEach((input) => {
+    input.addEventListener('change', () => {
+      if (!input.checked) return;
+      body.setAttribute('data-accent', input.value);
+      emitBurst(input.nextElementSibling || input.parentElement || input);
+      pulseTheme();
+    });
+  });
+})();

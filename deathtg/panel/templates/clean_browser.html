@@ -118,7 +118,7 @@
             <h2>{{ tr('browser.module_connector') }}</h2>
             <div class="bot-grid">
                 {% for bot in startup.bots %}
-                <p class="module-note"><b>{{ bot.role or 'bot' }}</b>: <code>@{{ bot.username or 'missing' }}</code> <span>{{ tr('profile.ready') if bot.username and bot.valid_username else tr('browser.not_configured') }}</span></p>
+                <p class="module-note"><b>{{ bot.role or 'bot' }}</b>: {% if bot.username %}<code>@{{ bot.username }}</code>{% else %}<span class="bridge-missing">{{ tr('profile.not_set') }}</span>{% endif %} <span>{{ tr('profile.ready') if bot.username and bot.valid_username else tr('browser.not_configured') }}</span></p>
                 {% endfor %}
             </div>
             <p class="module-note">{{ tr('browser.inline_note') }}</p>

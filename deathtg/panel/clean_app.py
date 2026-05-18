@@ -138,6 +138,28 @@ def _auth_guard(request: Request):
         return RedirectResponse("/login?error=Device+session+revoked", status_code=303)
     return None
 
+def _target_path(return_to: str | None, default: str = "/") -> str:
+    value = (return_to or "").strip().lower()
+    if value in {"", "news", "home"}:
+        return "/"
+    if value == "profile":
+        return "/profile"
+    if value == "activity":
+        return "/activity"
+    if value == "browser":
+        return "/browser"
+    if value == "scanner":
+        return "/scanner"
+    return default
+
+
+async def _system_return_target(request: Request, default: str = "/") -> str:
+    try:
+        form = await request.form()
+    except Exception:
+        return default
+    return _target_path(str(form.get("return_to") or ""), default)
+
 
 def _client_ip(request: Request) -> str:
     if panel_trust_proxy():
@@ -758,16 +780,17 @@ async def check_update(request: Request):
     blocked = _auth_guard(request)
     if blocked:
         return blocked
+    target = await _system_return_target(request, "/")
     try:
         info = inspect_update()
         save_update_state(info)
         if not info.get("ok"):
-            return RedirectResponse(f"/profile?error={str(info.get('message') or 'Update check failed')}", status_code=303)
+            return RedirectResponse(f"{target}?error={str(info.get('message') or 'Update check failed')}", status_code=303)
         if info.get("update_available"):
-            return RedirectResponse("/profile?message=Update+available", status_code=303)
-        return RedirectResponse("/profile?message=Already+up+to+date", status_code=303)
+            return RedirectResponse(f"{target}?message=Update+available", status_code=303)
+        return RedirectResponse(f"{target}?message=Already+up+to+date", status_code=303)
     except Exception as exc:
-        return RedirectResponse(f"/profile?error={type(exc).__name__}: {exc}", status_code=303)
+        return RedirectResponse(f"{target}?error={type(exc).__name__}: {exc}", status_code=303)
 
 
 @app.post("/system/update/apply")
@@ -775,16 +798,17 @@ async def update_project(request: Request):
     blocked = _auth_guard(request)
     if blocked:
         return blocked
+    target = await _system_return_target(request, "/")
     try:
         result = apply_update()
         save_update_state(result)
         if not result.get("ok"):
-            return RedirectResponse(f"/profile?error={str(result.get('message') or 'Update failed')}", status_code=303)
+            return RedirectResponse(f"{target}?error={str(result.get('message') or 'Update failed')}", status_code=303)
         if result.get("updated"):
-            return RedirectResponse("/profile?message=Update+installed.+Restart+to+apply", status_code=303)
-        return RedirectResponse("/profile?message=Already+up+to+date", status_code=303)
+            return RedirectResponse(f"{target}?message=Update+installed.+Restart+to+apply", status_code=303)
+        return RedirectResponse(f"{target}?message=Already+up+to+date", status_code=303)
     except Exception as exc:
-        return RedirectResponse(f"/profile?error={type(exc).__name__}: {exc}", status_code=303)
+        return RedirectResponse(f"{target}?error={type(exc).__name__}: {exc}", status_code=303)
 
 
 @app.post("/system/restart")
@@ -792,9 +816,10 @@ async def restart_project(request: Request):
     blocked = _auth_guard(request)
     if blocked:
         return blocked
+    target = await _system_return_target(request, "/")
     schedule_restart()
     return HTMLResponse(
-        "<html><head><meta http-equiv='refresh' content='8;url=/'></head>"
+        f"<html><head><meta http-equiv='refresh' content='8;url={target}'></head>"
         "<body style='background:#050b08;color:#eaffef;font-family:sans-serif;padding:40px'>"
         "<h1>DeathTG is restarting...</h1><p>Wait a few seconds, then this page will try to reopen the panel.</p>"
         "</body></html>"

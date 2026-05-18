@@ -20,6 +20,7 @@ from deathtg.config import MODULES_DIR, ROOT_DIR, RUNTIME_DIR
 from deathtg.panel.clean_core import MODULE_META_PATH, loader, refresh_modules, _extract_module_source_meta
 from deathtg.profile_store import profile_settings, save_profile_settings, update_env_value
 from deathtg.registry import PROTECTED_MODULES
+from deathtg.module_repo import fetch_module_bundle, parse_requirements_text
 from deathtg.module_config import ModuleConfig, ValidationError
 from deathtg.role_gate import can_assign_role, normalize_role
 from deathtg.community_roles import clear_role_scan_result, read_role_scan_result
@@ -71,6 +72,8 @@ def _redirect(path: str, *, message: str | None = None, error: str | None = None
 
 def _target_path(return_to: str | None, default: str = "/browser") -> str:
     value = (return_to or "").strip().lower()
+    if value == "news":
+        return "/"
     if value == "installed_tab":
         return "/browser#installedPane"
     if value == "install_tab":
@@ -159,6 +162,10 @@ def _save_pending_install(
     description: str = "",
     author: str = "",
     version: str = "",
+    install_kind: str = "file",
+    module_name: str = "",
+    image_name: str = "",
+    requirements_text: str = "",
 ) -> str:
     PENDING_INSTALLS_DIR.mkdir(parents=True, exist_ok=True)
     token = secrets.token_urlsafe(18)
@@ -174,6 +181,10 @@ def _save_pending_install(
                 "description": description,
                 "author": author,
                 "version": version,
+                "install_kind": install_kind,
+                "module_name": module_name,
+                "image_name": image_name,
+                "requirements_text": requirements_text,
                 "report": _report_payload(report),
                 "created_at": int(time.time()),
             },
@@ -202,23 +213,14 @@ def load_pending_install(token: str | None) -> dict | None:
 
 
 async def _download_module_source(link: str) -> tuple[str, str]:
-    url = loader._normalize_github_url(link)
-    filename = Path(urlparse(url).path).name or "module.py"
+    bundle = await fetch_module_bundle(link)
+    filename = str(bundle.get("entry_filename") or "module.py")
+    text = str(bundle.get("source") or "")
     if not filename.endswith(".py"):
-        raise RuntimeError("Link must point to a .py module")
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=30) as response:
-                if response.status != 200:
-                    raise RuntimeError(f"Download failed, HTTP {response.status}")
-                text = await response.text()
-    except aiohttp.InvalidURL as exc:
-        raise RuntimeError("Invalid module URL") from exc
-    except aiohttp.ClientError as exc:
-        raise RuntimeError(f"Module download failed: {exc}") from exc
+        raise RuntimeError("Link must point to a .py module or a GitHub module folder")
     if loader._looks_like_html(text):
-        raise RuntimeError("URL returned HTML, not Python code. Use a raw/blob .py link")
-    return filename, text
+        raise RuntimeError("URL returned HTML, not Python code. Use a raw/blob .py link or a GitHub module folder")
+    return bundle
 
 
 async def _install_module_source(
@@ -233,10 +235,15 @@ async def _install_module_source(
     description: str = "",
     author: str = "",
     version: str = "",
+    install_kind: str = "file",
+    module_name: str = "",
+    image_name: str = "",
+    requirements_text: str = "",
 ) -> str:
     safe_name = Path(filename).name
     if not safe_name.endswith(".py"):
         raise RuntimeError("Module filename must end with .py")
+    final_module_name = _safe_module_name(module_name or Path(safe_name).stem)
     report = scan_module_source(source, trusted=trusted)
     if report.severity in {"warning", "danger"} and not trusted and not force:
         token = _save_pending_install(
@@ -250,15 +257,43 @@ async def _install_module_source(
             description=description,
             author=author,
             version=version,
+            install_kind=install_kind,
+            module_name=final_module_name,
+            image_name=image_name,
+            requirements_text=requirements_text,
         )
         raise RuntimeError(f"SECURITY_PENDING:{token}")
     MODULES_DIR.mkdir(parents=True, exist_ok=True)
-    target = MODULES_DIR / safe_name
-    target.write_text(source, encoding="utf-8")
+    if install_kind == "folder":
+        target = MODULES_DIR / final_module_name
+        if target.exists():
+            if target.is_dir():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+        target.mkdir(parents=True, exist_ok=True)
+        (target / safe_name).write_text(source, encoding="utf-8")
+        if requirements_text.strip():
+            (target / "requirements.txt").write_text(requirements_text, encoding="utf-8")
+        if image:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(image, timeout=20) as response:
+                        if response.status == 200:
+                            (target / "Module.png").write_bytes(await response.read())
+            except Exception:
+                pass
+    else:
+        target = MODULES_DIR / safe_name
+        target.write_text(source, encoding="utf-8")
     try:
-        name = await loader.load_file(target, force=trusted or force)
+        name = await loader.load_file(target, force=trusted or force, module_name=final_module_name if install_kind == "folder" else None)
     except Exception:
-        target.unlink(missing_ok=True)
+        if target.exists():
+            if target.is_dir():
+                shutil.rmtree(target, ignore_errors=True)
+            else:
+                target.unlink(missing_ok=True)
         raise
     verified = bool(trusted or (not report.findings and report.allowed and not force))
     _set_module_meta(
@@ -274,7 +309,7 @@ async def _install_module_source(
         description=description,
         author=author,
         version=version,
-        filename=safe_name,
+        filename=(f"{final_module_name}/{safe_name}" if install_kind == "folder" else safe_name),
     )
     _queue_userbot_action("install", path=str(target), force=trusted or force)
     await refresh_modules()
@@ -362,18 +397,22 @@ async def download_mod(
     if blocked:
         return blocked
     try:
-        trusted = is_trusted_module_link(link)
-        filename, source = await _download_module_source(link)
+        bundle = await _download_module_source(link)
+        trusted = bool(bundle.get("trusted")) or is_trusted_module_link(link)
         name = await _install_module_source(
-            filename=filename,
-            source=source,
+            filename=str(bundle.get("entry_filename") or "module.py"),
+            source=str(bundle.get("source") or ""),
             link=link,
             source_type="repo" if trusted else "url",
             trusted=trusted,
-            image=image,
-            description=description,
-            author=author,
-            version=version,
+            image=str(bundle.get("image_url") or image or ""),
+            description=str(description or bundle.get("description") or ""),
+            author=str(author or bundle.get("author") or ""),
+            version=str(version or bundle.get("version") or ""),
+            install_kind=str(bundle.get("kind") or "file"),
+            module_name=str(bundle.get("module_name") or ""),
+            image_name=str(bundle.get("image_name") or ""),
+            requirements_text=str(bundle.get("requirements_text") or ""),
         )
         return _redirect(_target_path(return_to), message=f"Installed: {name}")
     except Exception as e:
@@ -404,6 +443,7 @@ async def upload_mod(request: Request, file: UploadFile = File(...), return_to: 
             source_type="upload",
             trusted=False,
             description="Uploaded local module",
+            install_kind="file",
         )
         return _redirect(_target_path(return_to), message=f"Uploaded: {name}")
     except Exception as e:
@@ -443,6 +483,10 @@ async def continue_pending_mod(request: Request, token: str, return_to: str = Fo
             description=str(pending.get("description") or ""),
             author=str(pending.get("author") or ""),
             version=str(pending.get("version") or ""),
+            install_kind=str(pending.get("install_kind") or "file"),
+            module_name=str(pending.get("module_name") or ""),
+            image_name=str(pending.get("image_name") or ""),
+            requirements_text=str(pending.get("requirements_text") or ""),
         )
         _pending_path(token).unlink(missing_ok=True)
         return _redirect(_target_path(return_to), message=f"Installed with warning: {name}")
@@ -568,6 +612,14 @@ async def install_module_requirements(request: Request, name: str):
             raise RuntimeError("Module source was not found")
         parsed = _extract_module_source_meta(path.read_text(encoding="utf-8", errors="replace"))
         requirements = [item for item in parsed.get("requires", []) if REQUIREMENT_RE.fullmatch(item)]
+        requirements_file = path.parent / "requirements.txt"
+        if requirements_file.exists():
+            requirements.extend(
+                item
+                for item in parse_requirements_text(requirements_file.read_text(encoding="utf-8", errors="replace"))
+                if REQUIREMENT_RE.fullmatch(item)
+            )
+        requirements = sorted(set(requirements))
         if not requirements:
             raise RuntimeError("No safe requirements found")
         result = subprocess.run(
@@ -599,9 +651,9 @@ async def update_all_modules(request: Request, return_to: str = Form("browser"))
 
 
 @router.post("/runtime/sync")
-async def runtime_sync(request: Request):
+async def runtime_sync(request: Request, return_to: str = Form("profile")):
     blocked = _require_auth(request)
     if blocked:
         return blocked
     _queue_userbot_action("startup_sync")
-    return _redirect("/profile", message="Runtime sync queued")
+    return _redirect(_target_path(return_to, "/profile"), message="Runtime sync queued")

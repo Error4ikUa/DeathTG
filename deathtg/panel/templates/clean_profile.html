@@ -141,7 +141,7 @@
                 <h1 class="hero-title">{{ profile.profile_title or tr('profile.operator_title') }}</h1>
                 <div class="hero-sub">
                     <p class="profile-meta">@{{ profile.username or tr('profile.not_connected') }}</p>
-                    <span class="role-pill {% if profile.role == 'developer' %}developer{% endif %}">{{ tr('profile.role_' ~ (profile.role or 'user')) }}</span>
+                    <span class="role-pill {% if profile.role == 'developer' %}developer{% endif %}"><span class="pill-text">{{ tr('profile.role_' ~ (profile.role or 'user')) }}</span></span>
                 </div>
             </div>
             <div class="hero-actions">
@@ -154,7 +154,6 @@
 
         <section class="stat-ribbon">
             <article class="stat-card prefix-card"><span>{{ tr('profile.prefix') }}</span><b>{{ status.prefix or '.' }}</b></article>
-            <article class="stat-card"><span>{{ tr('profile.role') }}</span><b>{{ tr('profile.role_' ~ (profile.role or 'user')) }}</b></article>
             <article class="stat-card"><span>{{ tr('profile.modules') }}</span><b>{{ status.modules_count }}</b></article>
             <article class="stat-card"><span>{{ tr('profile.commands') }}</span><b>{{ status.commands_count }}</b></article>
             <article class="stat-card"><span>{{ tr('home.level') }}</span><b>{{ status.level.level }}</b></article>
@@ -173,7 +172,6 @@
                     <div class="meta-chip"><span>{{ tr('profile.username') }}</span><b>@{{ profile.username or tr('profile.not_connected') }}</b></div>
                     <div class="meta-chip"><span>{{ tr('profile.id') }}</span><b>{{ profile.id }}</b></div>
                     <div class="meta-chip"><span>{{ tr('profile.session') }}</span><b>{{ 'OK' if status.session_ok else 'BAD' }}</b></div>
-                    <div class="meta-chip"><span>{{ tr('profile.role') }}</span><b>{{ tr('profile.role_' ~ (profile.role or 'user')) }}</b></div>
                 </div>
             </article>
         </section>
@@ -378,19 +376,6 @@
 </div>
 
 <script src="/static/matrix.js"></script>
-<script>
-(() => {
-  const body = document.body;
-  const accentInputs = document.querySelectorAll('input[name="accent"]');
-  accentInputs.forEach((input) => {
-    input.addEventListener('change', () => {
-      if (input.checked) {
-        body.setAttribute('data-accent', input.value);
-      }
-    });
-  });
-})();
-</script>
 <script src="/static/clean.js"></script>
 </body>
 </html>
