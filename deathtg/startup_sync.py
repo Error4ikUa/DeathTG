@@ -35,6 +35,7 @@ STATUS_PATH = RUNTIME_DIR / "startup_status.json"
 BOT_TOKEN_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b")
 BOTFATHER_RETRY_RE = re.compile(r"too many attempts.*?try again in\s+(\d+)\s+seconds?", re.IGNORECASE)
 BOT_AVATAR = default_avatar_path() or (ROOT_DIR / "deathtg" / "panel" / "static" / "default_avatar.png")
+BOTFATHER_CREATE_TIMEOUT = 35
 
 
 def _env(name: str) -> str:
@@ -711,7 +712,14 @@ async def _ensure_bot(
             status["error"] = "bot username does not match expected owner prefix"
         return bot_token, status
 
-    token, error = await _create_bot_with_botfather(client, owner_id, role)
+    try:
+        token, error = await asyncio.wait_for(
+            _create_bot_with_botfather(client, owner_id, role),
+            timeout=BOTFATHER_CREATE_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        status["error"] = "BotFather creation timed out"
+        return bot_token, status
     if not token:
         status["error"] = error or token_error or "unable to create owner-bound bot"
         return bot_token, status
@@ -757,11 +765,18 @@ async def _ensure_community_bot(client, owner_id: int, *, allow_create: bool = F
         elif not status["error"]:
             status["error"] = f"community bot username must be @{username_target}"
         return bot_token, status
-    token, error = await _create_named_bot_with_botfather(
-        client,
-        community_bot_display_name(),
-        username_target,
-    )
+    try:
+        token, error = await asyncio.wait_for(
+            _create_named_bot_with_botfather(
+                client,
+                community_bot_display_name(),
+                username_target,
+            ),
+            timeout=BOTFATHER_CREATE_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        status["error"] = "BotFather creation timed out"
+        return bot_token, status
     if not token:
         status["error"] = error or token_error or "unable to create community bot"
         return bot_token, status
@@ -796,7 +811,7 @@ async def run_startup_sync(client) -> dict:
         owner_id,
         env_key="BOT_TOKEN",
         role="inline",
-        allow_create=False,
+        allow_create=True,
     )
     helper_token, helper_status = await _ensure_bot(
         client,
@@ -804,7 +819,7 @@ async def run_startup_sync(client) -> dict:
         owner_id,
         env_key="BOT_TOKEN_HELPER",
         role="helper",
-        allow_create=False,
+        allow_create=True,
     )
     community_status = {
         "configured": False,
@@ -823,7 +838,7 @@ async def run_startup_sync(client) -> dict:
         "archived": False,
     }
     if community_enabled_for_owner(owner_id):
-        community_token, community_status = await _ensure_community_bot(client, owner_id, allow_create=False)
+        community_token, community_status = await _ensure_community_bot(client, owner_id, allow_create=True)
     bot_username = str(bot_status.get("username") or "")
     helper_username = str(helper_status.get("username") or "")
     community_username = str(community_status.get("username") or "")
