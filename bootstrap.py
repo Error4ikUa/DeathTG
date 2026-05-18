@@ -49,6 +49,10 @@ def main() -> None:
     python_bin = venv_python()
     run([str(python_bin), "-m", "pip", "install", "-U", "pip"])
     run([str(python_bin), "-m", "pip", "install", "-r", str(ROOT_DIR / "requirements.txt")])
+    clear_console()
+    print(CONSOLE_BANNER)
+    print()
+    print(f"DeathTG bootstrap on {platform.system()} {platform.release()}")
     try:
         run([str(python_bin), "dtg.py"])
     except KeyboardInterrupt:
