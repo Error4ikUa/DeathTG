@@ -213,6 +213,7 @@ async def _base_context(request: Request) -> dict:
         "public_panel_enabled": public_panel_enabled(),
         "panel_remote_access_ready": panel_remote_access_ready(),
         "panel_url": _current_panel_url(request),
+        "info_preview": _render_info_preview(profile, st, lang),
         "device_link": request.session.pop("fresh_device_link", None),
         "update_info": load_update_state(),
         "module_meta": load_module_meta(),
@@ -253,6 +254,31 @@ def _setup_context(request: Request, step: str, *, error: str | None = None, mes
         "panel_remote_access_ready": panel_remote_access_ready(),
         **extra,
     }
+
+
+class _InfoPreviewMap(dict):
+    def __missing__(self, key: str) -> str:
+        return "{" + key + "}"
+
+
+def _render_info_preview(profile: dict, st: dict, lang: str) -> str:
+    template = str((profile.get("info_text") or "").strip() or translate("profile.info_default_template", lang))
+    values = _InfoPreviewMap(
+        {
+            "title": profile.get("profile_title") or translate("profile.operator_title", lang),
+            "username": "@" + str(profile.get("username") or translate("profile.not_connected", lang)),
+            "role": translate(f"profile.role_{profile.get('role') or 'user'}", lang),
+            "prefix": st.get("prefix") or ".",
+            "uses": str(st.get("level", {}).get("actions", 0)),
+            "level": str(st.get("level", {}).get("level", 1)),
+            "modules": str(st.get("modules_count", 0)),
+            "commands": str(st.get("commands_count", 0)),
+        }
+    )
+    try:
+        return template.format_map(values)
+    except Exception:
+        return template
 
 
 @app.get("/setup", response_class=HTMLResponse)

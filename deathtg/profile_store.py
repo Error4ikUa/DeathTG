@@ -9,7 +9,7 @@ from deathtg.config import ROOT_DIR, RUNTIME_DIR
 PROFILE_SETTINGS_PATH = RUNTIME_DIR / "profile_settings.json"
 DEFAULT_PROFILE_SETTINGS = {
     "language": "en",
-    "description": "DeathTG userbot online. Neon profile, modules and automation in one panel.",
+    "description": "",
     "accent": "blue",
     "profile_title": "DeathTG Operator",
     "role": "user",
