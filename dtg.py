@@ -21,6 +21,7 @@ from deathtg.panel_access import (
 )
 from deathtg.server_bootstrap import ensure_server_env, update_env_values
 from deathtg.setup_access import setup_link
+from deathtg.ui import CONSOLE_BANNER
 
 ROOT_DIR = Path(__file__).resolve().parent
 ENV_PATH = ROOT_DIR / ".env"
@@ -110,6 +111,10 @@ def cleanup(signum, frame):
     sys.exit(0)
 
 
+def clear_console() -> None:
+    os.system("cls" if os.name == "nt" else "clear")
+
+
 def panel_url() -> str:
     return panel_base_url()
 
@@ -167,7 +172,10 @@ if __name__ == "__main__":
     wsl_publish = ensure_wsl_public_access(request_elevation=True)
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
-    
+
+    clear_console()
+    print(CONSOLE_BANNER)
+    print()
     print("DeathTG full stack is starting...")
     print(f"Panel (this device): {panel_local_url()}")
     if panel_remote_access_ready():
