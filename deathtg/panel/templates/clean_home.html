@@ -8,6 +8,23 @@
     <link rel="stylesheet" href="/static/clean_patch.css">
     <link rel="stylesheet" href="/static/accent_fix.css">
     <link rel="stylesheet" href="/static/theme_cards.css">
+    <style>
+        .news-shell{display:grid;gap:16px}
+        .runtime-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+        .runtime-card,.system-card{padding:22px}
+        .status-stack,.update-stack,.news-stack{display:grid;gap:10px}
+        .status-row,.update-box,.news-box{padding:14px 15px;border-radius:16px;background:rgba(255,255,255,.025);border:1px solid rgba(var(--accent-rgb),.14)}
+        .status-row{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+        .status-row b,.update-box b,.news-box b{display:block;margin-bottom:4px}
+        .status-row p,.update-box p,.news-box p{margin:0;color:var(--muted);font-size:13px;line-height:1.55}
+        .status-badge{display:inline-flex;align-items:center;justify-content:center;padding:7px 11px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+        .status-badge.ok{background:rgba(82,255,139,.10);border:1px solid rgba(82,255,139,.22);color:#dfffe8}
+        .status-badge.bad{background:rgba(255,79,117,.12);border:1px solid rgba(255,79,117,.34);color:#ffe2e9}
+        .status-badge.warn{background:rgba(255,184,107,.12);border:1px solid rgba(255,184,107,.34);color:#ffebb9}
+        .button-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+        .quick a{position:relative;overflow:hidden}
+        @media (max-width: 980px){.runtime-grid{grid-template-columns:1fr}}
+    </style>
 </head>
 <body class="theme-main" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>
@@ -29,50 +46,112 @@
 <div class="overlay" id="drawerBackdrop"></div>
 
 <main class="page">
-    <section class="hero card">
-        <div>
-            <p class="eyebrow">{{ tr('home.hero_eyebrow') }}</p>
-            <h1>{{ tr('home.hero_title') }}</h1>
-            <p>{{ tr('home.hero_desc') }}</p>
-        </div>
-        <form method="post" action="/system/update/check"><button class="btn ghost" type="submit">{{ tr('home.check_update') }}</button></form>
-    </section>
-
-    {% if message %}<div class="toast ok">{{ message }}</div>{% endif %}
-    {% if error %}<div class="toast bad">{{ error }}</div>{% endif %}
-
-    <section class="stats">
-        <article class="card stat"><span>{{ tr('home.config') }}</span><b>{{ 'OK' if status.config_ok else 'FAIL' }}</b></article>
-        <article class="card stat"><span>{{ tr('home.session') }}</span><b>{{ 'OK' if status.session_ok else 'BAD' }}</b></article>
-        <article class="card stat"><span>{{ tr('home.modules') }}</span><b>{{ status.modules_count }}</b></article>
-        <article class="card stat"><span>{{ tr('home.commands') }}</span><b>{{ status.commands_count }}</b></article>
-        <article class="card stat"><span>{{ tr('home.level') }}</span><b>{{ status.level.level }}</b></article>
-        <article class="card stat"><span>{{ tr('home.account_age') }}</span><b>{{ status.days }}d</b></article>
-    </section>
-
-    {% if not status.session_ok %}<section class="toast bad">Session error. <a href="/reconnect">Reconnect</a></section>{% endif %}
-
-    <section class="grid2">
-        <article class="card panel">
-            <p class="eyebrow">{{ tr('home.whats_new') }}</p>
-            <h2>{{ tr('home.current_build') }}</h2>
-            <div class="news">
-                <div><b>{{ tr('home.inline_forms') }}</b><p>{{ tr('home.inline_forms_desc') }}</p></div>
-                <div><b>{{ tr('home.module_cards') }}</b><p>{{ tr('home.module_cards_desc') }}</p></div>
-                <div><b>{{ tr('home.account_level') }}</b><p>{{ tr('home.account_level_desc') }}</p></div>
+    <div class="news-shell">
+        <section class="hero card">
+            <div>
+                <p class="eyebrow">{{ tr('home.hero_eyebrow') }}</p>
+                <h1>{{ tr('home.hero_title') }}</h1>
+                <p>{{ tr('home.hero_desc') }}</p>
             </div>
-        </article>
-        <article class="card panel">
-            <p class="eyebrow">{{ tr('home.quick_actions') }}</p>
-            <h2>{{ tr('home.actions') }}</h2>
-            <div class="quick">
-                <a href="/browser">{{ tr('nav.modules') }}</a>
-                <a href="/scanner">{{ tr('nav.scanner') }}</a>
-                <a href="/activity">{{ tr('nav.activity') }}</a>
-                <a href="/profile">{{ tr('nav.profile') }}</a>
-            </div>
-        </article>
-    </section>
+            <form method="post" action="/system/update/check"><button class="btn ghost" type="submit">{{ tr('home.check_update') }}</button></form>
+        </section>
+
+        {% if message %}<div class="toast ok">{{ message }}</div>{% endif %}
+        {% if error %}<div class="toast bad">{{ error }}</div>{% endif %}
+
+        <section class="stats">
+            <article class="card stat"><span>{{ tr('home.config') }}</span><b>{{ 'OK' if status.config_ok else 'FAIL' }}</b></article>
+            <article class="card stat"><span>{{ tr('home.session') }}</span><b>{{ 'OK' if status.session_ok else 'BAD' }}</b></article>
+            <article class="card stat"><span>{{ tr('home.modules') }}</span><b>{{ status.modules_count }}</b></article>
+            <article class="card stat"><span>{{ tr('home.commands') }}</span><b>{{ status.commands_count }}</b></article>
+            <article class="card stat"><span>{{ tr('home.level') }}</span><b>{{ status.level.level }}</b></article>
+            <article class="card stat"><span>{{ tr('home.account_age') }}</span><b>{{ status.days }}d</b></article>
+        </section>
+
+        <section class="runtime-grid">
+            <article class="card system-card">
+                <p class="eyebrow">{{ tr('home.system_updates') }}</p>
+                <h2>{{ tr('home.system_desc') }}</h2>
+                <div class="update-stack">
+                    <div class="update-box">
+                        {% if update_info %}
+                        <b>{{ update_info.message }}</b>
+                        {% if update_info.ok %}
+                        <p>{{ tr('home.update_branch') }}: {{ update_info.branch }} · {{ tr('profile.behind') }}: {{ update_info.behind }} · {{ tr('profile.ahead') }}: {{ update_info.ahead }}</p>
+                        <p>{{ tr('home.update_current') }}: {{ (update_info.current or '')[:10] }}{% if update_info.upcoming %} · {{ tr('home.update_remote') }}: {{ (update_info.upcoming or '')[:10] }}{% endif %}</p>
+                        {% else %}
+                        <p>{{ update_info.message }}</p>
+                        {% endif %}
+                        {% else %}
+                        <b>{{ tr('home.no_update_data') }}</b>
+                        <p>{{ tr('home.safe_update_note') }}</p>
+                        {% endif %}
+                    </div>
+                    <div class="update-box">
+                        <b>{{ tr('profile.safe_update_flow') }}</b>
+                        <p>{{ tr('profile.safe_update_desc') }}</p>
+                    </div>
+                </div>
+                <div class="button-row">
+                    <form method="post" action="/system/update/check"><button type="submit" class="ghost">{{ tr('home.check_update') }}</button></form>
+                    <form method="post" action="/system/update/apply"><button type="submit">{{ tr('home.apply_update') }}</button></form>
+                    <form method="post" action="/system/restart"><button type="submit" class="ghost">{{ tr('home.restart') }}</button></form>
+                </div>
+            </article>
+
+            <article class="card runtime-card">
+                <p class="eyebrow">{{ tr('home.runtime') }}</p>
+                <h2>{{ tr('home.runtime_desc') }}</h2>
+                <div class="status-stack">
+                    {% for bot in startup.bots %}
+                    <div class="status-row">
+                        <div>
+                            <b>{{ tr('profile.inline_bot') if bot.role == 'inline' else (tr('profile.helper_bot') if bot.role == 'helper' else tr('profile.community_bot')) }}</b>
+                            <p>@{{ bot.username or tr('profile.not_set') }}{% if bot.error %} · {{ bot.error }}{% endif %}</p>
+                        </div>
+                        <span class="status-badge {{ 'ok' if bot.configured and bot.username and bot.valid_username else 'bad' }}">{{ tr('profile.ready') if bot.configured and bot.username and bot.valid_username else tr('profile.missing') }}</span>
+                    </div>
+                    {% endfor %}
+                    <div class="status-row">
+                        <div>
+                            <b>{{ tr('profile.folder') }}</b>
+                            <p>{{ startup.folder.error or tr('profile.dialog_folder') }}</p>
+                        </div>
+                        <span class="status-badge {{ 'ok' if startup.folder.ok else 'warn' }}">{{ tr('profile.ready') if startup.folder.ok else tr('profile.check') }}</span>
+                    </div>
+                    <div class="status-row">
+                        <div>
+                            <b>{{ tr('profile.last_sync') }}</b>
+                            <p>{{ startup.last_sync_error or tr('profile.sync_error_none') }}</p>
+                        </div>
+                        <span class="status-badge {{ 'ok' if not startup.last_sync_error else 'warn' }}">{{ startup.last_sync_at or tr('profile.pending') }}</span>
+                    </div>
+                </div>
+            </article>
+        </section>
+
+        <section class="grid2">
+            <article class="card panel">
+                <p class="eyebrow">{{ tr('home.whats_new') }}</p>
+                <h2>{{ tr('home.current_build') }}</h2>
+                <div class="news-stack">
+                    <div class="news-box"><b>{{ tr('home.inline_forms') }}</b><p>{{ tr('home.inline_forms_desc') }}</p></div>
+                    <div class="news-box"><b>{{ tr('home.module_cards') }}</b><p>{{ tr('home.module_cards_desc') }}</p></div>
+                    <div class="news-box"><b>{{ tr('home.account_level') }}</b><p>{{ tr('home.account_level_desc') }}</p></div>
+                </div>
+            </article>
+            <article class="card panel">
+                <p class="eyebrow">{{ tr('home.quick_actions') }}</p>
+                <h2>{{ tr('home.actions') }}</h2>
+                <div class="quick">
+                    <a href="/profile">{{ tr('nav.profile') }}</a>
+                    <a href="/browser">{{ tr('nav.modules') }}</a>
+                    <a href="/activity">{{ tr('nav.activity') }}</a>
+                    <a href="/scanner">{{ tr('nav.scanner') }}</a>
+                </div>
+            </article>
+        </section>
+    </div>
 </main>
 
 <script src="/static/matrix.js"></script>

@@ -32,6 +32,20 @@ document.querySelectorAll(".mini-menu a").forEach((a) => (a.onclick = () => open
   }
 })();
 
+(function warmPageLinks() {
+  const seen = new Set();
+  const links = [...document.querySelectorAll('a[href^="/"]')];
+  for (const link of links) {
+    const href = link.getAttribute("href");
+    if (!href || href.startsWith("/logout") || seen.has(href)) continue;
+    seen.add(href);
+    const preload = document.createElement("link");
+    preload.rel = "prefetch";
+    preload.href = href;
+    document.head.appendChild(preload);
+  }
+})();
+
 function activateTab(id) {
   if (!id) return;
   const btn = document.querySelector(`[data-tab="${id}"]`);
