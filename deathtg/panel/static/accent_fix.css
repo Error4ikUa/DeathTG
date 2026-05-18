@@ -139,3 +139,21 @@ body[data-accent] .mini-menu{
     radial-gradient(120% 140% at 100% 0%,rgba(var(--accent-rgb),.10),rgba(0,0,0,0) 58%),
     rgba(3,20,11,.94)!important;
 }
+body[data-accent="dark"] .mini-menu{
+  background:
+    radial-gradient(120% 140% at 100% 0%,rgba(154,166,186,.10),rgba(0,0,0,0) 58%),
+    linear-gradient(180deg,rgba(14,17,23,.96),rgba(8,11,16,.95))!important;
+  border-color:rgba(154,166,186,.26)!important;
+}
+body[data-accent="dark"] nav a,
+body[data-accent="dark"] .quick a,
+body[data-accent="dark"] .logout{
+  background:rgba(255,255,255,.026)!important;
+  border-color:rgba(255,255,255,.08)!important;
+}
+body[data-accent="dark"] nav a.active,
+body[data-accent="dark"] nav a:hover,
+body[data-accent="dark"] .quick a:hover{
+  background:linear-gradient(135deg,rgba(154,166,186,.16),rgba(255,255,255,.045))!important;
+  border-color:rgba(154,166,186,.46)!important;
+}

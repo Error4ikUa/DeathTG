@@ -705,7 +705,7 @@ TEXTS: dict[str, dict[str, str]] = {
         "profile.remote": "\u0423\u0434\u0430\u043b\u0451\u043d\u043d\u044b\u0439",
         "profile.role_user": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c",
         "profile.role_admin": "\u0410\u0434\u043c\u0438\u043d",
-        "profile.role_developer": "\u0414\u0435\u0432\u0435\u043b\u043e\u043f\u0435\u0440",
+        "profile.role_developer": "\u0420\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a",
         "profile.accent_green": "\u0417\u0435\u043b\u0451\u043d\u0430\u044f",
         "profile.accent_blue": "\u0421\u0438\u043d\u044f\u044f",
         "profile.accent_red": "\u041a\u0440\u0430\u0441\u043d\u0430\u044f",
