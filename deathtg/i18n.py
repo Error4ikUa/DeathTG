@@ -59,9 +59,9 @@ TEXTS: dict[str, dict[str, str]] = {
         "home.quick_actions": "Quick actions",
         "home.actions": "Actions",
         "home.system_updates": "System",
-        "home.system_desc": "Updates and restart",
+        "home.system_desc": "Центр обновления",
         "home.runtime": "Runtime",
-        "home.runtime_desc": "Bots, folder sync and current startup health.",
+        "home.runtime_desc": "Состояние ботов, синхронизации и готовность всей системы.",
         "home.update_branch": "Branch",
         "home.update_current": "Current",
         "home.update_remote": "Remote",
@@ -79,7 +79,7 @@ TEXTS: dict[str, dict[str, str]] = {
         "profile.commands": "Commands",
         "profile.age": "Age",
         "profile.about": "About",
-        "profile.about_fallback": "DeathTG userbot online. Configure profile, role, prefix, bot sync, and modules from one panel.",
+        "profile.about_fallback": "DeathTG уже в сети. Управляйте стилем, доступом и модулями из одной чистой панели.",
         "profile.identity": "Identity",
         "profile.username": "Username",
         "profile.id": "ID",
@@ -131,12 +131,12 @@ TEXTS: dict[str, dict[str, str]] = {
         "profile.no_devices_desc": "Create a secure link for your phone, laptop or another browser.",
         "profile.system": "System",
         "profile.update_restart": "Update and restart",
-        "profile.safe_update_flow": "Safe update flow",
-        "profile.safe_update_desc": "DeathTG checks remote git state, notifies you in Telegram when a new build appears, then lets you apply and restart only on demand.",
+        "profile.safe_update_flow": "Безопасный релизный поток",
+        "profile.safe_update_desc": "DeathTG следит за новой сборкой, пишет вам в Telegram и обновляется только после вашего подтверждения.",
         "profile.apply_update": "Apply update",
         "profile.restart": "Restart DeathTG",
         "profile.edit_modal_title": "Edit profile",
-        "profile.edit_modal_subtitle": "Avatar, role and prefix",
+        "profile.edit_modal_subtitle": "Настройки профиля и безопасный доступ",
         "profile.avatar": "Avatar",
         "profile.avatar_preview_note": "Preview uses the exact crop selection.",
         "profile.crop_studio": "Open crop studio",
@@ -151,10 +151,10 @@ TEXTS: dict[str, dict[str, str]] = {
         "profile.info_text": "Info text",
         "profile.save": "Save profile",
         "profile.save_changes": "Save changes",
-        "profile.accent_help": "Green, blue, red, gold, purple and dark themes are available. Admin and developer roles are confirmed only through the DeathTG community bot.",
-        "profile.info_help": "This text is used by the `.info` card caption. Site saves it as-is, DeathTG uses it in Telegram output.",
+        "profile.accent_help": "Выберите визуальный акцент панели. Повышенные роли подтверждаются только через community-бота DeathTG.",
+        "profile.info_help": "Этот текст станет основной подписью вашей карточки `.info`. Плейсхолдеры подставляются автоматически.",
         "profile.info_preview": "Info preview",
-        "profile.info_preview_desc": "This is how your current `.info` text will look after placeholders are filled in.",
+        "profile.info_preview_desc": "Предпросмотр текущей карточки `.info` после подстановки плейсхолдеров.",
         "profile.style_summary": "Control room",
         "profile.appearance_block": "Appearance",
         "profile.current_theme": "Theme",
@@ -165,15 +165,17 @@ TEXTS: dict[str, dict[str, str]] = {
         "profile.access_mode_local": "Local panel only",
         "profile.activity_hint": "Activity stays separate",
         "profile.activity_hint_desc": "Usage charts and top modules now live in the Activity page so the profile stays cleaner and faster.",
-        "profile.one_link_one_device": "One secure link is valid for one device login only.",
-        "profile.share_warning": "Do not forward secure links to other people. DeathTG treats them as private access keys.",
+        "profile.one_link_one_device": "Одна безопасная ссылка работает только для одного устройства.",
+        "profile.share_warning": "Не передавайте безопасные ссылки другим людям. DeathTG считает их приватными ключами доступа.",
         "profile.link_ready": "Secure link ready",
         "profile.link_ready_desc": "Open it on the target device. After the first successful login this exact link becomes invalid.",
-        "profile.language_en_desc": "English interface and bot copy",
-        "profile.language_ru_desc": "Русский интерфейс и текст бота",
-        "profile.role_user_desc": "Base access without elevated controls",
-        "profile.role_admin_desc": "Advanced maintenance and control",
-        "profile.role_developer_desc": "Extended build and module authority",
+        "profile.language_en_desc": "Английский интерфейс",
+        "profile.language_ru_desc": "Русский интерфейс",
+        "profile.role_user_desc": "Базовый режим профиля",
+        "profile.role_admin_desc": "Расширенный режим управления",
+        "profile.role_developer_desc": "Режим сборки и модулей",
+        "profile.role_choice_help": "Роли меняются только после подтверждения через community-бота DeathTG.",
+        "profile.language_choice_help": "Выбранный язык используется и в панели, и в боте.",
         "profile.info_default_template": "⚙️ {title}\n👤 {username}\n✨ {role}\n• Prefix: {prefix}\n• Level: {level}\n• Uses: {uses}",
         "profile.crop_image": "Crop image",
         "profile.choose_image": "Choose image",
@@ -737,3 +739,82 @@ def translate(key: str, lang: str | None = None, **kwargs) -> str:
 def jinja_translate(context, key: str, **kwargs) -> str:
     lang = context.get("lang") or "en"
     return translate(key, lang, **kwargs)
+
+
+TEXTS["en"].update({
+    "home.system_desc": "Update center",
+    "home.runtime_desc": "Bot status, sync health and current system readiness.",
+    "profile.about_fallback": "DeathTG is online. Tune your identity, secure access and modules from one clean control panel.",
+    "profile.safe_update_flow": "Safe release flow",
+    "profile.safe_update_desc": "DeathTG watches the remote build, warns you in Telegram and updates only after your confirmation.",
+    "profile.edit_modal_subtitle": "Profile settings and secure access",
+    "profile.edit_modal_note": "Shape your profile, choose the panel look and issue one-device secure links without leaving this editor.",
+    "profile.language_en_desc": "English interface",
+    "profile.language_ru_desc": "Russian interface",
+    "profile.role_user_desc": "Base profile mode",
+    "profile.role_admin_desc": "Extended control mode",
+    "profile.role_developer_desc": "Build and module mode",
+    "profile.role_choice_help": "Roles are changed only after confirmation through the DeathTG community bot.",
+    "profile.language_choice_help": "The selected language is used both in the panel and in the bot.",
+    "profile.accent_help": "Choose the visual accent for your panel. Elevated roles are confirmed only through the DeathTG community bot.",
+    "profile.info_help": "This text becomes the main caption for your `.info` card. Placeholders are filled automatically in Telegram.",
+    "profile.info_preview_desc": "Preview of the current `.info` card after placeholders are filled in.",
+    "profile.info_default_template": "✦ {title}\n@{username}\nRole: {role}\nPrefix: {prefix}\nLevel: {level}\nUses: {uses}",
+    "profile.one_link_one_device": "One secure link works for one device only.",
+    "profile.share_warning": "Do not share secure links with anyone else. DeathTG treats them as private access keys.",
+})
+
+TEXTS["ru"].update({
+    "home.system_desc": "Центр обновления",
+    "home.runtime_desc": "Состояние ботов, синхронизации и готовность всей системы.",
+    "profile.about_fallback": "DeathTG уже в сети. Управляйте стилем, доступом и модулями из одной чистой панели.",
+    "profile.safe_update_flow": "Безопасный релизный поток",
+    "profile.safe_update_desc": "DeathTG следит за новой сборкой, пишет вам в Telegram и обновляется только после вашего подтверждения.",
+    "profile.edit_modal_subtitle": "Настройки профиля и безопасный доступ",
+    "profile.edit_modal_note": "Здесь можно настроить внешний вид профиля, язык панели и безопасные ссылки для других устройств.",
+    "profile.language_en_desc": "Английский интерфейс",
+    "profile.language_ru_desc": "Русский интерфейс",
+    "profile.role_user_desc": "Базовый режим профиля",
+    "profile.role_admin_desc": "Расширенный режим управления",
+    "profile.role_developer_desc": "Режим сборки и модулей",
+    "profile.role_choice_help": "Роли меняются только после подтверждения через community-бота DeathTG.",
+    "profile.language_choice_help": "Выбранный язык используется и в панели, и в боте.",
+    "profile.accent_help": "Выберите визуальный акцент панели. Повышенные роли подтверждаются только через community-бота DeathTG.",
+    "profile.info_help": "Этот текст станет основной подписью вашей карточки `.info`. Плейсхолдеры подставляются автоматически.",
+    "profile.info_preview_desc": "Предпросмотр текущей карточки `.info` после подстановки плейсхолдеров.",
+    "profile.info_default_template": "✦ {title}\n@{username}\nРоль: {role}\nПрефикс: {prefix}\nУровень: {level}\nИспользований: {uses}",
+    "profile.one_link_one_device": "Одна безопасная ссылка работает только для одного устройства.",
+    "profile.share_warning": "Не передавайте безопасные ссылки другим людям. DeathTG считает их приватными ключами доступа.",
+})
+
+
+def _looks_mojibake(value: str) -> bool:
+    if not value or "\\u" in value:
+        return False
+    broken = sum(1 for ch in value if 0x00C0 <= ord(ch) <= 0x00FF)
+    return broken >= max(4, len(value) // 6)
+
+
+def _repair_mojibake(value: str) -> str:
+    if not _looks_mojibake(value):
+        return value
+    try:
+        repaired = value.encode("latin1").decode("cp1251")
+    except Exception:
+        return value
+    repaired_cyr = sum(1 for ch in repaired if 0x0400 <= ord(ch) <= 0x04FF)
+    original_cyr = sum(1 for ch in value if 0x0400 <= ord(ch) <= 0x04FF)
+    return repaired if repaired_cyr > original_cyr else value
+
+
+def _normalize_texts(payload):
+    if isinstance(payload, dict):
+        return {key: _normalize_texts(value) for key, value in payload.items()}
+    if isinstance(payload, list):
+        return [_normalize_texts(value) for value in payload]
+    if isinstance(payload, str):
+        return _repair_mojibake(payload)
+    return payload
+
+
+TEXTS = _normalize_texts(TEXTS)

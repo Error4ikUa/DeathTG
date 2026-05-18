@@ -144,6 +144,20 @@ class CoreMod(Module):
             parse_mode="html",
         )
 
+    @command("repair", description="Run DeathTG repair flow", usage=".repair", security="owner")
+    async def repair_cmd(self, event, args):
+        await event.edit("<b>Running DeathTG repair flow...</b>", parse_mode="html")
+        sync_status = await run_startup_sync(self.app.client)
+        integrity_status = await check_runtime_integrity(self.app.client, notify=False)
+        sync_report = html.escape(render_integrity_report(sync_status))
+        integrity_report = html.escape(render_integrity_report(integrity_status))
+        await event.edit(
+            "<b>DeathTG repair finished.</b>\n"
+            "<b>Sync</b>\n<pre>" + sync_report[:1700] + "</pre>\n"
+            "<b>Integrity</b>\n<pre>" + integrity_report[:1700] + "</pre>",
+            parse_mode="html",
+        )
+
     @command("logs", description="Show recent DeathTG logs", usage=".logs [lines]", security="owner")
     async def logs_cmd(self, event, args):
         lines_to_show = 80
