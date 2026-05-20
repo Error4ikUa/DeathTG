@@ -21,13 +21,17 @@ class DeathTGConfig:
 
 
 def load_config() -> DeathTGConfig:
-    load_dotenv(ENV_PATH)
+    load_dotenv(ENV_PATH, override=True)
+    from deathtg.config_manager import load_managed_config, sync_config
 
-    api_id_raw = os.getenv("API_ID", "").strip()
-    api_hash = os.getenv("API_HASH", "").strip()
-    session_name = os.getenv("SESSION_NAME", "deathtg").strip() or "deathtg"
-    prefix = os.getenv("COMMAND_PREFIX", ".").strip() or "."
-    owner_raw = os.getenv("OWNER_ID", "").strip()
+    sync_config(repair=False)
+    managed = load_managed_config()
+
+    api_id_raw = str(managed.get("api_id") or os.getenv("API_ID", "")).strip()
+    api_hash = str(managed.get("api_hash") or os.getenv("API_HASH", "")).strip()
+    session_name = str(managed.get("session_name") or os.getenv("SESSION_NAME", "deathtg")).strip() or "deathtg"
+    prefix = str(managed.get("command_prefix") or os.getenv("COMMAND_PREFIX", ".")).strip() or "."
+    owner_raw = str(managed.get("owner_id") or os.getenv("OWNER_ID", "")).strip()
 
     if not api_id_raw or not api_hash:
         raise RuntimeError(
