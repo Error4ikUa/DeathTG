@@ -5,12 +5,12 @@ import sqlite3
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from deathtg.config import RUNTIME_DIR
 
 STATE_DB = RUNTIME_DIR / "state.db"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def now_iso() -> str:
@@ -47,6 +47,20 @@ SCHEMA = (
         token_present INTEGER DEFAULT 0,
         status TEXT,
         error TEXT,
+        last_checked TEXT,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS telegram_resources (
+        resource_key TEXT PRIMARY KEY,
+        resource_type TEXT NOT NULL,
+        title TEXT,
+        username TEXT,
+        resource_id TEXT,
+        status TEXT,
+        error TEXT,
+        metadata_json TEXT,
         last_checked TEXT,
         updated_at TEXT NOT NULL
     )
@@ -163,6 +177,12 @@ def event(
         conn.close()
 
 
+def _table_columns(table: str) -> set[str]:
+    ensure_state_db()
+    with connect() as conn:
+        return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
 def upsert(
     table: str,
     key_column: str,
@@ -184,10 +204,7 @@ def upsert(
             columns = [key_column, *clean.keys()]
             values = [key_value, *clean.values()]
             placeholders = ",".join("?" for _ in columns)
-            conn.execute(
-                f"INSERT INTO {table}({','.join(columns)}) VALUES ({placeholders})",
-                values,
-            )
+            conn.execute(f"INSERT INTO {table}({','.join(columns)}) VALUES ({placeholders})", values)
             change = StateChange(table, key_value, "insert", list(clean.keys()))
             event(event_type or f"{table}.insert", f"Inserted {table}:{key_value}", entity_type=table, entity_id=key_value, details=asdict(change), conn=conn)
             conn.commit()
@@ -205,22 +222,13 @@ def upsert(
 
         if updates:
             assignments = ", ".join(f"{field}=?" for field in updates)
-            conn.execute(
-                f"UPDATE {table} SET {assignments} WHERE {key_column}=?",
-                [*updates.values(), key_value],
-            )
+            conn.execute(f"UPDATE {table} SET {assignments} WHERE {key_column}=?", [*updates.values(), key_value])
             change = StateChange(table, key_value, "update", changed)
             event(event_type or f"{table}.update", f"Updated {table}:{key_value}", entity_type=table, entity_id=key_value, details=asdict(change), conn=conn)
         else:
             change = StateChange(table, key_value, "noop", [])
         conn.commit()
         return change
-
-
-def _table_columns(table: str) -> set[str]:
-    ensure_state_db()
-    with connect() as conn:
-        return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
 
 
 def set_setting(key: str, value: Any) -> StateChange:
@@ -232,14 +240,39 @@ def set_health(check_key: str, status: str, message: str = "", details: Any = No
         "health_checks",
         "check_key",
         check_key,
-        {
-            "status": status,
-            "message": message,
-            "details_json": _json(details or {}),
-            "checked_at": now_iso(),
-        },
+        {"status": status, "message": message, "details_json": _json(details or {}), "checked_at": now_iso()},
         preserve_existing=False,
         event_type="health.update",
+    )
+
+
+def set_resource(
+    resource_key: str,
+    resource_type: str,
+    *,
+    title: str = "",
+    username: str = "",
+    resource_id: str = "",
+    status: str = "unknown",
+    error: str = "",
+    metadata: Any = None,
+) -> StateChange:
+    return upsert(
+        "telegram_resources",
+        "resource_key",
+        resource_key,
+        {
+            "resource_type": resource_type,
+            "title": title,
+            "username": username.lstrip("@") if username else "",
+            "resource_id": str(resource_id or ""),
+            "status": status,
+            "error": error,
+            "metadata_json": _json(metadata or {}),
+            "last_checked": now_iso(),
+        },
+        preserve_existing=True,
+        event_type="resource.update",
     )
 
 
