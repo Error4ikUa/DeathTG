@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import os
 import signal
 import socket
@@ -21,6 +22,7 @@ from deathtg.panel_access import (
 )
 from deathtg.server_bootstrap import ensure_server_env, update_env_values
 from deathtg.setup_access import setup_link
+from deathtg.startup_core import print_report, ready_to_start_userbot, run_preflight
 from deathtg.ui import CONSOLE_BANNER
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -33,6 +35,17 @@ userbot_process = None
 supervisor_stop = threading.Event()
 last_start_attempt = 0.0
 MIN_RESTART_INTERVAL = 5.0
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="DeathTG full stack launcher")
+    parser.add_argument("--repair", action="store_true", help="repair runtime layout/config before startup")
+    parser.add_argument("--safe", action="store_true", help="start without userbot/modules; panel stays available")
+    parser.add_argument("--no-panel", action="store_true", help="start userbot supervisor only")
+    parser.add_argument("--no-modules", action="store_true", help="disable third-party modules for this run")
+    parser.add_argument("--debug", action="store_true", help="use verbose uvicorn logging")
+    parser.add_argument("--preflight-only", action="store_true", help="run startup checks and exit")
+    return parser.parse_args()
 
 
 def running_in_termux() -> bool:
@@ -60,25 +73,10 @@ def stop_userbot(timeout: float = 8.0) -> None:
         userbot_process = None
 
 
-def _session_path_from_env() -> Path:
+def _userbot_ready() -> bool:
     if ENV_PATH.exists():
         load_dotenv(ENV_PATH, override=True)
-    session_name = os.getenv("SESSION_NAME", "deathtg").strip() or "deathtg"
-    return ROOT_DIR / f"{session_name}.session"
-
-
-def _userbot_ready() -> bool:
-    if not ENV_PATH.exists():
-        return False
-    load_dotenv(ENV_PATH, override=True)
-    login_pending = (os.getenv("LOGIN_PENDING", "0").strip().lower() or "0") in {"1", "true", "yes", "on"}
-    if login_pending:
-        return False
-    api_id = os.getenv("API_ID", "").strip()
-    api_hash = os.getenv("API_HASH", "").strip()
-    if not api_id or not api_hash:
-        return False
-    return _session_path_from_env().exists()
+    return ready_to_start_userbot()
 
 
 def ensure_userbot_running() -> None:
@@ -105,10 +103,10 @@ def supervisor_loop() -> None:
         supervisor_stop.wait(2.0)
 
 
-def cleanup(signum, frame):
+def cleanup(signum=None, frame=None):
     supervisor_stop.set()
     stop_userbot()
-    sys.exit(0)
+    raise SystemExit(0)
 
 
 def clear_console() -> None:
@@ -157,19 +155,45 @@ def normalize_panel_port() -> int:
     return chosen_port
 
 
-def run_panel() -> None:
+def run_panel(debug: bool = False) -> None:
     host = effective_panel_bind_host()
     port = normalize_panel_port()
-    uvicorn.run("deathtg.panel.clean_app:app", host=host, port=port, log_level="warning", access_log=False)
+    uvicorn.run(
+        "deathtg.panel.clean_app:app",
+        host=host,
+        port=port,
+        log_level="info" if debug else "warning",
+        access_log=debug,
+    )
 
-if __name__ == "__main__":
+
+def main() -> int:
+    args = parse_args()
     if running_in_termux():
         print("DeathTG does not support Termux.")
         print("Use a normal Linux server, VPS, or desktop Python environment instead.")
-        sys.exit(1)
+        return 1
+
     ensure_server_env()
-    normalize_panel_port()
-    wsl_publish = ensure_wsl_public_access(request_elevation=True)
+    report = run_preflight(
+        repair=args.repair,
+        safe=args.safe,
+        no_panel=args.no_panel,
+        no_modules=args.no_modules,
+    )
+    print_report(report)
+    if args.preflight_only:
+        return 0 if report.ok else 1
+    if not report.ok:
+        print("Startup stopped. Run: python dtg.py --repair")
+        return 1
+
+    if not args.no_panel:
+        normalize_panel_port()
+        wsl_publish = ensure_wsl_public_access(request_elevation=True)
+    else:
+        wsl_publish = {"message": "panel disabled"}
+
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
 
@@ -177,13 +201,15 @@ if __name__ == "__main__":
     print(CONSOLE_BANNER)
     print()
     print("DeathTG full stack is starting...")
-    print(f"Panel (this device): {panel_local_url()}")
-    if panel_remote_access_ready():
-        print(f"Panel (phone / PC): {panel_url()}")
-    elif running_in_wsl():
-        publish_message = str(wsl_publish.get("message") or "").strip()
-        if publish_message:
-            print(f"Panel (phone / PC): {publish_message}")
+    print(f"Mode: {report.mode}")
+    if not args.no_panel:
+        print(f"Panel (this device): {panel_local_url()}")
+        if panel_remote_access_ready():
+            print(f"Panel (phone / PC): {panel_url()}")
+        elif running_in_wsl():
+            publish_message = str(wsl_publish.get("message") or "").strip()
+            if publish_message:
+                print(f"Panel (phone / PC): {publish_message}")
     if not _userbot_ready():
         print(f"First run setup link: {setup_link()}")
     print("First run: open setup, enter API_ID/API_HASH, scan the QR code in Telegram, then enter 2FA only if Telegram asks for it.")
@@ -192,13 +218,27 @@ if __name__ == "__main__":
         print("HTTPS is not enabled yet. For a real public site with a certificate, set a domain and PANEL_PUBLIC_URL.")
     if running_in_wsl():
         print("WSL note: DeathTG is trying to publish the panel automatically. If Windows shows an admin prompt, allow it for phone and LAN access.")
-    print("Userbot: will auto-start after setup and session creation.")
+    print("Userbot: will auto-start after setup and session creation." if not args.safe else "Safe mode: userbot/modules are disabled.")
     print("Git updates are not auto-applied. DeathTG will notify you in Telegram when a new update appears.")
-    supervisor_thread = threading.Thread(target=supervisor_loop, name="dtg-userbot-supervisor", daemon=True)
-    supervisor_thread.start()
+
+    supervisor_thread = None
+    if not args.safe:
+        supervisor_thread = threading.Thread(target=supervisor_loop, name="dtg-userbot-supervisor", daemon=True)
+        supervisor_thread.start()
+
     try:
-        run_panel()
+        if args.no_panel:
+            while True:
+                time.sleep(1)
+        else:
+            run_panel(debug=args.debug)
     finally:
         supervisor_stop.set()
-        supervisor_thread.join(timeout=2.0)
+        if supervisor_thread:
+            supervisor_thread.join(timeout=2.0)
         stop_userbot()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
