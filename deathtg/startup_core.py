@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Iterable
 
 from deathtg.config import DOWNLOADS_DIR, ENV_PATH, MODULES_DIR, ROOT_DIR, RUNTIME_DIR
+from deathtg.config_manager import load_managed_config, sync_config
 from deathtg.server_bootstrap import ensure_server_env, parse_env_file, update_env_values
+from deathtg.state_db import ensure_state_db, event, set_health, sync_settings_from_config
 
 LOGS_DIR = ROOT_DIR / "logs"
 ASSETS_DIR = ROOT_DIR / "assets"
@@ -74,9 +76,15 @@ def ensure_runtime_layout() -> None:
 def run_preflight(*, repair: bool = False, safe: bool = False, no_panel: bool = False, no_modules: bool = False) -> StartupReport:
     issues: list[StartupIssue] = []
     ensure_runtime_layout()
+    ensure_state_db()
 
     if repair or not ENV_PATH.exists():
         ensure_server_env(path=ENV_PATH)
+
+    config_status = sync_config(repair=repair)
+    managed_config = load_managed_config()
+    sync_settings_from_config(managed_config)
+    set_health("config", "ok" if config_status.ok else "error", "Config manager validation", asdict(config_status))
 
     env = parse_env_file(ENV_PATH)
 
@@ -145,6 +153,15 @@ def run_preflight(*, repair: bool = False, safe: bool = False, no_panel: bool = 
         issues=issues,
     )
     report.save()
+    set_health("startup", "ok" if report.ok else "error", f"Startup preflight: {mode}", asdict(report))
+    event(
+        "startup.preflight",
+        f"Startup preflight finished: {mode}",
+        level="info" if report.ok else "error",
+        entity_type="startup",
+        entity_id=mode,
+        details=asdict(report),
+    )
     return report
 
 
