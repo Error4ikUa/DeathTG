@@ -10,7 +10,7 @@ from typing import Any
 from deathtg.config import RUNTIME_DIR
 
 STATE_DB = RUNTIME_DIR / "state.db"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def now_iso() -> str:
@@ -78,6 +78,20 @@ SCHEMA = (
         antivirus_status TEXT,
         error TEXT,
         last_loaded TEXT,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS antivirus_reports (
+        module_key TEXT PRIMARY KEY,
+        verdict TEXT,
+        severity TEXT,
+        score INTEGER DEFAULT 0,
+        allowed INTEGER DEFAULT 1,
+        trusted INTEGER DEFAULT 0,
+        findings_json TEXT,
+        pretty TEXT,
+        scanned_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )
     """,
@@ -273,6 +287,36 @@ def set_resource(
         },
         preserve_existing=True,
         event_type="resource.update",
+    )
+
+
+def set_antivirus_report(
+    module_key: str,
+    *,
+    verdict: str,
+    severity: str,
+    score: int,
+    allowed: bool,
+    trusted: bool,
+    findings: Any,
+    pretty: str,
+) -> StateChange:
+    return upsert(
+        "antivirus_reports",
+        "module_key",
+        module_key,
+        {
+            "verdict": verdict,
+            "severity": severity,
+            "score": int(score or 0),
+            "allowed": 1 if allowed else 0,
+            "trusted": 1 if trusted else 0,
+            "findings_json": _json(findings or []),
+            "pretty": pretty,
+            "scanned_at": now_iso(),
+        },
+        preserve_existing=False,
+        event_type="antivirus.scan",
     )
 
 
