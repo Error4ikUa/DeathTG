@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="{{ lang or 'en' }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DeathTG Health</title>
+    <link rel="stylesheet" href="/static/clean.css">
+    <link rel="stylesheet" href="/static/clean_patch.css">
+    <link rel="stylesheet" href="/static/accent_fix.css">
+    <link rel="stylesheet" href="/static/theme_cards.css">
+    <style>
+        .health-shell{display:grid;gap:16px}
+        .health-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+        .health-card{padding:18px;border-radius:20px;background:rgba(255,255,255,.025);border:1px solid rgba(var(--accent-rgb),.14)}
+        .health-card span{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em;font-weight:800}
+        .health-card b{display:block;font-size:28px;margin-top:7px}
+        .section-card{padding:20px;overflow:hidden}
+        .table-wrap{overflow:auto;border-radius:16px;border:1px solid rgba(var(--accent-rgb),.12)}
+        table{width:100%;border-collapse:collapse;min-width:760px}
+        th,td{padding:12px 13px;border-bottom:1px solid rgba(255,255,255,.06);text-align:left;font-size:13px;vertical-align:top}
+        th{color:var(--muted);font-size:11px;letter-spacing:.08em;text-transform:uppercase;background:rgba(255,255,255,.025)}
+        tr:last-child td{border-bottom:0}
+        .badge{display:inline-flex;align-items:center;border-radius:999px;padding:5px 9px;font-weight:900;font-size:11px;letter-spacing:.06em;text-transform:uppercase;border:1px solid rgba(255,255,255,.14)}
+        .badge.ok,.badge.configured,.badge.clean,.badge.trusted,.badge.installed,.badge.enabled{background:rgba(82,255,139,.1);color:#dfffe8;border-color:rgba(82,255,139,.25)}
+        .badge.warning,.badge.suspicious,.badge.missing,.badge.not_configured,.badge.disabled,.badge.optional{background:rgba(255,184,107,.12);color:#ffebb9;border-color:rgba(255,184,107,.35)}
+        .badge.error,.badge.blocked,.badge.danger,.badge.dangerous,.badge.invalid,.badge.missing_config,.badge.missing_session{background:rgba(255,79,117,.12);color:#ffe2e9;border-color:rgba(255,79,117,.34)}
+        .muted{color:var(--muted)}
+        .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;white-space:pre-wrap;max-width:520px}
+        .tabs{display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 12px}
+        .tabs a{padding:8px 11px;border-radius:999px;background:rgba(255,255,255,.03);border:1px solid rgba(var(--accent-rgb),.12);color:var(--text);text-decoration:none;font-size:12px;font-weight:800}
+        @media(max-width:1100px){.health-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+        @media(max-width:700px){.health-grid{grid-template-columns:1fr}.section-card{padding:14px}table{min-width:680px}}
+    </style>
+</head>
+<body class="theme-main" data-accent="{{ profile.accent if profile is defined else 'blue' }}">
+<canvas id="matrix"></canvas>
+<button class="menu-btn" id="menuToggle">DTG</button>
+<aside class="mini-menu" id="drawer">
+    <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>System Health</span></div></div>
+    <nav>
+        <a href="/">News</a>
+        <a href="/profile">Profile</a>
+        <a href="/activity">Activity</a>
+        <a href="/browser">Modules</a>
+        <a href="/scanner">Scanner</a>
+        <a class="active" href="/health">Health</a>
+    </nav>
+    <a class="logout" href="/logout">Logout</a>
+</aside>
+<div class="overlay" id="drawerBackdrop"></div>
+<main class="page">
+    <div class="health-shell">
+        <section class="hero card">
+            <div>
+                <p class="eyebrow">DeathTG runtime</p>
+                <h1>Health & State</h1>
+                <p>Живой статус ядра, ботов, ресурсов Telegram, модулей, зависимостей и антивируса.</p>
+            </div>
+            <a class="btn ghost" href="/api/state" target="_blank">JSON API</a>
+        </section>
+
+        <section class="health-grid">
+            <div class="health-card"><span>Health issues</span><b>{{ summary.health_bad }}/{{ summary.health_total }}</b></div>
+            <div class="health-card"><span>Bots issues</span><b>{{ summary.bots_bad }}/{{ summary.bots_total }}</b></div>
+            <div class="health-card"><span>Module issues</span><b>{{ summary.modules_bad }}/{{ summary.modules_total }}</b></div>
+            <div class="health-card"><span>Missing reqs</span><b>{{ summary.requirements_missing }}/{{ summary.requirements_total }}</b></div>
+        </section>
+
+        <section class="card section-card" id="health">
+            <p class="eyebrow">Health checks</p>
+            <div class="table-wrap"><table><thead><tr><th>Check</th><th>Status</th><th>Message</th><th>Checked</th></tr></thead><tbody>
+            {% for item in health %}<tr><td class="mono">{{ item.check_key }}</td><td><span class="badge {{ item.status }}">{{ item.status }}</span></td><td>{{ item.message }}</td><td class="muted">{{ item.checked_at }}</td></tr>{% endfor %}
+            </tbody></table></div>
+        </section>
+
+        <section class="card section-card" id="bots">
+            <p class="eyebrow">Bots</p>
+            <div class="table-wrap"><table><thead><tr><th>Key</th><th>Status</th><th>Token</th><th>Username</th><th>Error</th><th>Checked</th></tr></thead><tbody>
+            {% for bot in bots %}<tr><td class="mono">{{ bot.bot_key }}</td><td><span class="badge {{ bot.status }}">{{ bot.status }}</span></td><td>{{ 'yes' if bot.token_present else 'no' }}</td><td>{{ '@' + bot.username if bot.username else 'not set' }}</td><td>{{ bot.error }}</td><td class="muted">{{ bot.last_checked }}</td></tr>{% endfor %}
+            </tbody></table></div>
+        </section>
+
+        <section class="card section-card" id="resources">
+            <p class="eyebrow">Telegram resources</p>
+            <div class="table-wrap"><table><thead><tr><th>Resource</th><th>Type</th><th>Status</th><th>Title</th><th>Error</th><th>Checked</th></tr></thead><tbody>
+            {% for r in resources %}<tr><td class="mono">{{ r.resource_key }}</td><td>{{ r.resource_type }}</td><td><span class="badge {{ r.status }}">{{ r.status }}</span></td><td>{{ r.title or r.username }}</td><td>{{ r.error }}</td><td class="muted">{{ r.last_checked }}</td></tr>{% endfor %}
+            </tbody></table></div>
+        </section>
+
+        <section class="card section-card" id="modules">
+            <p class="eyebrow">Modules</p>
+            <div class="table-wrap"><table><thead><tr><th>Module</th><th>Status</th><th>Enabled</th><th>Antivirus</th><th>Reqs</th><th>Error</th></tr></thead><tbody>
+            {% for m in modules %}<tr><td><b>{{ m.name or m.module_key }}</b><br><span class="muted mono">{{ m.module_key }}</span></td><td><span class="badge {{ m.status }}">{{ m.status }}</span></td><td>{{ 'yes' if m.enabled else 'no' }}</td><td><span class="badge {{ m.antivirus_status }}">{{ m.antivirus_status or 'unknown' }}</span></td><td>{{ 'yes' if m.has_requirements else 'no' }}</td><td class="mono">{{ m.error }}</td></tr>{% endfor %}
+            </tbody></table></div>
+        </section>
+
+        <section class="card section-card" id="antivirus">
+            <p class="eyebrow">Antivirus reports</p>
+            <div class="table-wrap"><table><thead><tr><th>Module</th><th>Verdict</th><th>Severity</th><th>Score</th><th>Allowed</th><th>Report</th></tr></thead><tbody>
+            {% for a in antivirus %}<tr><td class="mono">{{ a.module_key }}</td><td><span class="badge {{ a.verdict|lower }}">{{ a.verdict }}</span></td><td><span class="badge {{ a.severity }}">{{ a.severity }}</span></td><td>{{ a.score }}</td><td>{{ 'yes' if a.allowed else 'no' }}</td><td class="mono">{{ a.pretty }}</td></tr>{% endfor %}
+            </tbody></table></div>
+        </section>
+
+        <section class="card section-card" id="requirements">
+            <p class="eyebrow">Requirements</p>
+            <div class="table-wrap"><table><thead><tr><th>Module</th><th>Requirement</th><th>Installed</th><th>Error</th></tr></thead><tbody>
+            {% for req in requirements %}<tr><td class="mono">{{ req.module_key }}</td><td class="mono">{{ req.requirement }}</td><td><span class="badge {{ 'ok' if req.installed else 'warning' }}">{{ 'yes' if req.installed else 'no' }}</span></td><td>{{ req.error }}</td></tr>{% endfor %}
+            </tbody></table></div>
+        </section>
+
+        <section class="card section-card" id="events">
+            <p class="eyebrow">Recent events</p>
+            <div class="table-wrap"><table><thead><tr><th>Time</th><th>Level</th><th>Type</th><th>Entity</th><th>Message</th></tr></thead><tbody>
+            {% for e in events %}<tr><td class="muted">{{ e.created_at }}</td><td><span class="badge {{ e.level }}">{{ e.level }}</span></td><td class="mono">{{ e.event_type }}</td><td class="mono">{{ e.entity_type }}:{{ e.entity_id }}</td><td>{{ e.message }}</td></tr>{% endfor %}
+            </tbody></table></div>
+        </section>
+    </div>
+</main>
+<script src="/static/matrix.js"></script>
+<script src="/static/clean.js"></script>
+</body>
+</html>
