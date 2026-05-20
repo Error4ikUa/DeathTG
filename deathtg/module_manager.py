@@ -6,9 +6,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from deathtg.antivirus_manager import classify_report, scan_source
 from deathtg.assets import resolve_module_entry
 from deathtg.config import MODULES_DIR, RUNTIME_DIR
-from deathtg.security import scan_module_source
 from deathtg.state_db import set_health, upsert
 
 MODULE_META_PATH = RUNTIME_DIR / "module_meta.json"
@@ -104,8 +104,8 @@ def inspect_module_path(path: Path, meta_db: dict[str, Any] | None = None) -> Mo
     antivirus_status = "unknown"
     try:
         source = entry.read_text(encoding="utf-8")
-        report = scan_module_source(source, trusted=bool(module_meta.get("verified") or module_meta.get("security_override")))
-        antivirus_status = "trusted" if report.allowed else "blocked"
+        report = scan_source(module_key, source, trusted=bool(module_meta.get("verified") or module_meta.get("security_override")))
+        antivirus_status = classify_report(report)
         if not report.allowed:
             error = report.pretty()
     except Exception as exc:
@@ -135,7 +135,7 @@ def inspect_module_path(path: Path, meta_db: dict[str, Any] | None = None) -> Mo
         module_key=module_key,
         name=str(parsed.get("name") or module_meta.get("name") or module_key),
         status=status,
-        enabled=status != "disabled",
+        enabled=status != "disabled" and status != "blocked",
         path=str(path),
         entry=str(entry),
         source_url=str(module_meta.get("url") or module_meta.get("source_url") or ""),
@@ -197,12 +197,18 @@ def sync_installed_modules() -> list[ModuleState]:
     meta = _read_meta()
     modules: list[ModuleState] = []
     errors: list[str] = []
+    blocked = 0
+    suspicious = 0
     for path in sorted(MODULES_DIR.iterdir(), key=lambda item: item.name.lower()):
         state = inspect_module_path(path, meta)
         if not state:
             continue
         modules.append(state)
         sync_module_state(state)
+        if state.antivirus_status == "blocked":
+            blocked += 1
+        if state.antivirus_status in {"suspicious", "dangerous"}:
+            suspicious += 1
         if state.error:
             errors.append(f"{state.module_key}: {state.error[:180]}")
     set_health(
@@ -210,6 +216,12 @@ def sync_installed_modules() -> list[ModuleState]:
         "ok" if not errors else "warning",
         f"Modules synced: {len(modules)}" if not errors else f"Modules synced with {len(errors)} issue(s)",
         {"modules": [asdict(item) for item in modules], "errors": errors},
+    )
+    set_health(
+        "antivirus",
+        "ok" if not blocked and not errors else "warning",
+        f"Antivirus scanned {len(modules)} module(s), blocked {blocked}, suspicious {suspicious}",
+        {"blocked": blocked, "suspicious": suspicious, "errors": errors},
     )
     return modules
 
