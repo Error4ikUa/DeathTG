@@ -12,6 +12,7 @@ from deathtg.bot_health import sync_bot_checks
 from deathtg.config import DOWNLOADS_DIR, ENV_PATH, MODULES_DIR, ROOT_DIR, RUNTIME_DIR
 from deathtg.config_manager import load_managed_config, sync_config
 from deathtg.module_manager import sync_installed_modules
+from deathtg.requirements_manager import check_requirements
 from deathtg.server_bootstrap import ensure_server_env, parse_env_file, update_env_values
 from deathtg.state_db import ensure_state_db, event, set_health, sync_settings_from_config
 
@@ -90,8 +91,20 @@ def run_preflight(*, repair: bool = False, safe: bool = False, no_panel: bool = 
     bot_checks = sync_bot_checks()
     if not no_modules:
         sync_installed_modules()
+        requirement_statuses = check_requirements()
+        missing_module_reqs = [item for item in requirement_statuses if not item.installed]
+        if missing_module_reqs:
+            issues.append(
+                StartupIssue(
+                    "warning",
+                    "module_requirements_missing",
+                    f"Missing module requirements: {len(missing_module_reqs)}",
+                    "Install from panel or run requirements manager repair",
+                )
+            )
     else:
         set_health("modules", "disabled", "Module sync skipped by --no-modules", {})
+        set_health("requirements", "disabled", "Requirement check skipped by --no-modules", {})
 
     env = parse_env_file(ENV_PATH)
 
