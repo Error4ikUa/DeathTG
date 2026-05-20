@@ -11,6 +11,7 @@ from typing import Iterable
 from deathtg.bot_health import sync_bot_checks
 from deathtg.config import DOWNLOADS_DIR, ENV_PATH, MODULES_DIR, ROOT_DIR, RUNTIME_DIR
 from deathtg.config_manager import load_managed_config, sync_config
+from deathtg.module_manager import sync_installed_modules
 from deathtg.server_bootstrap import ensure_server_env, parse_env_file, update_env_values
 from deathtg.state_db import ensure_state_db, event, set_health, sync_settings_from_config
 
@@ -87,6 +88,10 @@ def run_preflight(*, repair: bool = False, safe: bool = False, no_panel: bool = 
     sync_settings_from_config(managed_config)
     set_health("config", "ok" if config_status.ok else "error", "Config manager validation", asdict(config_status))
     bot_checks = sync_bot_checks()
+    if not no_modules:
+        sync_installed_modules()
+    else:
+        set_health("modules", "disabled", "Module sync skipped by --no-modules", {})
 
     env = parse_env_file(ENV_PATH)
 
