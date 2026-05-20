@@ -1,0 +1,59 @@
+/* DeathTG mobile hardening */
+@media(max-width:900px){
+  html{font-size:15px!important}
+  body{min-width:0!important;overflow-x:hidden!important;background:#030806!important}
+  #matrix{opacity:.42!important}
+  .page{width:100%!important;max-width:100%!important;padding:82px 10px 34px!important;box-sizing:border-box!important}
+  .hero,.card,.panel,.system-card,.runtime-card,.section-card{border-radius:18px!important;box-sizing:border-box!important;max-width:100%!important}
+  .hero{display:grid!important;grid-template-columns:1fr!important;gap:14px!important;padding:18px!important}
+  .hero h1{font-size:clamp(30px,10vw,44px)!important;line-height:.95!important;letter-spacing:-1.6px!important;overflow-wrap:anywhere!important}
+  .hero p{font-size:14px!important;line-height:1.55!important}
+  .menu-btn{position:fixed!important;left:12px!important;top:12px!important;width:48px!important;height:48px!important;border-radius:15px!important;z-index:120!important;box-shadow:0 12px 34px rgba(0,0,0,.42)!important}
+  .mini-menu{position:fixed!important;left:10px!important;right:auto!important;top:72px!important;bottom:auto!important;width:min(292px,calc(100vw - 20px))!important;max-height:calc(100vh - 88px)!important;overflow:auto!important;z-index:110!important;border-radius:20px!important;padding:14px!important}
+  .mini-menu nav{display:grid!important;gap:8px!important}
+  .mini-menu nav a,.logout{min-height:42px!important;display:flex!important;align-items:center!important;border-radius:13px!important}
+  .stats,.health-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important}
+  .stat,.health-card{min-width:0!important;padding:14px!important}
+  .stat span,.health-card span{font-size:11px!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+  .stat b,.health-card b{font-size:22px!important;overflow-wrap:anywhere!important}
+  .grid2,.runtime-grid,.profile-grid,.settings-grid,.dashboard-grid{display:grid!important;grid-template-columns:1fr!important;gap:12px!important}
+  .button-row,.actions,.profile-actions,.quick{display:grid!important;grid-template-columns:1fr!important;gap:9px!important;width:100%!important}
+  .button-row form,.actions form,.profile-actions form{width:100%!important}
+  .btn,button,.ghost,.quick a{width:100%!important;min-height:44px!important;justify-content:center!important;text-align:center!important;box-sizing:border-box!important}
+  input,select,textarea{width:100%!important;max-width:100%!important;box-sizing:border-box!important;font-size:16px!important}
+  .toast{font-size:13px!important;line-height:1.45!important;border-radius:14px!important;padding:12px!important}
+  .module-grid{display:grid!important;grid-template-columns:1fr!important;gap:12px!important}
+  .module-card{padding:13px!important;border-radius:17px!important;min-width:0!important}
+  .module-card img,.module-card .module-image,.module-cover{height:auto!important;aspect-ratio:16/9!important;max-height:170px!important;object-fit:cover!important;border-radius:14px!important}
+  .module-row{grid-template-columns:1fr!important;gap:10px!important;min-width:0!important}
+  .module-row>*{min-width:0!important}
+  .module-row h2,.module-card h2{overflow-wrap:anywhere!important;line-height:1.1!important}
+  .modules-page .module-top{grid-template-columns:1fr!important;padding:16px!important;text-align:left!important}
+  .modules-page .module-top h1{font-size:clamp(32px,11vw,44px)!important}
+  .section-tabs{display:flex!important;gap:8px!important;overflow-x:auto!important;flex-wrap:nowrap!important;padding-bottom:5px!important;scroll-snap-type:x proximity!important}
+  .section-tabs a,.section-tabs button{flex:0 0 auto!important;white-space:nowrap!important;scroll-snap-align:start!important}
+  .modal-card{width:calc(100vw - 20px)!important;max-width:calc(100vw - 20px)!important;max-height:calc(100vh - 34px)!important;overflow:auto!important;padding:16px!important;border-radius:20px!important}
+  .crop-frame{width:100%!important;height:min(68vw,360px)!important;min-height:220px!important}
+  .crop-box{width:min(260px,62vw,76%)!important}
+  .table-wrap{width:100%!important;max-width:100%!important;overflow:auto!important;-webkit-overflow-scrolling:touch!important;border-radius:14px!important}
+  table{min-width:640px!important}
+  th,td{padding:10px!important;font-size:12px!important}
+  .mono{font-size:11px!important;max-width:260px!important;overflow-wrap:anywhere!important;white-space:pre-wrap!important}
+}
+@media(max-width:520px){
+  .page{padding-left:8px!important;padding-right:8px!important;padding-top:78px!important}
+  .stats,.health-grid{grid-template-columns:1fr!important}
+  .hero,.card,.panel,.system-card,.runtime-card,.section-card{padding:14px!important;border-radius:16px!important}
+  .hero h1{font-size:34px!important}
+  .status-row{display:grid!important;grid-template-columns:1fr!important;gap:10px!important;align-items:start!important}
+  .status-badge,.badge{width:max-content!important;max-width:100%!important}
+  .news-box,.update-box,.status-row{padding:12px!important;border-radius:14px!important}
+  .line-chart{height:240px!important}
+  table{min-width:590px!important}
+}
+@media(max-width:380px){
+  .page{padding-left:6px!important;padding-right:6px!important}
+  .hero h1{font-size:30px!important}
+  .menu-btn{width:44px!important;height:44px!important}
+  table{min-width:560px!important}
+}
