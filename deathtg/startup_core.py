@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
+from deathtg.bot_health import sync_bot_checks
 from deathtg.config import DOWNLOADS_DIR, ENV_PATH, MODULES_DIR, ROOT_DIR, RUNTIME_DIR
 from deathtg.config_manager import load_managed_config, sync_config
 from deathtg.server_bootstrap import ensure_server_env, parse_env_file, update_env_values
@@ -85,6 +86,7 @@ def run_preflight(*, repair: bool = False, safe: bool = False, no_panel: bool = 
     managed_config = load_managed_config()
     sync_settings_from_config(managed_config)
     set_health("config", "ok" if config_status.ok else "error", "Config manager validation", asdict(config_status))
+    bot_checks = sync_bot_checks()
 
     env = parse_env_file(ENV_PATH)
 
@@ -115,6 +117,10 @@ def run_preflight(*, repair: bool = False, safe: bool = False, no_panel: bool = 
     login_pending = (env.get("LOGIN_PENDING") or os.getenv("LOGIN_PENDING", "0")).strip().lower() in {"1", "true", "yes", "on"}
     if api_id and api_hash and not login_pending and not _session_exists(env):
         issues.append(StartupIssue("setup", "session_missing", "Telegram session file is missing", "Finish login from web setup"))
+
+    for check in bot_checks:
+        if check.required and check.status != "configured":
+            issues.append(StartupIssue("setup", f"bot_{check.bot_key}_{check.status}", f"{check.label}: {check.error or check.status}", check.recovery))
 
     panel_port = (env.get("PANEL_PORT") or "8080").strip()
     try:
