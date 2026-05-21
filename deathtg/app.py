@@ -18,7 +18,7 @@ from deathtg.community_roles import (
     preferred_community_bot_username,
     write_role_scan_result,
 )
-from deathtg.config import DeathTGConfig, MODULES_DIR, ROOT_DIR, RUNTIME_DIR
+from deathtg.config import DeathTGConfig, ENV_PATH, MODULES_DIR, ROOT_DIR, RUNTIME_DIR
 from deathtg.inline import InlineManager
 from deathtg.loader import ModuleLoader
 from deathtg.metrics import init_metrics, record_command
@@ -36,6 +36,7 @@ from deathtg.startup_state import (
 from deathtg.registry import CommandRegistry, PROTECTED_MODULES
 from deathtg.startup_sync import run_startup_sync
 from deathtg.startup_sync import check_runtime_integrity
+from deathtg.server_bootstrap import update_env_values
 from deathtg.update_manager import (
     apply_update,
     ignore_update,
@@ -162,6 +163,24 @@ class DeathTG:
             except Exception:
                 with contextlib.suppress(Exception):
                     path.unlink()
+        self._mark_profile_session_invalid()
+        update_env_values({"LOGIN_PENDING": "1", "LOGIN_STAGE": "idle"}, path=ENV_PATH)
+        os.environ["LOGIN_PENDING"] = "1"
+        os.environ["LOGIN_STAGE"] = "idle"
+
+    def _mark_profile_session_invalid(self) -> None:
+        RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        path = RUNTIME_DIR / "profile.json"
+        current: dict[str, str] = {}
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    current = data
+            except Exception:
+                current = {}
+        current["ok"] = "0"
+        path.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
 
     async def _bootstrap_services(self) -> None:
         if self.config.safe_mode:
