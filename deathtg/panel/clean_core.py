@@ -54,6 +54,7 @@ from deathtg.profile_store import profile_settings
 from deathtg.registry import CommandRegistry
 from deathtg.security import is_trusted_module_link
 from deathtg.startup_sync import STATUS_PATH
+from deathtg.startup_state import PHASE_SETUP_WAIT_2FA, PHASE_SETUP_WAIT_QR, startup_snapshot
 
 
 PANEL_DIR = Path(__file__).resolve().parent
@@ -230,15 +231,24 @@ async def profile_info() -> dict[str, str]:
     """
     avatar = avatar_url()
     settings = profile_settings()
+    snapshot = startup_snapshot()
+    session_live = bool(snapshot.get("has_session"))
+    phase = str(snapshot.get("phase") or "")
+    health_state = snapshot.get("health_state") if isinstance(snapshot.get("health_state"), dict) else {}
+    last_action = health_state.get("last_action") if isinstance(health_state, dict) else {}
+    session_invalid = isinstance(last_action, dict) and str(last_action.get("kind") or "") == "session_invalid"
     path = RUNTIME_DIR / "profile.json"
     if path.exists():
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
+            ok = str(data.get("ok") or "1")
+            if not session_live or session_invalid or phase in {PHASE_SETUP_WAIT_QR, PHASE_SETUP_WAIT_2FA}:
+                ok = "0"
             return {
                 "name": data.get("name") or "DeathTG User",
                 "username": data.get("username") or "",
                 "id": str(data.get("id") or "unknown"),
-                "ok": data.get("ok") or "1",
+                "ok": ok,
                 "avatar": avatar,
                 "description": settings.get("description", ""),
                 "language": settings.get("language", "en"),
@@ -283,11 +293,13 @@ async def status(profile: dict[str, str]) -> dict:
     uses = await usage_total()
     days = await installed_days()
     level = await level_info()
+    snapshot = startup_snapshot()
+    session_live = bool(snapshot.get("has_session"))
 
     return {
         "config_ok": cfg_ok,
-        "session_file": has_session(),
-        "session_ok": profile.get("ok") == "1",
+        "session_file": session_live,
+        "session_ok": profile.get("ok") == "1" and session_live,
         "prefix": prefix,
         "modules_count": len(loader.loaded),
         "commands_count": len(list(registry.all())),

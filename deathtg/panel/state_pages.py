@@ -6,7 +6,9 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from deathtg.panel.clean_core import has_env, templates
+from deathtg.health_tools import collect_requirement_state, load_health_state, safe_mode_enabled
+from deathtg.panel.clean_core import has_env, profile_info, startup_status, status, templates
+from deathtg.startup_state import startup_snapshot
 from deathtg.state_db import connect, ensure_state_db, recent_events
 
 router = APIRouter()
@@ -117,9 +119,23 @@ async def health_page(request: Request):
     if blocked:
         return blocked
     payload = state_payload()
+    profile = await profile_info()
+    health_state = load_health_state()
     return templates.TemplateResponse(
         "clean_health.html",
-        {"request": request, "lang": "en", "page": "health", **payload},
+        {
+            "request": request,
+            "lang": "en",
+            "page": "health",
+            "profile": profile,
+            "status": await status(profile),
+            "startup": startup_status(),
+            "startup_snapshot": startup_snapshot(),
+            "health_state": health_state,
+            "requirements_state": health_state.get("requirements_state") or collect_requirement_state(),
+            "safe_mode_enabled": safe_mode_enabled(),
+            **payload,
+        },
     )
 
 
