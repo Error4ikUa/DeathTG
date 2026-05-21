@@ -18,7 +18,7 @@ from deathtg.community_roles import (
     preferred_community_bot_username,
     write_role_scan_result,
 )
-from deathtg.config import DeathTGConfig, MODULES_DIR, RUNTIME_DIR
+from deathtg.config import DeathTGConfig, MODULES_DIR, ROOT_DIR, RUNTIME_DIR
 from deathtg.inline import InlineManager
 from deathtg.loader import ModuleLoader
 from deathtg.metrics import init_metrics, record_command
@@ -77,7 +77,23 @@ class DeathTG:
 
     async def start(self) -> None:
         await init_metrics()
-        await self.client.start()
+        await self.client.connect()
+        if not await self.client.is_user_authorized():
+            self._invalidate_broken_session()
+            write_startup_state(
+                PHASE_DEGRADED,
+                "Telegram session is missing or invalid. Open setup and reconnect the account.",
+            )
+            save_health_state(
+                last_action={
+                    "kind": "session_invalid",
+                    "ok": False,
+                    "message": "Stored Telegram session is missing or invalid. DeathTG switched back to setup mode.",
+                }
+            )
+            log.error("Stored Telegram session is missing or invalid; refusing interactive login prompt")
+            await self.client.disconnect()
+            return
 
         me = await self.client.get_me()
         self.owner_premium = bool(getattr(me, "premium", False))
@@ -131,6 +147,21 @@ class DeathTG:
                     await self._integrity_watch_task
             await self.community_bot.stop()
             await self.inline.stop()
+
+    def _invalidate_broken_session(self) -> None:
+        session_path = ROOT_DIR / f"{self.config.session_name}.session"
+        journal_path = ROOT_DIR / f"{self.config.session_name}.session-journal"
+        for path in (session_path, journal_path):
+            if not path.exists():
+                continue
+            backup = path.with_suffix(path.suffix + ".invalid")
+            try:
+                if backup.exists():
+                    backup.unlink()
+                path.replace(backup)
+            except Exception:
+                with contextlib.suppress(Exception):
+                    path.unlink()
 
     async def _bootstrap_services(self) -> None:
         if self.config.safe_mode:
