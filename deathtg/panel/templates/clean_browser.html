@@ -35,7 +35,10 @@
             <h1>{{ tr('browser.hero_title') }}</h1>
             <p>{{ tr('browser.hero_desc') }}</p>
         </div>
-        <input id="moduleSearch" placeholder="{{ tr('browser.search') }}">
+        <div class="module-top-actions">
+            <input id="moduleSearch" placeholder="{{ tr('browser.search') }}">
+            <a class="small ghost" href="/browser?refresh=1#browserPane">Refresh</a>
+        </div>
     </section>
 
     {% if message %}<div class="toast ok">{{ message }}</div>{% endif %}

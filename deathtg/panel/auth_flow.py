@@ -14,6 +14,14 @@ from telethon.tl import functions, types
 
 from deathtg.config import ROOT_DIR
 from deathtg.server_bootstrap import secure_panel_password, secure_panel_secret, update_env_values
+from deathtg.startup_state import (
+    PHASE_FIRST_RUN,
+    PHASE_POST_SETUP_SYNC,
+    PHASE_SETUP_WAIT_2FA,
+    PHASE_SETUP_WAIT_QR,
+    sync_startup_state,
+    write_startup_state,
+)
 
 
 @dataclass
@@ -40,10 +48,17 @@ PENDING: dict[str, PendingLogin] = {}
 
 def _set_login_pending(value: bool) -> None:
     update_env_values({"LOGIN_PENDING": "1" if value else "0"})
+    sync_startup_state()
 
 
 def _set_login_stage(stage: str) -> None:
     update_env_values({"LOGIN_STAGE": stage})
+    if stage in {"waiting_2fa", "2fa_confirmed"}:
+        write_startup_state(PHASE_SETUP_WAIT_2FA, "Telegram asked for the 2FA password.", login_stage=stage)
+    elif stage in {"starting", "waiting_qr", "qr_confirmed", "qr_expired", "qr_error", "idle"}:
+        write_startup_state(PHASE_SETUP_WAIT_QR, "DeathTG is waiting for Telegram QR approval.", login_stage=stage)
+    else:
+        sync_startup_state()
 
 
 def _mask_phone(phone: str) -> str:
@@ -374,6 +389,7 @@ async def finish_login(flow_id: str) -> dict[str, str]:
     await pending.client.disconnect()
     _set_login_pending(False)
     _set_login_stage("ready")
+    write_startup_state(PHASE_POST_SETUP_SYNC, "Telegram session is ready. DeathTG is finishing startup sync.")
     for path in ROOT_DIR.glob(f"{pending.session_name}.session*"):
         try:
             os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
@@ -399,4 +415,5 @@ async def cancel_login(flow_id: str) -> None:
     if not PENDING:
         _set_login_pending(False)
         _set_login_stage("idle")
+        write_startup_state(PHASE_FIRST_RUN, "Login flow was cancelled. Setup is still required.")
         _auth_log("login flow was cancelled")

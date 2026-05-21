@@ -23,6 +23,18 @@ from deathtg.panel_access import (
 from deathtg.server_bootstrap import ensure_server_env, update_env_values
 from deathtg.setup_access import setup_link
 from deathtg.startup_core import print_report, ready_to_start_userbot, run_preflight
+from deathtg.startup_state import (
+    PHASE_DEGRADED,
+    PHASE_FIRST_RUN,
+    PHASE_POST_SETUP_SYNC,
+    PHASE_READY,
+    PHASE_REPAIR,
+    PHASE_SAFE_MODE,
+    PHASE_SETUP_WAIT_2FA,
+    PHASE_SETUP_WAIT_QR,
+    startup_snapshot,
+    sync_startup_state,
+)
 from deathtg.ui import CONSOLE_BANNER
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -194,12 +206,17 @@ def main() -> int:
     else:
         wsl_publish = {"message": "panel disabled"}
 
+    sync_startup_state()
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
 
     clear_console()
     print(CONSOLE_BANNER)
     print()
+    snapshot = startup_snapshot()
+    phase = str(snapshot.get("phase") or PHASE_FIRST_RUN)
+    safe_runtime = args.safe or phase == PHASE_SAFE_MODE
+
     print("DeathTG full stack is starting...")
     print(f"Mode: {report.mode}")
     if not args.no_panel:
@@ -210,19 +227,34 @@ def main() -> int:
             publish_message = str(wsl_publish.get("message") or "").strip()
             if publish_message:
                 print(f"Panel (phone / PC): {publish_message}")
-    if not _userbot_ready():
+    if phase in {PHASE_FIRST_RUN, PHASE_SETUP_WAIT_QR, PHASE_SETUP_WAIT_2FA}:
         print(f"First run setup link: {setup_link()}")
-    print("First run: open setup, enter API_ID/API_HASH, scan the QR code in Telegram, then enter 2FA only if Telegram asks for it.")
-    print("Console never asks for the Telegram code. DeathTG waits for QR approval from the website flow and finishes login in the background.")
+    if phase == PHASE_FIRST_RUN:
+        print("First run: open setup, enter API_ID/API_HASH, scan the QR code in Telegram, then enter 2FA only if Telegram asks for it.")
+        print("Console never asks for the Telegram code. DeathTG waits for QR approval from the website flow and finishes login in the background.")
+    elif phase == PHASE_SETUP_WAIT_QR:
+        print("Setup is active: DeathTG is waiting for Telegram QR approval in the website flow.")
+    elif phase == PHASE_SETUP_WAIT_2FA:
+        print("Setup is active: Telegram requested the 2FA password in the website flow.")
+    elif phase == PHASE_POST_SETUP_SYNC:
+        print("Startup sync is running: DeathTG is recovering Telegram resources and finalizing setup.")
+    elif phase == PHASE_SAFE_MODE:
+        print("Safe mode is enabled: DeathTG will skip external local modules and only boot core runtime.")
+    elif phase == PHASE_DEGRADED:
+        print(f"Startup warning: {snapshot.get('message') or 'DeathTG started in degraded mode.'}")
+    elif phase == PHASE_READY:
+        print("Runtime state: ready.")
+    elif phase == PHASE_REPAIR:
+        print("Runtime state: repair flow is active.")
     if not os.getenv("PANEL_PUBLIC_URL", "").strip():
         print("HTTPS is not enabled yet. For a real public site with a certificate, set a domain and PANEL_PUBLIC_URL.")
     if running_in_wsl():
         print("WSL note: DeathTG is trying to publish the panel automatically. If Windows shows an admin prompt, allow it for phone and LAN access.")
-    print("Userbot: will auto-start after setup and session creation." if not args.safe else "Safe mode: userbot/modules are disabled.")
+    print("Userbot: will auto-start after setup and session creation." if not safe_runtime else "Safe mode: userbot/modules are disabled.")
     print("Git updates are not auto-applied. DeathTG will notify you in Telegram when a new update appears.")
 
     supervisor_thread = None
-    if not args.safe:
+    if not safe_runtime:
         supervisor_thread = threading.Thread(target=supervisor_loop, name="dtg-userbot-supervisor", daemon=True)
         supervisor_thread.start()
 

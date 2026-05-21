@@ -1,10 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import contextlib
 import json
 import subprocess
 from datetime import datetime, timedelta
-from pathlib import Path
 
 from telethon import Button
 
@@ -12,6 +11,7 @@ from deathtg.command import command
 from deathtg.config import RUNTIME_DIR, load_config
 from deathtg.info_card import render_info_card
 from deathtg.metrics import installed_days, level_info, top_modules, usage_by_day, usage_total
+from deathtg.premium_emoji import emoji_line
 from deathtg.profile_store import profile_settings
 from deathtg.startup_sync import STATUS_PATH
 
@@ -65,18 +65,28 @@ def _git_identity() -> tuple[str, str]:
     return version, branch
 
 
-def _info_caption(settings: dict[str, str], payload: dict[str, object]) -> str:
+def _default_info_template(payload: dict[str, object], premium: bool) -> str:
+    role_text = f"Role: {payload['role']}"
+    prefix_text = f"Prefix: <code>{payload['prefix']}</code>"
+    level_text = f"Level: <code>{payload['level']}</code>"
+    uses_text = f"Uses: <code>{payload['uses']}</code>"
+    return (
+        "<blockquote>"
+        f"<b>{emoji_line('user', str(payload['title']), premium)}</b>\n"
+        f"{emoji_line('phone', str(payload['username']), premium)}\n"
+        f"{emoji_line('pirate', role_text, premium)}\n"
+        f"{emoji_line('laptop', prefix_text, premium)}\n"
+        f"{emoji_line('sync', level_text, premium)}\n"
+        f"{emoji_line('inbox', uses_text, premium)}"
+        "</blockquote>"
+    )
+
+
+def _info_caption(settings: dict[str, str], payload: dict[str, object], premium: bool = False) -> str:
     template = (settings.get("info_text") or "").strip()
     if template:
         return template.format_map(_InfoFormatMap(payload))
-    return (
-        f"<blockquote><b>⬛️ {payload['title']}</b>\n"
-        f"⌚️ {payload['username']}\n"
-        f"🏴‍☠️ {payload['role']}\n"
-        f"💻 <b>Prefix</b>: <code>{payload['prefix']}</code>\n"
-        f"⌛️ <b>Level</b>: <code>{payload['level']}</code>\n"
-        f"💾 <b>Uses</b>: <code>{payload['uses']}</code></blockquote>"
-    )
+    return _default_info_template(payload, premium)
 
 
 def _build_buttons() -> list[list[Button]] | None:
@@ -151,7 +161,8 @@ async def info_cmd(event, args: list[str]) -> None:
         "version": version,
         "branch": branch,
     }
-    caption_lines = [_info_caption(settings, payload)]
+    premium = bool(getattr(me, "premium", False))
+    caption_lines = [_info_caption(settings, payload, premium)]
     if inline_missing:
         caption_lines.extend(["", "Inline bot missing. Open Profile in the panel and run sync."])
     buttons = _build_buttons()

@@ -33,6 +33,20 @@ GITHUB_CONTENTS_RE = re.compile(
     r"^https?://api\.github\.com/repos/(?P<owner>[^/]+)/(?P<repo>[^/]+)/contents(?:/(?P<path>[^?]+))?(?:\?ref=(?P<ref>[^#]+))?$",
     re.I,
 )
+GITHUB_TREE_LINK_RE = re.compile(
+    r'/((?P<owner>[^/]+)/(?P<repo>[^/]+)/tree/(?P<ref>[^/]+)/(?P<path>[^"#?<> ]+))',
+    re.I,
+)
+GITHUB_BLOB_LINK_RE = re.compile(
+    r'/((?P<owner>[^/]+)/(?P<repo>[^/]+)/blob/(?P<ref>[^/]+)/(?P<path>[^"#?<> ]+))',
+    re.I,
+)
+
+
+GITHUB_HEADERS = {
+    "User-Agent": "DeathTG/1.0",
+    "Accept": "application/vnd.github+json, text/html;q=0.9, */*;q=0.8",
+}
 
 
 def _normalize_url(value: str) -> str:
@@ -101,6 +115,10 @@ def _github_tree_url(owner: str, repo: str, ref: str, path: str) -> str:
     return f"https://github.com/{owner}/{repo}/tree/{ref}/{path.strip('/')}"
 
 
+def _github_raw_url(owner: str, repo: str, ref: str, path: str) -> str:
+    return f"https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path.strip('/')}"
+
+
 def _parse_github_link(link: str) -> dict | None:
     value = _normalize_url(link)
     for pattern, kind in (
@@ -123,17 +141,24 @@ def _parse_github_link(link: str) -> dict | None:
 
 
 async def _fetch_text(session: aiohttp.ClientSession, url: str) -> str:
-    async with session.get(url, timeout=20) as response:
+    async with session.get(url, timeout=20, headers=GITHUB_HEADERS) as response:
         if response.status != 200:
             raise RuntimeError(f"Download failed, HTTP {response.status}")
         return await response.text()
 
 
 async def _fetch_json(session: aiohttp.ClientSession, url: str):
-    async with session.get(url, timeout=20) as response:
+    async with session.get(url, timeout=20, headers=GITHUB_HEADERS) as response:
         if response.status != 200:
             raise RuntimeError(f"GitHub API failed, HTTP {response.status}")
         return await response.json()
+
+
+async def _fetch_html(session: aiohttp.ClientSession, url: str) -> str:
+    async with session.get(url, timeout=20, headers=GITHUB_HEADERS) as response:
+        if response.status != 200:
+            raise RuntimeError(f"GitHub page failed, HTTP {response.status}")
+        return await response.text()
 
 
 def _pick_python_file(items: list[dict], folder_name: str) -> dict | None:
@@ -155,39 +180,84 @@ def _pick_python_file(items: list[dict], folder_name: str) -> dict | None:
 
 async def _fetch_folder_bundle(session: aiohttp.ClientSession, owner: str, repo: str, ref: str, path: str) -> dict:
     listing_url = _github_contents_url(owner, repo, path, ref)
-    listing = await _fetch_json(session, listing_url)
-    if not isinstance(listing, list):
-        raise RuntimeError("Folder link did not return a module directory")
     folder_name = PurePosixPath(path).name or "module"
-    py_item = _pick_python_file(listing, folder_name)
-    if not py_item:
-        raise RuntimeError("Folder does not contain a Python module entry")
-    entry_name = str(py_item.get("name") or f"{folder_name}.py")
-    raw_url = str(py_item.get("download_url") or py_item.get("html_url") or "")
-    if not raw_url:
-        raise RuntimeError("Python module file has no downloadable URL")
-    source = await _fetch_text(session, normalize_github_raw_url(raw_url))
-    image_item = next(
-        (
-            item
-            for item in listing
-            if str(item.get("name") or "").lower() in {"module.png", "image.png"}
-        ),
-        None,
-    )
-    requirements_item = next(
-        (
-            item
-            for item in listing
-            if str(item.get("name") or "").lower() == "requirements.txt"
-        ),
-        None,
-    )
+    entry_name = f"{folder_name}.py"
+    source = ""
+    image_url = ""
+    image_name = ""
     requirements_text = ""
     requirements_url = ""
-    if requirements_item:
-        requirements_url = str(requirements_item.get("download_url") or "")
-        if requirements_url:
+    try:
+        listing = await _fetch_json(session, listing_url)
+        if not isinstance(listing, list):
+            raise RuntimeError("Folder link did not return a module directory")
+        py_item = _pick_python_file(listing, folder_name)
+        if not py_item:
+            raise RuntimeError("Folder does not contain a Python module entry")
+        entry_name = str(py_item.get("name") or f"{folder_name}.py")
+        raw_url = str(py_item.get("download_url") or py_item.get("html_url") or "")
+        if not raw_url:
+            raise RuntimeError("Python module file has no downloadable URL")
+        source = await _fetch_text(session, normalize_github_raw_url(raw_url))
+        image_item = next(
+            (
+                item
+                for item in listing
+                if str(item.get("name") or "").lower() in {"module.png", "image.png"}
+            ),
+            None,
+        )
+        requirements_item = next(
+            (
+                item
+                for item in listing
+                if str(item.get("name") or "").lower() == "requirements.txt"
+            ),
+            None,
+        )
+        if image_item:
+            image_url = str(image_item.get("download_url") or "")
+            image_name = str(image_item.get("name") or "Module.png")
+        if requirements_item:
+            requirements_url = str(requirements_item.get("download_url") or "")
+            if requirements_url:
+                try:
+                    requirements_text = await _fetch_text(session, requirements_url)
+                except Exception:
+                    requirements_text = ""
+    except Exception:
+        html_url = _github_tree_url(owner, repo, ref, path)
+        html = await _fetch_html(session, html_url)
+        blob_paths = sorted(
+            {
+                match.group("path")
+                for match in GITHUB_BLOB_LINK_RE.finditer(html)
+                if str(match.group("owner")).lower() == owner.lower()
+                and str(match.group("repo")).lower() == repo.lower()
+                and str(match.group("ref")) == ref
+                and str(match.group("path")).startswith(path.strip("/") + "/")
+            }
+        )
+        py_candidates = [blob for blob in blob_paths if blob.lower().endswith(".py")]
+        preferred = [
+            f"{path.strip('/')}/{folder_name}.py",
+            f"{path.strip('/')}/main.py",
+            f"{path.strip('/')}/__init__.py",
+        ]
+        chosen = next((candidate for candidate in preferred if candidate in py_candidates), None)
+        if not chosen and py_candidates:
+            chosen = next((candidate for candidate in py_candidates if not PurePosixPath(candidate).name.startswith("_")), py_candidates[0])
+        if not chosen:
+            raise RuntimeError("Folder does not contain a Python module entry")
+        entry_name = PurePosixPath(chosen).name
+        source = await _fetch_text(session, _github_raw_url(owner, repo, ref, chosen))
+        image_candidates = [blob for blob in blob_paths if PurePosixPath(blob).name.lower() in {"module.png", "image.png"}]
+        if image_candidates:
+            image_name = PurePosixPath(image_candidates[0]).name
+            image_url = _github_raw_url(owner, repo, ref, image_candidates[0])
+        requirements_candidates = [blob for blob in blob_paths if PurePosixPath(blob).name.lower() == "requirements.txt"]
+        if requirements_candidates:
+            requirements_url = _github_raw_url(owner, repo, ref, requirements_candidates[0])
             try:
                 requirements_text = await _fetch_text(session, requirements_url)
             except Exception:
@@ -197,10 +267,10 @@ async def _fetch_folder_bundle(session: aiohttp.ClientSession, owner: str, repo:
         "module_name": folder_name,
         "entry_filename": entry_name,
         "source": source,
-        "source_url": normalize_github_raw_url(raw_url),
+        "source_url": _github_raw_url(owner, repo, ref, f"{path.strip('/')}/{entry_name}"),
         "link": _github_tree_url(owner, repo, ref, path),
-        "image_url": str(image_item.get("download_url") or "") if image_item else "",
-        "image_name": str(image_item.get("name") or "Module.png") if image_item else "",
+        "image_url": image_url,
+        "image_name": image_name,
         "requirements_text": requirements_text,
         "requirements": parse_requirements_text(requirements_text),
         "requirements_url": requirements_url,
@@ -311,7 +381,7 @@ async def _from_index(session: aiohttp.ClientSession) -> list[dict]:
 
 
 async def _from_github_contents(session: aiohttp.ClientSession) -> list[dict]:
-    async with session.get(MODULE_REPO_API, timeout=12) as response:
+    async with session.get(MODULE_REPO_API, timeout=12, headers=GITHUB_HEADERS) as response:
         if response.status != 200:
             return []
         data = await response.json()
@@ -326,7 +396,7 @@ async def _from_github_contents(session: aiohttp.ClientSession) -> list[dict]:
             dir_url = str(item.get("url") or "")
             if not dir_url:
                 continue
-            async with session.get(dir_url, timeout=12) as sub_response:
+            async with session.get(dir_url, timeout=12, headers=GITHUB_HEADERS) as sub_response:
                 if sub_response.status != 200:
                     continue
                 sub_items = await sub_response.json()
@@ -371,12 +441,65 @@ async def _from_github_contents(session: aiohttp.ClientSession) -> list[dict]:
     return modules
 
 
+async def _from_github_tree_html(session: aiohttp.ClientSession, owner: str = "Error4ikUa", repo: str = "DTG_Modules", ref: str = "main") -> list[dict]:
+    html = await _fetch_html(session, _github_tree_url(owner, repo, ref, ""))
+    tree_paths = sorted(
+        {
+            match.group("path")
+            for match in GITHUB_TREE_LINK_RE.finditer(html)
+            if str(match.group("owner")).lower() == owner.lower()
+            and str(match.group("repo")).lower() == repo.lower()
+            and str(match.group("ref")) == ref
+            and "/" not in str(match.group("path"))
+        }
+    )
+    blob_paths = sorted(
+        {
+            match.group("path")
+            for match in GITHUB_BLOB_LINK_RE.finditer(html)
+            if str(match.group("owner")).lower() == owner.lower()
+            and str(match.group("repo")).lower() == repo.lower()
+            and str(match.group("ref")) == ref
+            and "/" not in str(match.group("path"))
+            and str(match.group("path")).lower().endswith(".py")
+        }
+    )
+    modules: list[dict] = []
+    for path in tree_paths:
+        name = PurePosixPath(path).name
+        modules.append(
+            _normalize_repo_item(
+                {
+                    "name": name,
+                    "description": f"{name} module from DTG_Modules",
+                    "link": _github_tree_url(owner, repo, ref, path),
+                    "raw_link": _github_raw_url(owner, repo, ref, f"{path}/{name}.py"),
+                }
+            )
+        )
+    for path in blob_paths:
+        name = PurePosixPath(path).stem
+        modules.append(
+            _normalize_repo_item(
+                {
+                    "name": name,
+                    "description": f"{name} module from DTG_Modules",
+                    "link": _github_raw_url(owner, repo, ref, path),
+                    "raw_link": _github_raw_url(owner, repo, ref, path),
+                }
+            )
+        )
+    return modules
+
+
 async def fetch_repo_modules() -> list[dict]:
     try:
         async with aiohttp.ClientSession() as session:
             items = await _from_index(session)
             if not items:
                 items = await _from_github_contents(session)
+            if not items:
+                items = await _from_github_tree_html(session)
     except Exception:
         return []
     unique: dict[str, dict] = {}
