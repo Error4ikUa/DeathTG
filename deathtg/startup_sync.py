@@ -38,6 +38,8 @@ BOTFATHER_RETRY_RE = re.compile(r"too many attempts.*?try again in\s+(\d+)\s+sec
 BOT_AVATAR = default_avatar_path() or (ROOT_DIR / "deathtg" / "panel" / "static" / "default_avatar.png")
 BOTFATHER_CREATE_TIMEOUT = 35
 AUTO_BOT_REPAIR_INTERVAL = 60 * 15
+_STARTUP_SYNC_LOCK = asyncio.Lock()
+_BOTFATHER_LOCK = asyncio.Lock()
 
 
 def _env(name: str) -> str:
@@ -193,6 +195,43 @@ def _botfather_retry_seconds(text: str) -> int:
         return max(1, int(match.group(1)))
     except Exception:
         return 5
+
+
+def _botfather_status() -> dict:
+    raw = _load_status().get("botfather", {})
+    return raw if isinstance(raw, dict) else {}
+
+
+def _botfather_cooldown_left() -> int:
+    until = int(_botfather_status().get("cooldown_until", 0) or 0)
+    return max(0, until - int(time.time()))
+
+
+def _set_botfather_cooldown(wait_seconds: int, reason: str = "") -> None:
+    if wait_seconds <= 0:
+        return
+    payload = _load_status()
+    payload["botfather"] = {
+        "cooldown_until": int(time.time()) + int(wait_seconds),
+        "last_result": str(reason or f"cooldown ({wait_seconds}s left)")[:240],
+        "updated_at": int(time.time()),
+    }
+    _write_status(payload)
+
+
+def _clear_botfather_cooldown() -> None:
+    payload = _load_status()
+    if "botfather" not in payload:
+        return
+    payload.pop("botfather", None)
+    _write_status(payload)
+
+
+def _botfather_cooldown_error() -> str | None:
+    wait_left = _botfather_cooldown_left()
+    if wait_left <= 0:
+        return None
+    return f"BotFather cooldown active ({wait_left}s left)"
 
 
 def _language() -> str:
@@ -505,10 +544,13 @@ async def _botfather_step(conv, message: str, *, retries: int = 4):
         raw_text = getattr(response, "raw_text", "") or ""
         wait_seconds = _botfather_retry_seconds(raw_text)
         if wait_seconds:
+            _set_botfather_cooldown(wait_seconds, raw_text[:240])
             if wait_seconds > 30:
                 return response
             await asyncio.sleep(min(wait_seconds + 1, 6))
             continue
+        if message == "/newbot":
+            _clear_botfather_cooldown()
         return response
     return last_response
 
@@ -552,64 +594,99 @@ async def _fetch_bot_username(bot_token: str, *, env_key: str = "BOT_TOKEN") -> 
 
 
 async def _create_bot_with_botfather(client, owner_id: int, role: str = "inline") -> tuple[str, str | None]:
+    cooldown_error = _botfather_cooldown_error()
+    if cooldown_error:
+        return "", cooldown_error
     try:
         botfather = await client.get_input_entity("BotFather")
         await client(UnblockRequest(botfather))
     except Exception:
         pass
     try:
-        async with client.conversation("BotFather", timeout=120, exclusive=False) as conv:
-            with contextlib.suppress(Exception):
-                await _botfather_step(conv, "/cancel", retries=1)
-            first = await _botfather_step(conv, "/newbot")
-            first_text = getattr(first, "raw_text", "") or ""
-            if "create and manage telegram bots" in first_text.lower():
+        async with _BOTFATHER_LOCK:
+            async with client.conversation("BotFather", timeout=120, exclusive=True) as conv:
+                with contextlib.suppress(Exception):
+                    await _botfather_step(conv, "/cancel", retries=1)
                 first = await _botfather_step(conv, "/newbot")
-            with contextlib.suppress(Exception):
-                getattr(first, "raw_text", "")
-            display_role = "Helper" if role == "helper" else "Inline"
-            log_text = f"BotFather: creating {role} bot for owner {owner_id}"
-            print(log_text)
-            await _botfather_step(conv, f"DeathTG {display_role} {owner_id}")
-            candidates = [_preferred_bot_username(owner_id, role)]
-            candidates.extend(_random_bot_username(owner_id, role) for _ in range(19))
-            for candidate in candidates:
-                response = await _botfather_step(conv, candidate)
-                text = getattr(response, "raw_text", "") or ""
-                match = BOT_TOKEN_RE.search(text)
-                if match:
-                    update_env_value(_bot_username_env_key(role), candidate)
-                    return match.group(0), None
-                lower = text.lower()
-                if all(word not in lower for word in ("taken", "sorry", "username", "invalid")):
-                    return "", text[:240]
+                first_text = getattr(first, "raw_text", "") or ""
+                if _botfather_retry_seconds(first_text):
+                    return "", first_text[:240]
+                if "create and manage telegram bots" in first_text.lower():
+                    first = await _botfather_step(conv, "/newbot")
+                    first_text = getattr(first, "raw_text", "") or ""
+                    if _botfather_retry_seconds(first_text):
+                        return "", first_text[:240]
+                display_name = {
+                    "inline": f"DeathTG Inline {owner_id}",
+                    "helper": f"DeathTG Helper {owner_id}",
+                    "community": f"{community_bot_display_name()} {owner_id}",
+                }.get(role, f"DeathTG Inline {owner_id}")
+                print(f"BotFather: creating {role} bot for owner {owner_id}")
+                name_response = await _botfather_step(conv, display_name)
+                name_text = getattr(name_response, "raw_text", "") or ""
+                lowered_name = name_text.lower()
+                if "choose a username" not in lowered_name and "must end in" not in lowered_name:
+                    return "", name_text[:240] or "BotFather did not ask for a username"
+                candidates = [_preferred_bot_username(owner_id, role)]
+                candidates.extend(_random_bot_username(owner_id, role) for _ in range(19))
+                for candidate in candidates:
+                    response = await _botfather_step(conv, candidate)
+                    text = getattr(response, "raw_text", "") or ""
+                    match = BOT_TOKEN_RE.search(text)
+                    if match:
+                        _clear_botfather_cooldown()
+                        update_env_value(_bot_username_env_key(role), candidate)
+                        return match.group(0), None
+                    if _botfather_retry_seconds(text):
+                        return "", text[:240]
+                    lower = text.lower()
+                    if "create and manage telegram bots" in lower:
+                        return "", text[:240] or "BotFather left the /newbot flow"
+                    if all(word not in lower for word in ("taken", "sorry", "username", "invalid")):
+                        return "", text[:240]
     except Exception as exc:
         return "", str(exc)
     return "", "BotFather did not return a token"
 
 
 async def _create_named_bot_with_botfather(client, display_name: str, username: str) -> tuple[str, str | None]:
+    cooldown_error = _botfather_cooldown_error()
+    if cooldown_error:
+        return "", cooldown_error
     try:
         botfather = await client.get_input_entity("BotFather")
         await client(UnblockRequest(botfather))
     except Exception:
         pass
     try:
-        async with client.conversation("BotFather", timeout=120, exclusive=False) as conv:
-            with contextlib.suppress(Exception):
-                await _botfather_step(conv, "/cancel", retries=1)
-            first = await _botfather_step(conv, "/newbot")
-            first_text = getattr(first, "raw_text", "") or ""
-            if "create and manage telegram bots" in first_text.lower():
+        async with _BOTFATHER_LOCK:
+            async with client.conversation("BotFather", timeout=120, exclusive=True) as conv:
+                with contextlib.suppress(Exception):
+                    await _botfather_step(conv, "/cancel", retries=1)
                 first = await _botfather_step(conv, "/newbot")
-            print(f"BotFather: creating named bot @{username}")
-            await _botfather_step(conv, display_name)
-            response = await _botfather_step(conv, username)
-            text = getattr(response, "raw_text", "") or ""
-            match = BOT_TOKEN_RE.search(text)
-            if match:
-                return match.group(0), None
-            return "", text[:240] or "BotFather did not return a token"
+                first_text = getattr(first, "raw_text", "") or ""
+                if _botfather_retry_seconds(first_text):
+                    return "", first_text[:240]
+                if "create and manage telegram bots" in first_text.lower():
+                    first = await _botfather_step(conv, "/newbot")
+                    first_text = getattr(first, "raw_text", "") or ""
+                    if _botfather_retry_seconds(first_text):
+                        return "", first_text[:240]
+                print(f"BotFather: creating named bot @{username}")
+                name_response = await _botfather_step(conv, display_name)
+                name_text = getattr(name_response, "raw_text", "") or ""
+                lowered_name = name_text.lower()
+                if "choose a username" not in lowered_name and "must end in" not in lowered_name:
+                    return "", name_text[:240] or "BotFather did not ask for a username"
+                response = await _botfather_step(conv, username)
+                text = getattr(response, "raw_text", "") or ""
+                match = BOT_TOKEN_RE.search(text)
+                if match:
+                    _clear_botfather_cooldown()
+                    return match.group(0), None
+                if _botfather_retry_seconds(text):
+                    return "", text[:240]
+                return "", text[:240] or "BotFather did not return a token"
     except Exception as exc:
         return "", str(exc)
 
@@ -650,20 +727,30 @@ async def _sync_bot_avatar(client, bot_username: str) -> tuple[bool, str | None]
         return False, "missing bot username"
     if not BOT_AVATAR.exists():
         return True, None
+    cooldown_error = _botfather_cooldown_error()
+    if cooldown_error:
+        return False, cooldown_error
     try:
         botfather = await client.get_input_entity("BotFather")
         await client(UnblockRequest(botfather))
     except Exception:
         pass
     try:
-        async with client.conversation("BotFather", timeout=120, exclusive=False) as conv:
-            with contextlib.suppress(Exception):
-                await _botfather_step(conv, "/cancel", retries=1)
-            await _botfather_step(conv, "/setuserpic")
-            await _botfather_step(conv, f"@{bot_username}")
-            await conv.send_file(str(BOT_AVATAR))
-            with contextlib.suppress(Exception):
-                await conv.get_response()
+        async with _BOTFATHER_LOCK:
+            async with client.conversation("BotFather", timeout=120, exclusive=True) as conv:
+                with contextlib.suppress(Exception):
+                    await _botfather_step(conv, "/cancel", retries=1)
+                first = await _botfather_step(conv, "/setuserpic")
+                first_text = getattr(first, "raw_text", "") or ""
+                if _botfather_retry_seconds(first_text):
+                    return False, first_text[:240]
+                second = await _botfather_step(conv, f"@{bot_username}")
+                second_text = getattr(second, "raw_text", "") or ""
+                if _botfather_retry_seconds(second_text):
+                    return False, second_text[:240]
+                await conv.send_file(str(BOT_AVATAR))
+                with contextlib.suppress(Exception):
+                    await conv.get_response()
     except Exception as exc:
         return False, str(exc)
     return True, None
@@ -672,6 +759,9 @@ async def _sync_bot_avatar(client, bot_username: str) -> tuple[bool, str | None]
 async def _ensure_bot_inline(client, bot_username: str) -> tuple[bool, str | None]:
     if not bot_username:
         return False, "missing bot username"
+    cooldown_error = _botfather_cooldown_error()
+    if cooldown_error:
+        return False, cooldown_error
     try:
         botfather = await client.get_input_entity("BotFather")
         await client(UnblockRequest(botfather))
@@ -679,29 +769,36 @@ async def _ensure_bot_inline(client, bot_username: str) -> tuple[bool, str | Non
         pass
 
     try:
-        async with client.conversation("BotFather", timeout=120, exclusive=False) as conv:
-            with contextlib.suppress(Exception):
-                await _botfather_step(conv, "/cancel", retries=1)
+        async with _BOTFATHER_LOCK:
+            async with client.conversation("BotFather", timeout=120, exclusive=True) as conv:
+                with contextlib.suppress(Exception):
+                    await _botfather_step(conv, "/cancel", retries=1)
 
-            first = await _botfather_step(conv, "/setinline")
-            first_text = (getattr(first, "raw_text", "") or "").lower()
-            if "choose a bot" not in first_text and "select a bot" not in first_text and "@" not in first_text:
-                return False, (getattr(first, "raw_text", "") or "BotFather did not ask for a bot")[:240]
+                first = await _botfather_step(conv, "/setinline")
+                first_text_raw = getattr(first, "raw_text", "") or ""
+                if _botfather_retry_seconds(first_text_raw):
+                    return False, first_text_raw[:240]
+                first_text = first_text_raw.lower()
+                if "choose a bot" not in first_text and "select a bot" not in first_text and "@" not in first_text:
+                    return False, first_text_raw[:240] or "BotFather did not ask for a bot"
 
-            second = await _botfather_step(conv, f"@{bot_username}")
-            second_text = (getattr(second, "raw_text", "") or "").lower()
-            if any(word in second_text for word in ("placeholder", "input field", "inline")):
-                final = await _botfather_step(conv, "DeathTG")
-                final_text = getattr(final, "raw_text", "") or ""
-            else:
-                final_text = getattr(second, "raw_text", "") or ""
+                second = await _botfather_step(conv, f"@{bot_username}")
+                second_text_raw = getattr(second, "raw_text", "") or ""
+                if _botfather_retry_seconds(second_text_raw):
+                    return False, second_text_raw[:240]
+                second_text = second_text_raw.lower()
+                if any(word in second_text for word in ("placeholder", "input field", "inline")):
+                    final = await _botfather_step(conv, "DeathTG")
+                    final_text = getattr(final, "raw_text", "") or ""
+                else:
+                    final_text = second_text_raw
 
-            lower = final_text.lower()
-            if any(word in lower for word in ("success", "enabled", "updated", "changed")):
-                return True, None
-            if "already" in lower and "inline" in lower:
-                return True, None
-            return False, final_text[:240] or "BotFather did not confirm inline mode"
+                lower = final_text.lower()
+                if any(word in lower for word in ("success", "enabled", "updated", "changed")):
+                    return True, None
+                if "already" in lower and "inline" in lower:
+                    return True, None
+                return False, final_text[:240] or "BotFather did not confirm inline mode"
     except Exception as exc:
         return False, str(exc)
 
@@ -723,7 +820,7 @@ async def _ping_bot_runtime(client, username: str) -> tuple[bool, str | None]:
     return True, None
 
 
-async def check_runtime_integrity(client, *, notify: bool = True) -> dict:
+async def check_runtime_integrity(client, *, notify: bool = True, allow_repair: bool = True) -> dict:
     me = await client.get_me()
     owner_id = int(getattr(me, "id", 0) or 0)
     previous_status = _load_status()
@@ -765,9 +862,10 @@ async def check_runtime_integrity(client, *, notify: bool = True) -> dict:
     runtime_status["helper_bot"] = next((item for item in bots if item.get("role") == "helper"), {})
     runtime_status["community_bot"] = next((item for item in bots if item.get("role") == "community"), {})
     runtime_status["last_runtime_check_at"] = int(time.time())
-    repaired_status = await _attempt_missing_bot_repair(client, owner_id, runtime_status, previous_status)
-    if repaired_status is not None:
-        return repaired_status
+    if allow_repair:
+        repaired_status = await _attempt_missing_bot_repair(client, owner_id, runtime_status, previous_status)
+        if repaired_status is not None:
+            return repaired_status
     if notify:
         await _notify_integrity_if_needed(client, owner_id, runtime_status, previous_status)
     _write_status(runtime_status)
@@ -842,6 +940,7 @@ async def _ensure_bot(
     allow_create: bool = False,
 ) -> tuple[str, dict]:
     username, token_error = await _fetch_bot_username(bot_token, env_key=env_key)
+    cooldown_error = _botfather_cooldown_error()
     status = {
         "configured": bool(bot_token),
         "role": role,
@@ -862,6 +961,9 @@ async def _ensure_bot(
             status["error"] = f"{env_key} is missing"
         elif not status["error"]:
             status["error"] = "bot username does not match expected owner prefix"
+        return bot_token, status
+    if cooldown_error:
+        status["error"] = cooldown_error
         return bot_token, status
 
     try:
@@ -897,6 +999,7 @@ async def _ensure_bot(
 async def _ensure_community_bot(client, owner_id: int, *, allow_create: bool = False) -> tuple[str, dict]:
     bot_token = _env("BOT_TOKEN_COMMUNITY")
     username, token_error = await _fetch_bot_username(bot_token, env_key="BOT_TOKEN_COMMUNITY")
+    cooldown_error = _botfather_cooldown_error()
     status = {
         "configured": bool(bot_token),
         "role": "community",
@@ -917,6 +1020,9 @@ async def _ensure_community_bot(client, owner_id: int, *, allow_create: bool = F
             status["error"] = "BOT_TOKEN_COMMUNITY is missing"
         elif not status["error"]:
             status["error"] = "community bot username must match the owner-bound pattern"
+        return bot_token, status
+    if cooldown_error:
+        status["error"] = cooldown_error
         return bot_token, status
     try:
         token, error = await asyncio.wait_for(
@@ -948,6 +1054,11 @@ async def _ensure_community_bot(client, owner_id: int, *, allow_create: bool = F
 
 
 async def run_startup_sync(client) -> dict:
+    async with _STARTUP_SYNC_LOCK:
+        return await _run_startup_sync_locked(client)
+
+
+async def _run_startup_sync_locked(client) -> dict:
     me = await client.get_me()
     owner_id = int(getattr(me, "id", 0) or 0)
     update_env_value("OWNER_ID", str(owner_id))

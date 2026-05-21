@@ -17,7 +17,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from deathtg.assets import IMAGES_DIR, module_image_path
 from deathtg.metrics import init_metrics
 from deathtg.panel.auth_flow import begin_qr_login, confirm_2fa, finish_login, friendly_login_error, qr_status, refresh_qr_login, write_env
-from deathtg.panel.clean_actions import load_pending_install, router as actions_router
+from deathtg.panel.clean_actions import _queue_userbot_action, load_pending_install, router as actions_router
 from deathtg.panel.clean_core import (
     STATIC_DIR,
     activity_points,
@@ -40,6 +40,15 @@ from deathtg.panel.clean_core import (
     top_modules,
 )
 from deathtg.panel.re_auth import router as reconnect_router
+from deathtg.health_tools import (
+    collect_requirement_state,
+    export_logs_bundle,
+    install_missing_requirements,
+    load_health_state,
+    safe_mode_enabled,
+    scan_local_modules,
+    set_safe_mode,
+)
 from deathtg.panel_access import (
     active_device,
     consume_device_grant,
@@ -65,6 +74,13 @@ from deathtg.server_bootstrap import (
     panel_trust_proxy,
     secure_panel_password,
     secure_panel_secret,
+)
+from deathtg.startup_state import (
+    PHASE_FIRST_RUN,
+    PHASE_SETUP_WAIT_2FA,
+    PHASE_SETUP_WAIT_QR,
+    startup_snapshot,
+    sync_startup_state,
 )
 from deathtg.setup_access import current_setup_token, valid_setup_token
 from deathtg.update_manager import apply_update, inspect_update, load_update_state, save_update_state, schedule_restart
@@ -129,7 +145,8 @@ async def harden_responses(request: Request, call_next):
 
 
 def _auth_guard(request: Request):
-    if not has_env():
+    snapshot = startup_snapshot()
+    if snapshot.get("setup_required") and not request.session.get("auth"):
         return RedirectResponse(_setup_path_with_token(), status_code=303)
     if not request.session.get("auth"):
         return RedirectResponse("/login", status_code=303)
@@ -235,6 +252,7 @@ async def _base_context(request: Request) -> dict:
         "profile": profile,
         "status": st,
         "startup": startup_status(),
+        "startup_state": startup_snapshot(),
         "devices": list_devices(),
         "current_device": active_device(session_id) if session_id else None,
         "public_panel_enabled": public_panel_enabled(),
@@ -248,6 +266,19 @@ async def _base_context(request: Request) -> dict:
         "message": request.query_params.get("message"),
         "error": request.query_params.get("error"),
     }
+
+
+async def _health_context(request: Request) -> dict:
+    ctx = await _base_context(request)
+    health_state = load_health_state()
+    ctx.update(
+        {
+            "health_state": health_state,
+            "requirements_state": health_state.get("requirements_state") or collect_requirement_state(),
+            "safe_mode_enabled": safe_mode_enabled(),
+        }
+    )
+    return ctx
 
 
 def _current_panel_url(request: Request) -> str:
@@ -314,9 +345,11 @@ def _render_info_preview(profile: dict, st: dict, lang: str) -> str:
 
 @app.get("/setup", response_class=HTMLResponse)
 async def setup_page(request: Request):
-    if has_env() and has_session() and request.session.get("auth"):
+    snapshot = startup_snapshot()
+    sync_startup_state()
+    if request.session.get("auth") and not snapshot.get("setup_required"):
         return RedirectResponse("/", status_code=303)
-    if has_env() and has_session():
+    if not snapshot.get("setup_required") and has_env() and has_session():
         return RedirectResponse("/login", status_code=303)
     if not _setup_allowed(request):
         return HTMLResponse(
@@ -334,6 +367,7 @@ async def setup_page(request: Request):
 
 @app.get("/setup/done", response_class=HTMLResponse)
 async def setup_done_page(request: Request):
+    sync_startup_state()
     local_ready = bool(request.session.get("auth"))
     panel_url = _current_panel_url(request)
     remote_ready = panel_remote_access_ready()
@@ -510,7 +544,8 @@ async def setup_qr_refresh(request: Request):
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    if not has_env():
+    snapshot = startup_snapshot()
+    if snapshot.get("phase") in {PHASE_FIRST_RUN, PHASE_SETUP_WAIT_QR, PHASE_SETUP_WAIT_2FA}:
         return RedirectResponse(_setup_path_with_token(), status_code=303)
     return templates.TemplateResponse(
         "clean_login.html",
@@ -548,6 +583,9 @@ async def private_site_grant_login(request: Request, site_id: str, owner_slug: s
 
 @app.post("/login")
 async def login(request: Request, key: str = Form(...)):
+    snapshot = startup_snapshot()
+    if snapshot.get("setup_required"):
+        return RedirectResponse(_setup_path_with_token(), status_code=303)
     if _is_rate_limited("login", request):
         return templates.TemplateResponse(
             "clean_login.html",
@@ -590,7 +628,17 @@ async def login(request: Request, key: str = Form(...)):
 
 @app.get("/healthz")
 async def healthz():
-    return JSONResponse({"ok": True, "panel": "up", "session_file": has_session(), "env": has_env()})
+    snapshot = startup_snapshot()
+    return JSONResponse({"ok": True, "panel": "up", "session_file": has_session(), "env": has_env(), "phase": snapshot.get("phase")})
+
+
+@app.get("/health", response_class=HTMLResponse)
+async def health_page(request: Request):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    ctx = await _health_context(request)
+    return templates.TemplateResponse("clean_health.html", ctx)
 
 
 @app.get("/module-media/{name}")
@@ -778,6 +826,82 @@ async def scanner_check(
         return templates.TemplateResponse("clean_scanner.html", ctx)
     except Exception as exc:
         return RedirectResponse(f"/scanner?error={type(exc).__name__}: {exc}", status_code=303)
+
+
+@app.post("/health/recheck")
+async def health_recheck(request: Request):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    _queue_userbot_action("health_recheck")
+    return RedirectResponse("/health?message=Health+recheck+queued", status_code=303)
+
+
+@app.post("/health/repair")
+async def health_repair(request: Request):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    _queue_userbot_action("health_repair")
+    return RedirectResponse("/health?message=Repair+flow+queued", status_code=303)
+
+
+@app.post("/health/restart")
+async def health_restart(request: Request):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    schedule_restart()
+    return HTMLResponse(
+        "<html><head><meta http-equiv='refresh' content='8;url=/health'></head>"
+        "<body style='background:#050b08;color:#eaffef;font-family:sans-serif;padding:40px'>"
+        "<h1>DeathTG is restarting...</h1><p>Wait a few seconds. This page will reopen the health center automatically.</p>"
+        "</body></html>"
+    )
+
+
+@app.post("/health/safe-mode")
+async def health_safe_mode(request: Request, enabled: str = Form("0")):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    value = str(enabled).strip().lower() in {"1", "true", "yes", "on"}
+    set_safe_mode(value)
+    return RedirectResponse(
+        f"/health?message={'Safe+mode+enabled.+Restart+DeathTG+to+apply' if value else 'Safe+mode+disabled.+Restart+DeathTG+to+restore+full+runtime'}",
+        status_code=303,
+    )
+
+
+@app.post("/health/requirements/install")
+async def health_install_requirements(request: Request):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    result = install_missing_requirements()
+    if result.get("ok"):
+        return RedirectResponse("/health?message=Missing+requirements+installed", status_code=303)
+    return RedirectResponse(f"/health?error={quote(str(result.get('message') or 'pip failed'))}", status_code=303)
+
+
+@app.post("/health/modules/scan")
+async def health_scan_modules(request: Request):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    result = scan_local_modules()
+    summary = result.get("summary") or {}
+    message = f"Module+scan+finished.+Clean:{summary.get('clean',0)}+Warn:{summary.get('warning',0)}+Danger:{summary.get('danger',0)}"
+    return RedirectResponse(f"/health?message={message}", status_code=303)
+
+
+@app.get("/health/export-logs")
+async def health_export_logs(request: Request):
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
+    path = export_logs_bundle()
+    return FileResponse(path, filename=path.name)
 
 
 @app.post("/system/update/check")

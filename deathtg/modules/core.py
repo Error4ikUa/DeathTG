@@ -137,7 +137,7 @@ class CoreMod(Module):
     @command("dtgcheck", description="Check DeathTG integrity", usage=".dtgcheck", security="owner")
     async def dtgcheck_cmd(self, event, args):
         await event.edit("<b>Checking DeathTG integrity...</b>", parse_mode="html")
-        status = await check_runtime_integrity(self.app.client, notify=False)
+        status = await check_runtime_integrity(self.app.client, notify=False, allow_repair=False)
         report = html.escape(render_integrity_report(status))
         await event.edit(
             "<b>DeathTG integrity</b>\n<pre>" + report[:3600] + "</pre>",
@@ -148,7 +148,7 @@ class CoreMod(Module):
     async def repair_cmd(self, event, args):
         await event.edit("<b>Running DeathTG repair flow...</b>", parse_mode="html")
         sync_status = await run_startup_sync(self.app.client)
-        integrity_status = await check_runtime_integrity(self.app.client, notify=False)
+        integrity_status = await check_runtime_integrity(self.app.client, notify=False, allow_repair=False)
         sync_report = html.escape(render_integrity_report(sync_status))
         integrity_report = html.escape(render_integrity_report(integrity_status))
         await event.edit(

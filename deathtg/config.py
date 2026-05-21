@@ -1,6 +1,6 @@
-import os
 from dataclasses import dataclass
 from pathlib import Path
+import os
 
 from dotenv import load_dotenv
 
@@ -18,6 +18,7 @@ class DeathTGConfig:
     session_name: str = "deathtg"
     command_prefix: str = "."
     owner_id: int | None = None
+    safe_mode: bool = False
 
 
 def load_config() -> DeathTGConfig:
@@ -32,6 +33,7 @@ def load_config() -> DeathTGConfig:
     session_name = str(managed.get("session_name") or os.getenv("SESSION_NAME", "deathtg")).strip() or "deathtg"
     prefix = str(managed.get("command_prefix") or os.getenv("COMMAND_PREFIX", ".")).strip() or "."
     owner_raw = str(managed.get("owner_id") or os.getenv("OWNER_ID", "")).strip()
+    safe_mode_raw = str(managed.get("safe_mode") or os.getenv("DTG_SAFE_MODE", "0")).strip().lower()
 
     if not api_id_raw or not api_hash:
         raise RuntimeError(
@@ -46,4 +48,5 @@ def load_config() -> DeathTGConfig:
         session_name=session_name,
         command_prefix=prefix,
         owner_id=owner_id,
+        safe_mode=safe_mode_raw in {"1", "true", "yes", "on"},
     )

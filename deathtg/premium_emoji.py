@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Final
 
 
-PREMIUM_EMOJI_IDS: Final[dict[str, int]] = {
+PREMIUM_EMOJI_DOC_IDS: Final[dict[str, int]] = {
     "bomb": 5469654973308476699,
     "pirate": 5386372293263892965,
     "music": 5188621441926438751,
@@ -45,10 +45,12 @@ def premium_emoji(name: str, enabled: bool = False) -> str:
     fallback = FALLBACK_EMOJI.get(name, "⬛️")
     if not enabled:
         return fallback
-    emoji_id = PREMIUM_EMOJI_IDS.get(name)
+
+    emoji_id = PREMIUM_EMOJI_DOC_IDS.get(name)
     if not emoji_id:
         return fallback
-    return f'<emoji id="{emoji_id}">{fallback}</emoji>'
+
+    return f"<emoji document_id={emoji_id}>{fallback}</emoji>"
 
 
 def emoji_line(name: str, text: str, enabled: bool = False) -> str:

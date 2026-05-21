@@ -412,9 +412,18 @@ class InlineManager:
             ttl=int(ttl or 3600),
         )
         try:
+            target = chat_id
+            try:
+                target = await self.bot_client.get_input_entity(chat_id)
+            except Exception:
+                if self.owner_id and int(chat_id) == int(self.owner_id):
+                    self.last_error = "Owner has not started the inline bot yet"
+                    self.forms.pop(form_id, None)
+                    return None
+                raise
             if photo:
                 sent = await self.bot_client.send_file(
-                    chat_id,
+                    target,
                     file=photo,
                     caption=text,
                     buttons=buttons,
@@ -422,7 +431,7 @@ class InlineManager:
                 )
             else:
                 sent = await self.bot_client.send_message(
-                    chat_id,
+                    target,
                     text,
                     buttons=buttons,
                     parse_mode=parse_mode,
@@ -553,8 +562,8 @@ class InlineManager:
             chat_id,
             emoji_line("pirate", self._t("bot.welcome", "en"), self.owner_premium) + "\n\n" + emoji_line("phone", self._t("bot.choose_language", "en"), self.owner_premium),
             reply_markup=[
-                [{"text": "Рус", "callback": self._language_picker_callback, "args": ("ru", "1" if onboarding else "0")}],
-                [{"text": "Eng", "callback": self._language_picker_callback, "args": ("en", "1" if onboarding else "0")}],
+                [{"text": "Русский", "callback": self._language_picker_callback, "args": ("ru", "1" if onboarding else "0")}],
+                [{"text": "English", "callback": self._language_picker_callback, "args": ("en", "1" if onboarding else "0")}],
             ],
             ttl=60 * 60 * 24,
             parse_mode="html",
@@ -564,6 +573,14 @@ class InlineManager:
     async def ensure_owner_onboarding(self) -> None:
         settings = profile_settings()
         if not self.owner_id or settings.get("onboarding_done") == "1":
+            return
+        with contextlib.suppress(Exception):
+            await self.bot_client.get_input_entity(int(self.owner_id))
+        if not self.bot_client:
+            return
+        try:
+            await self.bot_client.get_input_entity(int(self.owner_id))
+        except Exception:
             return
         await self._send_language_picker(int(self.owner_id), onboarding=True)
 

@@ -24,6 +24,15 @@ from deathtg.loader import ModuleLoader
 from deathtg.metrics import init_metrics, record_command
 from deathtg.permissions import SecurityManager
 from deathtg.premium_emoji import premium_emoji
+from deathtg.health_tools import save_health_state
+from deathtg.startup_state import (
+    PHASE_DEGRADED,
+    PHASE_POST_SETUP_SYNC,
+    PHASE_READY,
+    PHASE_REPAIR,
+    PHASE_SAFE_MODE,
+    write_startup_state,
+)
 from deathtg.registry import CommandRegistry, PROTECTED_MODULES
 from deathtg.startup_sync import run_startup_sync
 from deathtg.startup_sync import check_runtime_integrity
@@ -77,7 +86,20 @@ class DeathTG:
 
         self._write_runtime_profile(me)
         await self.loader.load_builtin("deathtg.modules", CORE_MODULES)
-        await self.loader.load_all_local(force_modules=self._force_modules())
+        if self.config.safe_mode:
+            write_startup_state(PHASE_SAFE_MODE, "DeathTG started in safe mode. External local modules were skipped.")
+            save_health_state(
+                safe_mode=True,
+                last_action={
+                    "kind": "safe_mode_boot",
+                    "ok": True,
+                    "message": "DeathTG started in safe mode. External local modules were skipped.",
+                },
+            )
+            log.warning("DeathTG started in safe mode; external local modules are skipped")
+        else:
+            write_startup_state(PHASE_POST_SETUP_SYNC, "DeathTG is loading local modules and preparing runtime services.")
+            await self.loader.load_all_local(force_modules=self._force_modules())
 
         self.client.add_event_handler(self._dispatch, events.NewMessage())
         self.client.add_event_handler(self._dispatch_watchers, events.NewMessage())
@@ -111,27 +133,50 @@ class DeathTG:
             await self.inline.stop()
 
     async def _bootstrap_services(self) -> None:
+        if self.config.safe_mode:
+            log.warning("Skipping startup sync, inline and community bootstrap because safe mode is enabled")
+            return
+        write_startup_state(PHASE_POST_SETUP_SYNC, "DeathTG is running startup sync and recovering Telegram resources.")
         try:
             await asyncio.wait_for(run_startup_sync(self.client), timeout=180)
         except asyncio.TimeoutError:
+            write_startup_state(PHASE_DEGRADED, "Startup sync timed out after 180 seconds.")
             log.error("Startup sync timed out after 180 seconds")
         except Exception:
+            write_startup_state(PHASE_DEGRADED, "Startup sync failed. Check runtime logs for details.")
             log.exception("Startup sync failed")
 
         try:
             await self.inline.start()
         except Exception:
+            write_startup_state(PHASE_DEGRADED, "Inline manager failed to start.")
             log.exception("Inline manager failed to start")
 
         try:
             await self.community_bot.start(int(self.config.owner_id or 0))
         except Exception:
+            write_startup_state(PHASE_DEGRADED, "Community bot failed to start.")
             log.exception("Community bot failed to start")
 
         try:
             await self.inline.ensure_owner_onboarding()
         except Exception:
             log.exception("Owner onboarding failed")
+        try:
+            integrity = await check_runtime_integrity(self.client, notify=False, allow_repair=False)
+            failures = []
+            for item in list(integrity.get("bots") or []):
+                if not isinstance(item, dict):
+                    continue
+                if item.get("error") or not item.get("configured") or not item.get("valid_username") or not item.get("start_ping"):
+                    failures.append(str(item.get("role") or "bot"))
+            if failures:
+                write_startup_state(PHASE_DEGRADED, f"Runtime started with degraded Telegram resources: {', '.join(failures)}.")
+            else:
+                write_startup_state(PHASE_READY, "Panel and userbot are ready.")
+        except Exception:
+            write_startup_state(PHASE_DEGRADED, "Runtime finished booting, but integrity verification failed.")
+            log.exception("Post-start integrity verification failed")
 
     def _write_runtime_profile(self, me) -> None:
         RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
@@ -217,6 +262,9 @@ class DeathTG:
     async def _integrity_watch_loop(self) -> None:
         while True:
             try:
+                if self._bootstrap_task and not self._bootstrap_task.done():
+                    await asyncio.sleep(5)
+                    continue
                 await check_runtime_integrity(self.client, notify=True)
             except Exception:
                 log.exception("Integrity watch failed")
@@ -396,6 +444,57 @@ class DeathTG:
             await self.community_bot.start(int(self.config.owner_id or 0))
             self.loader.bind(app=self, client=self.client, inline_manager=self.inline)
             log.info("Panel sync refreshed startup state")
+            return
+        if action == "health_recheck":
+            write_startup_state(PHASE_REPAIR, "DeathTG is running a health recheck.")
+            status = await check_runtime_integrity(self.client, notify=False, allow_repair=False)
+            save_health_state(
+                last_action={
+                    "kind": "recheck",
+                    "ok": True,
+                    "message": "Integrity recheck finished.",
+                    "status": status,
+                },
+                last_integrity=status,
+            )
+            failures = []
+            for item in list(status.get("bots") or []):
+                if not isinstance(item, dict):
+                    continue
+                if item.get("error") or not item.get("configured") or not item.get("valid_username") or not item.get("start_ping"):
+                    failures.append(str(item.get("role") or "bot"))
+            write_startup_state(
+                PHASE_DEGRADED if failures else PHASE_READY,
+                "Integrity recheck finished with problems." if failures else "Integrity recheck finished successfully.",
+            )
+            log.info("Health recheck finished")
+            return
+        if action == "health_repair":
+            write_startup_state(PHASE_REPAIR, "DeathTG is running repair flow.")
+            sync_status = await run_startup_sync(self.client)
+            integrity_status = await check_runtime_integrity(self.client, notify=False, allow_repair=False)
+            save_health_state(
+                last_action={
+                    "kind": "repair",
+                    "ok": True,
+                    "message": "Repair flow finished.",
+                    "sync": sync_status,
+                    "integrity": integrity_status,
+                },
+                last_sync=sync_status,
+                last_integrity=integrity_status,
+            )
+            failures = []
+            for item in list(integrity_status.get("bots") or []):
+                if not isinstance(item, dict):
+                    continue
+                if item.get("error") or not item.get("configured") or not item.get("valid_username") or not item.get("start_ping"):
+                    failures.append(str(item.get("role") or "bot"))
+            write_startup_state(
+                PHASE_DEGRADED if failures else PHASE_READY,
+                "Repair flow finished with remaining issues." if failures else "Repair flow finished successfully.",
+            )
+            log.info("Health repair flow finished")
             return
         if action == "role_scan":
             request_id = str(payload.get("request_id") or "").strip()
