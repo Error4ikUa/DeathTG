@@ -505,7 +505,7 @@ class InlineManager:
         await event.answer([result], cache_time=0, private=True)
 
     def _owner_line(self) -> str:
-        icon = premium_emoji("user", self.owner_premium)
+        icon = premium_emoji("pirate", self.owner_premium)
         if self.owner_id and self.owner_username:
             return f"{icon} Owner: {self.owner_id} (@{self.owner_username})"
         if self.owner_id:
