@@ -72,7 +72,7 @@ def _default_info_template(payload: dict[str, object], premium: bool) -> str:
     uses_text = f"Uses: <code>{payload['uses']}</code>"
     return (
         "<blockquote>"
-        f"<b>{emoji_line('user', str(payload['title']), premium)}</b>\n"
+        f"<b>⬛️ {html.escape(str(payload['title']))}</b>\n"
         f"{emoji_line('phone', str(payload['username']), premium)}\n"
         f"{emoji_line('pirate', role_text, premium)}\n"
         f"{emoji_line('laptop', prefix_text, premium)}\n"
