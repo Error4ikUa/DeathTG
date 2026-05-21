@@ -148,6 +148,8 @@ def _auth_guard(request: Request):
     snapshot = startup_snapshot()
     if snapshot.get("setup_required") and not request.session.get("auth"):
         return RedirectResponse(_setup_path_with_token(), status_code=303)
+    if not request.session.get("auth") and _is_local_request(request):
+        _authorize_local_request(request)
     if not request.session.get("auth"):
         return RedirectResponse("/login", status_code=303)
     session_id = str(request.session.get("device_session_id") or "")
@@ -177,6 +179,19 @@ async def _system_return_target(request: Request, default: str = "/") -> str:
     except Exception:
         return default
     return _target_path(str(form.get("return_to") or ""), default)
+
+
+def _authorize_local_request(request: Request) -> None:
+    request.session["auth"] = True
+    session_id = str(request.session.get("device_session_id") or "") or secrets.token_urlsafe(18)
+    request.session["device_session_id"] = session_id
+    remember_device_session(
+        session_id,
+        ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent", ""),
+        label=friendly_device_name(request.headers.get("user-agent", ""), "This device"),
+        auth_method="local",
+    )
 
 
 def _client_ip(request: Request) -> str:
@@ -547,6 +562,11 @@ async def login_page(request: Request):
     snapshot = startup_snapshot()
     if snapshot.get("phase") in {PHASE_FIRST_RUN, PHASE_SETUP_WAIT_QR, PHASE_SETUP_WAIT_2FA}:
         return RedirectResponse(_setup_path_with_token(), status_code=303)
+    if request.session.get("auth"):
+        return RedirectResponse("/", status_code=303)
+    if _is_local_request(request):
+        _authorize_local_request(request)
+        return RedirectResponse("/?message=Local+device+connected", status_code=303)
     return templates.TemplateResponse(
         "clean_login.html",
         {"request": request, "error": request.query_params.get("error"), "lang": _request_lang(request)},
@@ -582,47 +602,21 @@ async def private_site_grant_login(request: Request, site_id: str, owner_slug: s
 
 
 @app.post("/login")
-async def login(request: Request, key: str = Form(...)):
+async def login(request: Request):
     snapshot = startup_snapshot()
     if snapshot.get("setup_required"):
         return RedirectResponse(_setup_path_with_token(), status_code=303)
-    if _is_rate_limited("login", request):
-        return templates.TemplateResponse(
-            "clean_login.html",
-            {
-                "request": request,
-                "error": "Too many login attempts. Wait a few minutes and try again.",
-                "lang": _request_lang(request),
-            },
-            status_code=429,
-        )
-    if panel_remote_access_ready() and not _is_local_request(request):
-        return templates.TemplateResponse(
-            "clean_login.html",
-            {
-                "request": request,
-                "error": "Remote password login is disabled. Use a secure device link from Telegram or from an already trusted device.",
-                "lang": _request_lang(request),
-            },
-            status_code=403,
-        )
-    if secrets.compare_digest(key, panel_password()):
-        request.session["auth"] = True
-        session_id = str(request.session.get("device_session_id") or "") or secrets.token_urlsafe(18)
-        request.session["device_session_id"] = session_id
-        remember_device_session(
-            session_id,
-            ip=_client_ip(request),
-            user_agent=request.headers.get("user-agent", ""),
-            label=friendly_device_name(request.headers.get("user-agent", ""), "Browser"),
-            auth_method="password",
-        )
-        _clear_auth_failures("login", request)
-        return RedirectResponse("/", status_code=303)
-    _mark_auth_failure("login", request)
+    if _is_local_request(request):
+        _authorize_local_request(request)
+        return RedirectResponse("/?message=Local+device+connected", status_code=303)
     return templates.TemplateResponse(
         "clean_login.html",
-        {"request": request, "error": "Invalid panel password", "lang": _request_lang(request)},
+        {
+            "request": request,
+            "error": "Remote access works only through a secure Telegram link.",
+            "lang": _request_lang(request),
+        },
+        status_code=403,
     )
 
 

@@ -14,12 +14,10 @@
         <h1>{{ tr('login.heading') }}</h1>
         <p>{{ tr('login.intro') }}</p>
         {% if error %}<div class="toast bad">{{ error }}</div>{% endif %}
-        <form method="post" action="/login" class="stack">
-            <label>{{ tr('login.password_label') }}</label>
-            <input type="text" name="key" placeholder="{{ tr('login.password_placeholder') }}" required autofocus>
-            <button type="submit">{{ tr('login.submit') }}</button>
-        </form>
-        <small>{{ tr('login.note') }}</small>
+        <div class="stack">
+            <div class="toast ok">This device is connected automatically. Other devices must open a secure link from Telegram.</div>
+            <a class="btn ghost" href="/">Open panel</a>
+        </div>
     </section>
 </main>
 <script src="/static/matrix.js"></script>
