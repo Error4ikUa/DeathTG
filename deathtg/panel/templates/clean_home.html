@@ -54,7 +54,6 @@
                 <h1>{{ tr('home.hero_title') }}</h1>
                 <p>{{ tr('home.hero_desc') }}</p>
             </div>
-            <form method="post" action="/system/update/check"><input type="hidden" name="return_to" value="news"><button class="btn ghost" type="submit">{{ tr('home.check_update') }}</button></form>
         </section>
 
         {% if message %}<div class="toast ok">{{ message }}</div>{% endif %}
