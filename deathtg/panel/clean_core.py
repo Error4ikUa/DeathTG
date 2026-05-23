@@ -8,8 +8,6 @@ profile retrieval and statistics collection.  It exposes various
 helpers used across the panel:
 
 * ``env_load``: load environment variables from ``.env``.
-* ``panel_password``: cached retrieval of the panel password from
-  ``.env`` (default ``deathtg``).
 * ``has_env``/``has_session``: check for existence of configuration
   files and session files.
 * ``avatar_url``: build a URL for the saved user avatar.
@@ -29,7 +27,6 @@ import json
 import os
 import re
 import ast
-from functools import lru_cache
 from pathlib import Path
 
 import aiohttp
@@ -86,23 +83,6 @@ def env_load() -> None:
     environment variables in the file to override existing ones.
     """
     load_dotenv(ROOT_DIR / ".env", override=True)
-
-
-@lru_cache(maxsize=1)
-def panel_password() -> str:
-    """Return the panel password from the ``.env`` file.
-
-    Cached on first call to avoid repeatedly reading the file.  Falls
-    back to the ``PANEL_PASSWORD`` environment variable or the
-    default ``deathtg``.
-    """
-    env_load()
-    env = ROOT_DIR / ".env"
-    if env.exists():
-        for line in env.read_text(encoding="utf-8").splitlines():
-            if line.startswith("PANEL_PASSWORD="):
-                return line.split("=", 1)[1].strip()
-    return os.getenv("PANEL_PASSWORD", "deathtg")
 
 
 def has_env() -> bool:

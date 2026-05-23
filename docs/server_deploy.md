@@ -2,13 +2,13 @@
 
 DeathTG now supports a secure-by-default server bootstrap:
 
-- panel binds to `127.0.0.1` by default
+- panel binds to the configured local/LAN host
 - public remote access is intended for `https://` only
-- strong `PANEL_PASSWORD` and `PANEL_SECRET` are auto-generated if missing or weak
+- strong `PANEL_SECRET` is auto-generated if missing or weak
 - trusted hosts are enforced
 - secure cookies switch on automatically when `PANEL_PUBLIC_URL=https://...`
 - login/setup routes are rate-limited
-- remote password login is disabled when public HTTPS access is enabled
+- password login is removed from the active panel flow
 - one-time signed device links can be created for phone, laptop, tablet, and other browsers
 - `.env` and `.session*` files are tightened after write
 
@@ -49,7 +49,7 @@ The installer:
 - Put `caddy` or another TLS reverse proxy in front if you need public access
 - Set `DTG_PUBLIC_URL=https://your-domain`
 - Use bot/device grant links for daily login
-- Treat panel password as local recovery access, not as your normal remote login method
+- Treat one-time device links as the normal login method for phones and extra browsers
 - Keep Telegram setup in the web flow, not in manual `.env` editing
 - Do not use Termux or Android terminal environments for DeathTG deploys
 

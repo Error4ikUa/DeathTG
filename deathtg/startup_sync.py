@@ -240,6 +240,31 @@ def _language() -> str:
 
 
 def _msg(en: str, ru: str) -> str:
+    mojibake_markers = (
+        "Рџ",
+        "Р’",
+        "Р“",
+        "Р”",
+        "РЎ",
+        "СЃ",
+        "С‚",
+        "С‹",
+        "СЊ",
+        "СЋ",
+        "СЏ",
+        "С‡",
+        "С€",
+        "С‰",
+        "С…",
+        "вЂ",
+        "РІР‚",
+        "Ѓ",
+        "Џ",
+        "Њ",
+        "Љ",
+    )
+    if any(marker in ru for marker in mojibake_markers):
+        return en
     return ru if _language() == "ru" else en
 
 
@@ -1369,3 +1394,4 @@ async def _run_startup_sync_locked(client) -> dict:
     await _notify_integrity_if_needed(client, owner_id, status, previous_status)
     _write_status(status)
     return status
+

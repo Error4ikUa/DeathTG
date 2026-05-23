@@ -205,6 +205,16 @@ def print_report(report: StartupReport) -> None:
 
 def ready_to_start_userbot() -> bool:
     env = parse_env_file(ENV_PATH)
+    state_path = RUNTIME_DIR / "startup_state.json"
+    if state_path.exists():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except Exception:
+            state = {}
+        phase = str(state.get("phase") or "").upper()
+        message = str(state.get("message") or "").lower()
+        if phase == "DEGRADED" and "session" in message and ("invalid" in message or "missing" in message):
+            return False
     if _env_truthy("DTG_SAFE_MODE"):
         return False
     if not (env.get("API_ID") or "").strip() or not (env.get("API_HASH") or "").strip():

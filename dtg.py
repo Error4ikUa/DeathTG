@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import atexit
+import json
 import os
 import signal
 import socket
@@ -39,6 +41,8 @@ from deathtg.ui import CONSOLE_BANNER
 
 ROOT_DIR = Path(__file__).resolve().parent
 ENV_PATH = ROOT_DIR / ".env"
+RUNTIME_DIR = ROOT_DIR / "runtime"
+INSTANCE_LOCK_PATH = RUNTIME_DIR / "dtg.lock"
 
 if ENV_PATH.exists():
     load_dotenv(ENV_PATH, override=True)
@@ -47,6 +51,56 @@ userbot_process = None
 supervisor_stop = threading.Event()
 last_start_attempt = 0.0
 MIN_RESTART_INTERVAL = 5.0
+
+
+def _pid_is_running(pid: int) -> bool:
+    if pid <= 0 or pid == os.getpid():
+        return False
+    try:
+        import psutil
+
+        return psutil.pid_exists(pid)
+    except Exception:
+        try:
+            os.kill(pid, 0)
+            return True
+        except Exception:
+            return False
+
+
+def acquire_instance_lock() -> bool:
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    if INSTANCE_LOCK_PATH.exists():
+        try:
+            data = json.loads(INSTANCE_LOCK_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+        existing_pid = int(data.get("pid") or 0) if isinstance(data, dict) else 0
+        if _pid_is_running(existing_pid):
+            print(f"DeathTG is already running in another process (PID {existing_pid}).")
+            print("Stop the old window/process first, then start DeathTG again.")
+            return False
+        try:
+            INSTANCE_LOCK_PATH.unlink()
+        except Exception:
+            pass
+    INSTANCE_LOCK_PATH.write_text(
+        json.dumps({"pid": os.getpid(), "started_at": int(time.time())}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return True
+
+
+def release_instance_lock() -> None:
+    try:
+        data = json.loads(INSTANCE_LOCK_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    if not isinstance(data, dict) or int(data.get("pid") or 0) == os.getpid():
+        try:
+            INSTANCE_LOCK_PATH.unlink()
+        except Exception:
+            pass
 
 
 def parse_args() -> argparse.Namespace:
@@ -103,6 +157,12 @@ def ensure_userbot_running() -> None:
         return
     last_start_attempt = now
     userbot_process = subprocess.Popen([sys.executable, "main.py"], cwd=ROOT_DIR)
+    time.sleep(0.8)
+    if userbot_process.poll() is not None:
+        code = userbot_process.returncode
+        userbot_process = None
+        print(f"Userbot: stopped during startup (exit {code})")
+        return
     print("Userbot: started")
 
 
@@ -118,6 +178,7 @@ def supervisor_loop() -> None:
 def cleanup(signum=None, frame=None):
     supervisor_stop.set()
     stop_userbot()
+    release_instance_lock()
     raise SystemExit(0)
 
 
@@ -185,6 +246,9 @@ def main() -> int:
         print("DeathTG does not support Termux.")
         print("Use a normal Linux server, VPS, or desktop Python environment instead.")
         return 1
+    if not acquire_instance_lock():
+        return 1
+    atexit.register(release_instance_lock)
 
     ensure_server_env()
     report = run_preflight(
@@ -195,9 +259,11 @@ def main() -> int:
     )
     print_report(report)
     if args.preflight_only:
+        release_instance_lock()
         return 0 if report.ok else 1
     if not report.ok:
         print("Startup stopped. Run: python dtg.py --repair")
+        release_instance_lock()
         return 1
 
     if not args.no_panel:
@@ -269,6 +335,7 @@ def main() -> int:
         if supervisor_thread:
             supervisor_thread.join(timeout=2.0)
         stop_userbot()
+        release_instance_lock()
     return 0
 
 

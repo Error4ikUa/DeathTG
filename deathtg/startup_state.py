@@ -25,6 +25,7 @@ PHASE_REPAIR = "REPAIR"
 PHASE_SAFE_MODE = "SAFE_MODE"
 
 TRANSIENT_RUNTIME_PHASES = {PHASE_POST_SETUP_SYNC, PHASE_REPAIR}
+SESSION_INVALID_MARKERS = ("session is missing", "session is missing or invalid", "session file is missing", "session invalid")
 SETUP_QR_STAGES = {
     "",
     "idle",
@@ -147,10 +148,14 @@ def startup_snapshot() -> dict:
     else:
         runtime_phase = str(runtime_state.get("phase") or "").strip().upper()
         runtime_message = str(runtime_state.get("message") or "").strip()
+        runtime_message_l = runtime_message.lower()
         updated_at = int(runtime_state.get("updated_at") or 0)
         age_seconds = max(0, int(time.time()) - updated_at) if updated_at else None
         failures = _integrity_failures(startup_status, health_state)
-        if runtime_phase in TRANSIENT_RUNTIME_PHASES and age_seconds is not None and age_seconds <= 600:
+        if runtime_phase == PHASE_DEGRADED and any(marker in runtime_message_l for marker in SESSION_INVALID_MARKERS):
+            phase = PHASE_FIRST_RUN
+            message = runtime_message or "Telegram session is missing or invalid. Run setup to reconnect."
+        elif runtime_phase in TRANSIENT_RUNTIME_PHASES and age_seconds is not None and age_seconds <= 600:
             phase = runtime_phase
             message = runtime_message or ("DeathTG is repairing startup state." if runtime_phase == PHASE_REPAIR else "DeathTG is finishing post-setup sync.")
         elif failures:

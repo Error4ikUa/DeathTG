@@ -8,6 +8,7 @@ from deathtg.command import command
 from deathtg.config import MODULES_DIR, ROOT_DIR, RUNTIME_DIR
 from deathtg.loader import Module
 from deathtg.module_repo import fetch_repo_modules, find_repo_module, is_url, normalize_github_raw_url, trusted_repo_link
+from deathtg.panel_access import issue_device_grant
 from deathtg.permissions import parse_security
 from deathtg.profile_store import update_env_value
 from deathtg.registry import PROTECTED_MODULES
@@ -106,21 +107,19 @@ class CoreMod(Module):
         self.app.security.remove_sudo_user(user_id)
         await event.edit(f"<b>Sudo removed:</b> <code>{user_id}</code>", parse_mode="html")
 
-    @command("panelkey", description="Show panel password", usage=".panelkey", security="owner")
+    @command("panelkey", description="Create a secure panel link", usage=".panelkey [device name]", security="owner")
     async def panelkey_cmd(self, event, args):
-        env_path = ROOT_DIR / ".env"
-        if not env_path.exists():
-            await event.edit("<b>.env not found.</b>", parse_mode="html")
-            return
-        key = ""
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            if line.startswith("PANEL_PASSWORD="):
-                key = line.split("=", 1)[1].strip()
-                break
-        if not key:
-            await event.edit("<b>PANEL_PASSWORD is not set.</b>", parse_mode="html")
-            return
-        await event.edit(f"<b>{self.system_emoji('key')} Panel password:</b> <code>{html.escape(key)}</code>", parse_mode="html")
+        me = await self.app.client.get_me()
+        owner_id = int(getattr(me, "id", 0) or 0)
+        label = " ".join(args).strip() or "Telegram command"
+        link = issue_device_grant(label, created_by="panelkey", owner_id=owner_id)
+        await event.edit(
+            f"<b>{self.system_emoji('key')} Secure panel link</b>\n"
+            "<i>One link works for one device only.</i>\n"
+            f"<code>{html.escape(link)}</code>",
+            parse_mode="html",
+            link_preview=False,
+        )
 
     @command("crebot1", description="Show or save inline bot token", usage=".crebot1 [token]", security="owner")
     async def crebot1_cmd(self, event, args):

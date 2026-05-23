@@ -18,7 +18,6 @@ PREMIUM_EMOJI_DOC_IDS: Final[dict[str, int]] = {
     "alert": 5228686859663585439,
     "search": 5188217332748527444,
     "sync": 5292226786229236118,
-    "user": 5456965497330847669,
 }
 
 
@@ -50,7 +49,7 @@ def premium_emoji(name: str, enabled: bool = False) -> str:
     if not emoji_id:
         return fallback
 
-    return f"<emoji document_id={emoji_id}>{fallback}</emoji>"
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
 
 
 def emoji_line(name: str, text: str, enabled: bool = False) -> str:

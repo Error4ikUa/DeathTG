@@ -1,25 +1,23 @@
 <!doctype html>
-<html lang="ru">
+<html lang="{{ lang or 'en' }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DeathTG Panel</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <title>{{ tr('login.title') }}</title>
+  <link rel="stylesheet" href="/static/clean.css">
 </head>
 <body>
   <canvas id="matrix"></canvas>
-  <main class="login-shell">
-    <section class="glass-card login-card">
-      <div class="brand-mark">DTG</div>
-      <h1>DeathTG Control</h1>
-      <p>Панель управления юзерботом</p>
-      {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
-      <form method="post" action="/login" class="form-stack">
-        <label>Panel password</label>
-        <input type="text" name="key" placeholder="PANEL_PASSWORD из .env" autofocus required>
-        <button type="submit">Enter</button>
-      </form>
-      <small>Это пароль панели DeathTG, не пароль Telegram. Локально он нужен для теста, а на сервере защищает вход с телефона/браузера.</small>
+  <main class="auth">
+    <section class="card auth-card">
+      <div class="mark big">DTG</div>
+      <h1>{{ tr('login.heading') }}</h1>
+      <p>{{ tr('login.intro') }}</p>
+      {% if error %}<div class="toast bad">{{ error }}</div>{% endif %}
+      <div class="stack">
+        <div class="toast ok">{{ tr('login.note') }}</div>
+        <a class="btn ghost" href="/">{{ tr('login.submit') }}</a>
+      </div>
     </section>
   </main>
   <script src="/static/matrix.js"></script>

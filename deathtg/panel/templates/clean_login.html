@@ -15,8 +15,8 @@
         <p>{{ tr('login.intro') }}</p>
         {% if error %}<div class="toast bad">{{ error }}</div>{% endif %}
         <div class="stack">
-            <div class="toast ok">This device is connected automatically. Other devices must open a secure link from Telegram.</div>
-            <a class="btn ghost" href="/">Open panel</a>
+            <div class="toast ok">{{ tr('login.note') }}</div>
+            <a class="btn ghost" href="/">{{ tr('login.submit') }}</a>
         </div>
     </section>
 </main>

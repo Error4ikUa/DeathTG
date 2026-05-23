@@ -298,15 +298,13 @@ async def fetch_module_bundle(link: str) -> dict:
                     parsed["path"],
                 )
             if parsed and parsed["kind"] == "contents" and parsed["path"]:
-                payload = await _fetch_json(session, parsed["url"])
-                if isinstance(payload, list):
-                    return await _fetch_folder_bundle(
-                        session,
-                        parsed["owner"],
-                        parsed["repo"],
-                        parsed["ref"],
-                        parsed["path"],
-                    )
+                return await _fetch_folder_bundle(
+                    session,
+                    parsed["owner"],
+                    parsed["repo"],
+                    parsed["ref"],
+                    parsed["path"],
+                )
             url = normalize_github_raw_url(value)
             filename = Path(urlparse(url).path).name or "module.py"
             if not filename.endswith(".py"):
