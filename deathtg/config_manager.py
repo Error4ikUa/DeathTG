@@ -13,7 +13,7 @@ from deathtg.server_bootstrap import parse_env_file, update_env_values
 CONFIG_VERSION = 1
 CONFIG_PATH = ROOT_DIR / "config.json"
 CONFIG_STATUS_PATH = RUNTIME_DIR / "config_status.json"
-SECRETS = {"api_hash", "bot_token", "bot_token_helper", "panel_password", "panel_secret", "phone"}
+SECRETS = {"api_hash", "bot_token", "bot_token_helper", "panel_secret", "phone"}
 
 ENV_TO_CONFIG = {
     "API_ID": "api_id",
@@ -27,7 +27,6 @@ ENV_TO_CONFIG = {
     "PANEL_HOST": "panel_host",
     "PANEL_PORT": "panel_port",
     "PANEL_PUBLIC_URL": "panel_public_url",
-    "PANEL_PASSWORD": "panel_password",
     "PANEL_SECRET": "panel_secret",
 }
 
@@ -46,7 +45,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "panel_host": "0.0.0.0",
     "panel_port": "8080",
     "panel_public_url": "",
-    "panel_password": "",
     "panel_secret": "",
 }
 

@@ -13,7 +13,7 @@ from telethon.errors import PasswordHashInvalidError, SessionPasswordNeededError
 from telethon.tl import functions, types
 
 from deathtg.config import ROOT_DIR
-from deathtg.server_bootstrap import secure_panel_password, secure_panel_secret, update_env_values
+from deathtg.server_bootstrap import secure_panel_secret, update_env_values
 from deathtg.startup_state import (
     PHASE_FIRST_RUN,
     PHASE_POST_SETUP_SYNC,
@@ -146,7 +146,6 @@ def write_env(api_id: int, api_hash: str, session_name: str, phone: str = "", pa
             "SESSION_NAME": session_name.strip() or "deathtg",
             "COMMAND_PREFIX": ".",
             "BOT_TOKEN": bot_token.strip(),
-            "PANEL_PASSWORD": secure_panel_password(panel_key),
             "PANEL_SECRET": secure_panel_secret(panel_secret),
             "PHONE": phone.strip(),
             "LOGIN_PENDING": "1",

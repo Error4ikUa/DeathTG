@@ -323,7 +323,7 @@ def set_antivirus_report(
 def sync_settings_from_config(config: dict[str, Any]) -> None:
     ensure_state_db()
     for key, value in config.items():
-        if key in {"api_hash", "bot_token", "bot_token_helper", "panel_password", "panel_secret", "phone"}:
+        if key in {"api_hash", "bot_token", "bot_token_helper", "panel_secret", "phone"}:
             set_setting(key, "***" if value else "")
         else:
             set_setting(key, value)

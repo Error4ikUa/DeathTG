@@ -11,7 +11,6 @@ from urllib.parse import urlparse
 from deathtg.config import ENV_PATH, ROOT_DIR
 from deathtg.panel_access import local_network_ip, visible_panel_host
 
-INSECURE_PASSWORDS = {"", "deathtg", "change_me_now", "admin", "password", "123456"}
 INSECURE_SECRETS = {"", "change_me_long_secret", "change_me_to_random_long_string", "secret"}
 
 
@@ -26,23 +25,12 @@ def _bool_env(name: str, default: bool = False) -> bool:
     return raw.lower() in {"1", "true", "yes", "on"}
 
 
-def random_panel_password() -> str:
-    return secrets.token_urlsafe(18)
-
-
 def random_panel_secret() -> str:
     return secrets.token_urlsafe(48)
 
 
 def random_panel_site_id() -> str:
     return secrets.token_urlsafe(10).replace("-", "").replace("_", "")
-
-
-def secure_panel_password(preferred: str = "") -> str:
-    value = _strip(preferred)
-    if value.lower() in INSECURE_PASSWORDS:
-        return random_panel_password()
-    return value
 
 
 def secure_panel_secret(preferred: str = "") -> str:
@@ -102,10 +90,6 @@ def ensure_server_env(*, path: Path = ENV_PATH, panel_host: str = "", panel_port
         effective_public_url = f"https://{effective_public_host}"
     if effective_public_url.startswith("http://"):
         effective_public_url = "https://" + effective_public_url[len("http://"):]
-
-    password = secure_panel_password(current.get("PANEL_PASSWORD", ""))
-    if current.get("PANEL_PASSWORD", "") != password:
-        updates["PANEL_PASSWORD"] = password
 
     secret = secure_panel_secret(current.get("PANEL_SECRET", ""))
     if current.get("PANEL_SECRET", "") != secret:

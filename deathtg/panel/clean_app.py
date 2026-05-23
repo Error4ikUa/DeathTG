@@ -30,7 +30,6 @@ from deathtg.panel.clean_core import (
     module_repo,
     module_detail,
     repo_module_detail,
-    panel_password,
     profile_info,
     refresh_modules,
     registry,
@@ -72,7 +71,6 @@ from deathtg.server_bootstrap import (
     panel_allowed_hosts,
     panel_cookie_secure,
     panel_trust_proxy,
-    secure_panel_password,
     secure_panel_secret,
 )
 from deathtg.startup_state import (
@@ -168,6 +166,10 @@ def _target_path(return_to: str | None, default: str = "/") -> str:
         return "/activity"
     if value == "browser":
         return "/browser"
+    if value in {"installed", "installed_tab"}:
+        return "/browser#installedPane"
+    if value == "install_tab":
+        return "/browser#installPane"
     if value == "scanner":
         return "/scanner"
     return default
@@ -429,13 +431,10 @@ async def setup_save(
             status_code=429,
         )
     try:
-        panel_key = secure_panel_password("")
         secret_value = secure_panel_secret("")
-        write_env(api_id, api_hash, session_name, "", panel_key, secret_value, "")
+        write_env(api_id, api_hash, session_name, "", "", secret_value, "")
         ensure_server_env(public_url=_request_origin_url(request))
-        os.environ["PANEL_PASSWORD"] = panel_key
         os.environ["PANEL_SECRET"] = secret_value
-        panel_password.cache_clear()
         flow_id = secrets.token_urlsafe(16)
         request.session["setup_flow_id"] = flow_id
         qr_info = await begin_qr_login(flow_id, api_id, api_hash, session_name)

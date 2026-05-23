@@ -1,6 +1,5 @@
-from deathtg.panel.server_v2 import app
-from deathtg.panel.pages import router as pages_router
-from deathtg.panel.re_auth import router as reconnect_router
+from __future__ import annotations
 
-app.include_router(pages_router)
-app.include_router(reconnect_router)
+from deathtg.panel.clean_app import app
+
+__all__ = ["app"]
