@@ -490,7 +490,7 @@ drawLineChart();
   const accentInputs = [...document.querySelectorAll('input[name="accent"]')];
   if (!body || !accentInputs.length) return;
 
-  const glyphs = ['✦', '✧', '✶', '✹', '✺', '✷', '✴', '✦', '+', '*'];
+  const glyphs = ["✦", "✧", "✶", "✷", "✹", "✺", "⬛", "◆", "+", "*"];
 
   function emitBurst(source) {
     const rect = (source && source.getBoundingClientRect) ? source.getBoundingClientRect() : {left: window.innerWidth / 2, top: window.innerHeight / 2, width: 0, height: 0};

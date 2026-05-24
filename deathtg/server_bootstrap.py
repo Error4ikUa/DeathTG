@@ -121,6 +121,8 @@ def ensure_server_env(*, path: Path = ENV_PATH, panel_host: str = "", panel_port
         "PANEL_SHORTCUTS_MIN_INTERVAL": current.get("PANEL_SHORTCUTS_MIN_INTERVAL", "21600") or "21600",
         "BOT_TOKEN": current.get("BOT_TOKEN", ""),
         "BOT_TOKEN_HELPER": current.get("BOT_TOKEN_HELPER", ""),
+        "BOT_TOKEN_COMMUNITY": current.get("BOT_TOKEN_COMMUNITY", ""),
+        "COMMUNITY_BOT_USERNAME": current.get("COMMUNITY_BOT_USERNAME", ""),
         "PHONE": current.get("PHONE", ""),
         "OWNER_ID": current.get("OWNER_ID", ""),
         "API_ID": current.get("API_ID", ""),

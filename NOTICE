@@ -1,0 +1,9 @@
+﻿DeathTG
+Copyright (C) 2026 DeathTerror.
+
+Hikka architectural reference notice:
+DeathTG uses Hikka as a public AGPL-3.0 reference for module-loading behavior, dependency recovery ideas, and Telegram userbot UX patterns.
+Original project: https://github.com/hikariatama/hikka
+License: GNU Affero General Public License v3.0
+
+Do not commit Telegram tokens, API hashes, session files, or panel grant links.

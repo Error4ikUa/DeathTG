@@ -855,10 +855,9 @@ async def check_runtime_integrity(client, *, notify: bool = True, allow_repair: 
             continue
         token = _env(blueprint["env_key"])
         username, token_error = await _fetch_bot_username(token, env_key=blueprint["env_key"])
-        if blueprint["role"] == "community":
-            valid_username = bool(username and username.lower() == blueprint["username"].lower())
-        else:
-            valid_username = _is_valid_bot_username(username, owner_id)
+        valid_username = _is_valid_bot_username(username, owner_id)
+        if valid_username:
+            update_env_value(_bot_username_env_key(str(blueprint["role"])), username)
         start_ping = False
         start_ping_error = None
         if valid_username:

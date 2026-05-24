@@ -8,6 +8,7 @@ __pycache__/
 *.session
 *.session-journal
 .env
+config.json
 runtime/
 *.log
 *:Zone.Identifier

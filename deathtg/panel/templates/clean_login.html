@@ -16,7 +16,8 @@
         {% if error %}<div class="toast bad">{{ error }}</div>{% endif %}
         <div class="stack">
             <div class="toast ok">{{ tr('login.note') }}</div>
-            <a class="btn ghost" href="/">{{ tr('login.submit') }}</a>
+            <a class="btn ghost" href="/login">{{ tr('login.refresh') }}</a>
+            <p class="muted">{{ tr('login.secure_link_help') }}</p>
         </div>
     </section>
 </main>

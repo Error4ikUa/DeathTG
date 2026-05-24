@@ -21,6 +21,8 @@ def main() -> None:
         assert env["PANEL_HOST"] == "127.0.0.1"
         assert env["PANEL_PORT"] == "8080"
         assert env["PANEL_SECRET"] != "change_me_to_random_long_string"
+        assert "BOT_TOKEN_COMMUNITY" in env
+        assert "COMMUNITY_BOT_USERNAME" in env
         parsed = parse_env_file(path)
         assert parsed["PANEL_SECRET"] == env["PANEL_SECRET"]
 

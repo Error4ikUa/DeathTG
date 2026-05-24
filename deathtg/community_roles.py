@@ -51,9 +51,14 @@ def save_role_registry(data: dict[str, dict]) -> dict[str, dict]:
     return normalized
 
 
-def preferred_community_bot_username() -> str:
+def preferred_community_bot_username(owner_id: int | None = None) -> str:
     raw = (os.getenv("COMMUNITY_BOT_USERNAME", "") or "").strip().lstrip("@")
-    username = raw or DEFAULT_COMMUNITY_BOT_USERNAME
+    if raw:
+        username = raw
+    elif owner_id:
+        username = f"dtg{int(owner_id)}_community_bot"
+    else:
+        username = DEFAULT_COMMUNITY_BOT_USERNAME
     if not username.lower().endswith("bot"):
         username = f"{username}_bot"
     return username

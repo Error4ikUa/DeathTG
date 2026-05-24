@@ -720,7 +720,7 @@ async def browser_page(request: Request):
     if blocked:
         return blocked
     await refresh_modules()
-    repo_modules = await module_repo()
+    repo_modules = await module_repo(refresh=request.query_params.get("refresh") == "1")
     try:
         page = max(1, int(request.query_params.get("page", "1")))
     except Exception:

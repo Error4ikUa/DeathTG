@@ -1,12 +1,12 @@
 # DeathTG
 
 ```text
-██████╗ ███████╗ █████╗ ████████╗██╗  ██╗    ████████╗ ██████╗
-██╔══██╗██╔════╝██╔══██╗╚══██╔══╝██║  ██║    ╚══██╔══╝██╔════╝
-██║  ██║█████╗  ███████║   ██║   ███████║       ██║   ██║  ██╗
-██║  ██║██╔══╝  ██╔══██║   ██║   ██╔══██║       ██║   ██║  ╚██╗
-██████╔╝███████╗██║  ██║   ██║   ██║  ██║       ██║   ╚██████╔╝
-╚═════╝ ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝       ╚═╝    ╚═════╝
+██████╗  ███████╗ █████╗ ████████╗██╗  ██╗    ████████╗ ██████╗
+██╔══██╗ ██╔════╝██╔══██╗╚══██╔══╝██║  ██║    ╚══██╔══╝██╔════╝
+██║  ██║ █████╗  ███████║   ██║   ███████║       ██║   ██║  ███╗
+██║  ██║ ██╔══╝  ██╔══██║   ██║   ██╔══██║       ██║   ██║   ██║
+██████╔╝ ███████╗██║  ██║   ██║   ██║  ██║       ██║   ╚██████╔╝
+╚═════╝  ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝       ╚═╝    ╚═════╝
 ```
 
 DeathTG is a secure Telegram userbot platform with:
@@ -86,7 +86,7 @@ For public servers DeathTG uses:
 - setup-token protection
 - trusted multi-device sessions
 - secure signed one-time device links
-- restricted remote password login
+- trusted secure-link login for remote devices
 - per-device revoke
 
 ## Update Logic
@@ -204,9 +204,17 @@ DTG_PUBLIC_HOST=panel.example.com DTG_PUBLIC_URL=https://panel.example.com bash 
 - do not share secure panel links
 - do not expose plain HTTP publicly
 - prefer HTTPS for public panel access
-- use trusted device links instead of sharing panel password
+- use trusted one-device links instead of passwords
 
 ## Docs
 
 - `docs/server_deploy.md`
 - `images/README.md`
+
+## License
+
+DeathTG is licensed under AGPL-3.0-or-later.
+
+Copyright (C) 2026 DeathTerror.
+
+Hikka was used as an architectural reference for module-loading ideas. Hikka is AGPL-3.0 and remains credited in `NOTICE`.

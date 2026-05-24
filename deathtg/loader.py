@@ -29,6 +29,7 @@ import asyncio
 import importlib
 import importlib.util
 import inspect
+import re
 import secrets
 import shutil
 import sys
@@ -46,7 +47,19 @@ from deathtg.module_db import ModuleDatabase
 from deathtg.module_repo import fetch_module_bundle
 from deathtg.premium_emoji import premium_emoji
 from deathtg.registry import CommandRegistry
+from deathtg.requirements_manager import install_requirements
 from deathtg.security import scan_module_source
+
+
+REQUIREMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+(?:==[A-Za-z0-9_.!+-]+|>=[A-Za-z0-9_.!+-]+|<=[A-Za-z0-9_.!+-]+)?$")
+IMPORT_REQUIREMENT_MAP = {
+    "pil": "Pillow",
+    "sklearn": "scikit-learn",
+    "cv2": "opencv-python",
+    "yaml": "PyYAML",
+    "bs4": "beautifulsoup4",
+    "dateutil": "python-dateutil",
+}
 
 
 def _mark_handler(kind: str, *tags, **filters):
@@ -479,7 +492,55 @@ class ModuleLoader:
             return None
         return resolve_module_entry(path, module_name)
 
-    async def load_file(self, path: Path, *, force: bool = False, module_name: str | None = None) -> str:
+    @staticmethod
+    def _inline_requirements(source: str) -> list[str]:
+        requirements: list[str] = []
+        for line in source.splitlines()[:120]:
+            match = re.match(r"#\s*requires:\s*(.+)$", line.strip(), flags=re.I)
+            if not match:
+                continue
+            requirements.extend(part.strip() for part in match.group(1).replace(",", " ").split() if part.strip())
+        return requirements
+
+    @staticmethod
+    def _safe_requirements(requirements) -> list[str]:
+        safe: list[str] = []
+        for item in requirements or []:
+            req = str(item or "").strip()
+            if req and REQUIREMENT_RE.fullmatch(req) and req not in safe:
+                safe.append(req)
+        return safe
+
+    def _requirements_for_entry(self, entry: Path, source: str, extra=None) -> list[str]:
+        requirements: list[str] = []
+        requirements.extend(self._inline_requirements(source))
+        req_file = entry.parent / "requirements.txt"
+        if req_file.exists():
+            try:
+                requirements.extend(req_file.read_text(encoding="utf-8", errors="replace").splitlines())
+            except Exception:
+                pass
+        requirements.extend(extra or [])
+        return self._safe_requirements(requirements)
+
+    async def _install_module_requirements(self, requirements: list[str]) -> None:
+        safe = self._safe_requirements(requirements)
+        if not safe:
+            return
+        result = await asyncio.to_thread(install_requirements, safe)
+        if not result.get("ok"):
+            message = str(result.get("message") or result.get("stderr") or "pip install failed")
+            raise RuntimeError("Requirements install failed: " + message[-900:])
+        importlib.invalidate_caches()
+
+    @staticmethod
+    def _requirement_from_import_error(exc: ImportError) -> str:
+        missing = str(getattr(exc, "name", "") or "").split(".", 1)[0].strip()
+        if not missing:
+            return ""
+        return IMPORT_REQUIREMENT_MAP.get(missing.lower(), missing)
+
+    async def load_file(self, path: Path, *, force: bool = False, module_name: str | None = None, _did_requirements: bool = False) -> str:
         entry = resolve_module_entry(path, module_name)
         if not entry or not entry.exists() or entry.suffix.lower() != ".py":
             raise FileNotFoundError("Expected an existing module file or module folder")
@@ -510,6 +571,18 @@ class ModuleLoader:
             await self._register_module(module, final_name)
             self.import_names[final_name] = import_name
             self.source_paths[final_name] = entry
+        except ImportError as exc:
+            sys.modules.pop(import_name, None)
+            if force and not _did_requirements:
+                requirements = self._requirements_for_entry(entry, source, [self._requirement_from_import_error(exc)])
+                if requirements:
+                    await self._install_module_requirements(requirements)
+                    return await self.load_file(path, force=force, module_name=module_name, _did_requirements=True)
+            self.registry.remove_module(final_name, force=True)
+            self.loaded.pop(final_name, None)
+            self.import_names.pop(final_name, None)
+            self.source_paths.pop(final_name, None)
+            raise
         except Exception:
             self.registry.remove_module(final_name, force=True)
             self.loaded.pop(final_name, None)
@@ -532,6 +605,8 @@ class ModuleLoader:
         report = scan_module_source(text, trusted=trusted)
         if not report.allowed and not force:
             raise RuntimeError("Module was blocked by security scan:\n" + report.pretty())
+        if trusted:
+            await self._install_module_requirements(self._safe_requirements(bundle.get("requirements") or []))
         if str(bundle.get("kind") or "file") == "folder":
             target = self.modules_dir / module_name
             if target.exists():
