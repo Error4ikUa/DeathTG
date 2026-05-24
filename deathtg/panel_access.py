@@ -566,7 +566,7 @@ def consume_device_grant(token: str, *, ip: str = "", user_agent: str = "") -> d
     return {"session_id": session_id, "device": dict(devices[session_id])}
 
 
-def remember_device_session(session_id: str, *, ip: str = "", user_agent: str = "", label: str = "", auth_method: str = "password") -> dict:
+def remember_device_session(session_id: str, *, ip: str = "", user_agent: str = "", label: str = "", auth_method: str = "trusted") -> dict:
     now = int(time.time())
     devices = _cleanup_devices(_read_json(DEVICES_PATH))
     item = devices.get(session_id, {})

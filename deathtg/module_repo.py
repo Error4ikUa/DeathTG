@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import os
 import re
+import hashlib
+import json
+import time
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
 import aiohttp
+
+from deathtg.config import RUNTIME_DIR
 
 
 MODULE_REPO_INDEX = os.getenv(
@@ -47,6 +52,79 @@ GITHUB_HEADERS = {
     "User-Agent": "DeathTG/1.0",
     "Accept": "application/vnd.github+json, text/html;q=0.9, */*;q=0.8",
 }
+
+MODULE_REPO_CACHE_PATH = RUNTIME_DIR / "module_repo_cache.json"
+MODULE_BUNDLE_CACHE_DIR = RUNTIME_DIR / "module_bundle_cache"
+MAX_BUNDLE_CACHE_BYTES = 1024 * 1024 * 5
+
+
+def _json_load(path: Path, default):
+    try:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+    return default
+
+
+def _repo_cache_items() -> list[dict]:
+    data = _json_load(MODULE_REPO_CACHE_PATH, {})
+    if not isinstance(data, dict):
+        return []
+    items = data.get("items")
+    if not isinstance(items, list):
+        return []
+    return [dict(item) for item in items if isinstance(item, dict)]
+
+
+def _write_repo_cache(items: list[dict], *, source: str = "remote") -> None:
+    if not items:
+        return
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    MODULE_REPO_CACHE_PATH.write_text(
+        json.dumps(
+            {
+                "source": source,
+                "updated_at": int(time.time()),
+                "items": items,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _bundle_cache_path(link: str) -> Path:
+    digest = hashlib.sha256(_normalize_url(link).encode("utf-8")).hexdigest()
+    return MODULE_BUNDLE_CACHE_DIR / f"{digest}.json"
+
+
+def _read_bundle_cache(link: str) -> dict | None:
+    data = _json_load(_bundle_cache_path(link), {})
+    if not isinstance(data, dict):
+        return None
+    bundle = data.get("bundle")
+    return dict(bundle) if isinstance(bundle, dict) and bundle.get("source") else None
+
+
+def _write_bundle_cache(link: str, bundle: dict) -> None:
+    source = str(bundle.get("source") or "")
+    if not source or len(source.encode("utf-8", errors="ignore")) > MAX_BUNDLE_CACHE_BYTES:
+        return
+    MODULE_BUNDLE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    _bundle_cache_path(link).write_text(
+        json.dumps(
+            {
+                "link": _normalize_url(link),
+                "updated_at": int(time.time()),
+                "bundle": bundle,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
 
 def _normalize_url(value: str) -> str:
@@ -290,21 +368,25 @@ async def fetch_module_bundle(link: str) -> dict:
     try:
         async with aiohttp.ClientSession() as session:
             if parsed and parsed["kind"] == "tree":
-                return await _fetch_folder_bundle(
+                bundle = await _fetch_folder_bundle(
                     session,
                     parsed["owner"],
                     parsed["repo"],
                     parsed["ref"],
                     parsed["path"],
                 )
+                _write_bundle_cache(value, bundle)
+                return bundle
             if parsed and parsed["kind"] == "contents" and parsed["path"]:
-                return await _fetch_folder_bundle(
+                bundle = await _fetch_folder_bundle(
                     session,
                     parsed["owner"],
                     parsed["repo"],
                     parsed["ref"],
                     parsed["path"],
                 )
+                _write_bundle_cache(value, bundle)
+                return bundle
             url = normalize_github_raw_url(value)
             filename = Path(urlparse(url).path).name or "module.py"
             if not filename.endswith(".py"):
@@ -313,8 +395,16 @@ async def fetch_module_bundle(link: str) -> dict:
     except aiohttp.InvalidURL as exc:
         raise RuntimeError("Invalid module URL") from exc
     except aiohttp.ClientError as exc:
+        cached = _read_bundle_cache(value)
+        if cached:
+            return cached
         raise RuntimeError(f"Module download failed: {exc}") from exc
-    return {
+    except RuntimeError:
+        cached = _read_bundle_cache(value)
+        if cached:
+            return cached
+        raise
+    bundle = {
         "kind": "file",
         "module_name": Path(filename).stem,
         "entry_filename": filename,
@@ -332,6 +422,8 @@ async def fetch_module_bundle(link: str) -> dict:
         "repo_ref": "",
         "repo_path": "",
     }
+    _write_bundle_cache(value, bundle)
+    return bundle
 
 
 def _normalize_repo_item(item: dict) -> dict:
@@ -490,7 +582,20 @@ async def _from_github_tree_html(session: aiohttp.ClientSession, owner: str = "E
     return modules
 
 
-async def fetch_repo_modules() -> list[dict]:
+def _dedupe_repo_items(items: list[dict]) -> list[dict]:
+    unique: dict[str, dict] = {}
+    for item in items:
+        key = str(item.get("name") or "").strip().lower()
+        if key and key not in unique:
+            unique[key] = item
+    return sorted(unique.values(), key=lambda item: str(item.get("name") or "").lower())
+
+
+async def fetch_repo_modules(*, refresh: bool = False) -> list[dict]:
+    if not refresh:
+        cached = _repo_cache_items()
+        if cached:
+            return _dedupe_repo_items(cached)
     try:
         async with aiohttp.ClientSession() as session:
             items = await _from_index(session)
@@ -499,13 +604,10 @@ async def fetch_repo_modules() -> list[dict]:
             if not items:
                 items = await _from_github_tree_html(session)
     except Exception:
-        return []
-    unique: dict[str, dict] = {}
-    for item in items:
-        key = str(item.get("name") or "").strip().lower()
-        if key and key not in unique:
-            unique[key] = item
-    return sorted(unique.values(), key=lambda item: str(item.get("name") or "").lower())
+        return _dedupe_repo_items(_repo_cache_items())
+    normalized = _dedupe_repo_items(items)
+    _write_repo_cache(normalized)
+    return normalized
 
 
 async def find_repo_module(query: str) -> dict | None:

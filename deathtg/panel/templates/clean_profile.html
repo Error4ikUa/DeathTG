@@ -10,6 +10,11 @@
     <link rel="stylesheet" href="/static/theme_cards.css">
     <style>
         .editor-modal,.editor-modal *,.editor-modal *::before,.editor-modal *::after{box-sizing:border-box}
+        .editor-modal{overscroll-behavior:contain}
+        .editor-modal *{scrollbar-width:thin;scrollbar-color:rgba(var(--accent-rgb),.58) rgba(6,10,15,.72)}
+        .editor-modal *::-webkit-scrollbar{width:10px;height:10px}
+        .editor-modal *::-webkit-scrollbar-track{background:rgba(6,10,15,.74);border-radius:999px}
+        .editor-modal *::-webkit-scrollbar-thumb{background:linear-gradient(180deg,rgba(var(--accent-rgb),.78),rgba(var(--accent-rgb),.32));border:2px solid rgba(6,10,15,.92);border-radius:999px}
         .profile-shell{display:grid;gap:16px}
         .profile-hero{padding:24px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:20px;align-items:center}
         .hero-avatar{width:128px;height:128px;border-radius:28px;display:block;object-fit:cover;object-position:center;background:rgba(var(--accent-rgb),.08);border:1px solid var(--line2)}
@@ -48,17 +53,18 @@
         .pill-row{display:flex;flex-wrap:wrap;gap:10px}
         .pill{display:inline-flex;align-items:center;gap:8px;padding:9px 12px;border-radius:999px;border:1px solid rgba(var(--accent-rgb),.22);background:rgba(var(--accent-rgb),.08);color:#eef7ff;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
         .link-input{width:100%;border:1px solid rgba(var(--accent-rgb),.18);border-radius:14px;background:rgba(0,0,0,.3);color:#eff6ff;padding:13px 14px;font:600 13px/1.4 ui-monospace,Consolas,monospace}
-        .editor-modal .modal-card{width:min(1120px,100%);padding:22px;max-height:min(94vh,1180px);overflow:hidden;display:grid;grid-template-rows:auto auto minmax(0,1fr)}
-        .editor-shell{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,332px);gap:18px;overflow:auto;overflow-x:hidden;margin-top:14px;padding:0 12px 14px 0;align-items:start;scrollbar-gutter:stable}
+        .editor-modal .modal-card{width:min(1120px,calc(100vw - 28px));padding:22px;max-height:min(94vh,1180px);overflow:hidden;display:grid;grid-template-rows:auto auto minmax(0,1fr)}
+        .editor-shell{display:grid;grid-template-columns:minmax(0,1fr) minmax(270px,320px);gap:18px;overflow:auto;overflow-x:hidden;margin-top:14px;padding:0 12px 14px 0;align-items:start;scrollbar-gutter:stable}
+        .editor-shell>*{min-width:0;max-width:100%}
         .avatar-box{width:100%;aspect-ratio:1/1;border-radius:24px;border:1px solid var(--line2);background:rgba(var(--accent-rgb),.08);overflow:hidden}
         .avatar-box img{width:100%;height:100%;display:block;object-fit:cover;object-position:center}
-        .editor-form{display:grid;gap:16px;min-width:0;max-width:100%}
-        .editor-grid{display:grid;grid-template-columns:240px minmax(0,1fr);gap:16px;align-items:start;min-width:0}
+        .editor-form{display:grid;gap:16px;min-width:0;max-width:100%;overflow:hidden}
+        .editor-grid{display:grid;grid-template-columns:minmax(190px,240px) minmax(0,1fr);gap:16px;align-items:start;min-width:0;max-width:100%}
         .editor-stack{display:grid;gap:14px;min-width:0;max-width:100%}
         .editor-grid.single{grid-template-columns:1fr}
         .editor-grid .wide{grid-column:1/-1}
         .editor-form label{display:grid;gap:7px;font-size:13px;color:#f2deb0;min-width:0;max-width:100%}
-        .editor-form input,.editor-form textarea,.runtime-head input,.inline-form input{width:100%;border:1px solid var(--line);border-radius:14px;background:rgba(0,0,0,.28);color:var(--text);padding:13px 14px;outline:none;transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease}
+        .editor-form input,.editor-form textarea,.runtime-head input,.inline-form input{width:100%;min-width:0;max-width:100%;border:1px solid var(--line);border-radius:14px;background:rgba(0,0,0,.28);color:var(--text);padding:13px 14px;outline:none;transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease}
         .editor-form input:focus,.editor-form textarea:focus,.runtime-head input:focus,.inline-form input:focus{border-color:rgba(var(--accent-rgb),.52);box-shadow:0 0 0 1px rgba(var(--accent-rgb),.24),0 10px 26px rgba(0,0,0,.18);transform:translateY(-1px)}
         .editor-form textarea{min-height:136px;resize:vertical;font-family:ui-monospace,Consolas,monospace}
         .field-note{margin-top:4px;color:#8ca2a3;font-size:12px;line-height:1.6}
@@ -70,17 +76,19 @@
         .inline-form button{min-width:170px}
         .device-list{display:grid;gap:10px;min-width:0}
         .device-item{display:grid;gap:8px;padding:14px 15px;border-radius:15px;border:1px solid rgba(var(--accent-rgb),.14);background:rgba(255,255,255,.02);min-width:0;max-width:100%}
-        .device-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+        .device-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;min-width:0}
+        .device-head>div{min-width:0}
+        .device-head form{flex:0 0 auto}
         .device-item b{display:block;margin-bottom:4px}
         .mode-grid{display:grid;gap:10px}
         .mode-chip{padding:14px;border-radius:14px;border:1px solid rgba(var(--accent-rgb),.18);background:rgba(255,255,255,.025)}
         .mode-chip b{display:block;margin-bottom:6px}
         .choice-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;min-width:0}
-        .choice-grid.roles{grid-template-columns:repeat(auto-fit,minmax(128px,1fr))}
+        .choice-grid.roles{grid-template-columns:repeat(auto-fit,minmax(156px,1fr))}
         .choice-grid.two{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
         .choice-item{position:relative;min-width:0}
         .choice-item input{position:absolute;opacity:0;pointer-events:none}
-        .choice-card{position:relative;display:block;padding:12px 34px 12px 13px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.03);cursor:pointer;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;min-height:56px;min-width:0;max-width:100%}
+        .choice-card{position:relative;display:block;padding:12px 42px 12px 13px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.03);cursor:pointer;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;min-height:56px;min-width:0;max-width:100%}
         .choice-copy{display:grid;gap:2px;min-width:0}
         .choice-copy strong{font-size:14px;font-weight:900;line-height:1.2;display:block;white-space:normal;overflow-wrap:break-word;hyphens:auto}
         .choice-copy span{display:block;color:var(--muted);font-size:11px;line-height:1.45}
@@ -112,10 +120,11 @@
         .ghost{background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.01));backdrop-filter:blur(10px)}
         .editor-helper{margin-top:8px;color:var(--muted);font-size:12px;line-height:1.55}.access-rail{position:sticky;top:0;min-width:0;max-width:100%;contain:layout paint}.subtle-help{color:var(--muted);font-size:12px;line-height:1.6}.primary-save:hover{box-shadow:0 26px 46px rgba(0,0,0,.3),0 0 0 1px rgba(var(--accent-rgb),.22)}
         .access-rail .settings-card,.access-rail .device-item{background:rgba(255,255,255,.02)}
+        .access-rail{overflow:hidden}
         .modal-top-note{max-width:760px;color:var(--muted);font-size:13px;line-height:1.6;margin:8px 0 0}
         .editor-panel,.settings-card,.quote-card,.avatar-box{min-width:0;max-width:100%}
         @keyframes rolePulse{0%,100%{transform:translateY(0);box-shadow:0 0 0 1px rgba(255,214,102,.1),0 18px 34px rgba(0,0,0,.12)}50%{transform:translateY(-1px);box-shadow:0 0 0 1px rgba(255,214,102,.18),0 24px 40px rgba(255,214,102,.08)}}@keyframes developerSweep{0%{transform:translateX(-140%) rotate(18deg);opacity:0}10%{opacity:1}55%{opacity:1}100%{transform:translateX(430%) rotate(18deg);opacity:0}}
-        @media (max-width: 1180px){.profile-hero{grid-template-columns:1fr}.hero-actions{justify-content:flex-start}.profile-grid,.editor-shell,.editor-grid{grid-template-columns:1fr}.access-rail{position:static}.editor-submit{bottom:0}}
+        @media (max-width: 1180px){.profile-hero{grid-template-columns:1fr}.hero-actions{justify-content:flex-start}.profile-grid,.editor-shell,.editor-grid{grid-template-columns:1fr}.access-rail{position:static}.editor-submit{bottom:0}.editor-modal .modal-card{width:min(980px,calc(100vw - 22px))}}
         @media (max-width: 980px){.stat-ribbon{grid-template-columns:repeat(3,minmax(0,1fr))}.meta-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.choice-grid,.accent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.choice-grid.roles{grid-template-columns:repeat(2,minmax(0,1fr))}}
         @media (max-width: 680px){.hero-avatar{width:96px;height:96px;border-radius:22px}.meta-grid,.settings-grid,.editor-grid,.choice-grid,.choice-grid.two,.accent-grid,.stat-ribbon{grid-template-columns:1fr}}
     </style>

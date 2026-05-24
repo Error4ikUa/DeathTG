@@ -150,11 +150,17 @@ def startup_status() -> dict:
             if isinstance(data, dict):
                 data.setdefault("bot", default["bot"])
                 data.setdefault("helper_bot", default["helper_bot"])
+                data.setdefault("community_bot", default["community_bot"])
                 data["bot"].setdefault("role", "inline")
                 data["helper_bot"].setdefault("role", "helper")
+                data["community_bot"].setdefault("role", "community")
                 bots = data.get("bots")
-                if not isinstance(bots, list) or len(bots) < 2:
-                    data["bots"] = [data.get("bot", default["bot"]), data.get("helper_bot", default["helper_bot"])]
+                if not isinstance(bots, list) or len(bots) < 3:
+                    data["bots"] = [
+                        data.get("bot", default["bot"]),
+                        data.get("helper_bot", default["helper_bot"]),
+                        data.get("community_bot", default["community_bot"]),
+                    ]
                 data.setdefault("channels", [])
                 data.setdefault("folder", default["folder"])
                 data.setdefault("last_sync_at", None)
@@ -192,10 +198,12 @@ def _default_startup_status() -> dict:
         "error": None,
     }
     helper = {**bot, "role": "helper", "inline_synced": False}
+    community = {**bot, "role": "community", "inline_synced": False}
     return {
         "bot": bot,
         "helper_bot": helper,
-        "bots": [bot, helper],
+        "community_bot": community,
+        "bots": [bot, helper, community],
         "channels": [],
         "folder": {"name": "DeathTG", "ok": False, "error": None, "include_count": 0, "include_usernames": []},
         "last_sync_at": None,
@@ -427,10 +435,10 @@ async def _module_repo_from_github_contents(
     return modules
 
 
-async def module_repo() -> list[dict]:
+async def module_repo(*, refresh: bool = False) -> list[dict]:
     """Return a list of available modules from the configured repository."""
     try:
-        items = await fetch_repo_modules()
+        items = await fetch_repo_modules(refresh=refresh)
     except Exception:
         return []
     normalized: list[dict] = []

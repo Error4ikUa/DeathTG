@@ -23,7 +23,7 @@ from deathtg.inline import InlineManager
 from deathtg.loader import ModuleLoader
 from deathtg.metrics import init_metrics, record_command
 from deathtg.permissions import SecurityManager
-from deathtg.premium_emoji import premium_emoji
+from deathtg.premium_emoji import FALLBACK_EMOJI
 from deathtg.health_tools import save_health_state
 from deathtg.startup_state import (
     PHASE_DEGRADED,
@@ -126,7 +126,7 @@ class DeathTG:
         self._update_watch_task = asyncio.create_task(self._update_watch_loop())
         self._integrity_watch_task = asyncio.create_task(self._integrity_watch_loop())
         self._bootstrap_task = asyncio.create_task(self._bootstrap_services())
-        log.info("%s DeathTG started as @%s", premium_emoji("check", self.owner_premium), getattr(me, "username", None) or me.id)
+        log.info("%s DeathTG started as @%s", FALLBACK_EMOJI["check"], getattr(me, "username", None) or me.id)
         try:
             await self.client.run_until_disconnected()
         finally:
