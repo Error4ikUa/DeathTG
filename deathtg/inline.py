@@ -10,7 +10,7 @@ from typing import Any, Awaitable, Callable
 
 from dotenv import load_dotenv
 from telethon import Button, TelegramClient, events
-from telethon.errors import UserDeactivatedError
+from telethon.errors import PeerIdInvalidError, UserDeactivatedError
 
 from deathtg.assets import system_image
 from deathtg.config import ENV_PATH, RUNTIME_DIR
@@ -95,10 +95,19 @@ class InlineManager:
         self.last_error: str = ""
         self.registry: dict[bytes, CallbackEntry] = {}
         self.forms: dict[str, FormEntry] = {}
+        self._owner_start_notice_window = 6 * 60 * 60
 
     @property
     def ready(self) -> bool:
         return bool(self.bot_client and self.bot_client.is_connected() and not self.error)
+
+    def _is_owner_chat(self, chat_id: Any) -> bool:
+        if self.owner_id is None:
+            return False
+        try:
+            return int(chat_id) == int(self.owner_id)
+        except (TypeError, ValueError):
+            return False
 
     def status(self) -> dict[str, Any]:
         return {
@@ -417,9 +426,10 @@ class InlineManager:
             try:
                 target = await self.bot_client.get_input_entity(chat_id)
             except Exception:
-                if self.owner_id and int(chat_id) == int(self.owner_id):
+                if self._is_owner_chat(chat_id):
                     self.last_error = "Owner has not started the inline bot yet"
                     self.forms.pop(form_id, None)
+                    await self._notify_owner_start_inline_bot()
                     return None
                 raise
             if photo:
@@ -438,10 +448,53 @@ class InlineManager:
                     parse_mode=parse_mode,
                     link_preview=link_preview,
                 )
-        except Exception:
+        except PeerIdInvalidError:
+            self.last_error = "Owner has not started the inline bot yet"
             self.forms.pop(form_id, None)
+            if self._is_owner_chat(chat_id):
+                await self._notify_owner_start_inline_bot()
+                return None
+            raise
+        except Exception as exc:
+            self.last_error = f"{type(exc).__name__}: {exc}"
+            self.forms.pop(form_id, None)
+            if self._is_owner_chat(chat_id) and "Peer" in type(exc).__name__:
+                await self._notify_owner_start_inline_bot()
+                return None
             raise
         return sent
+
+    async def _notify_owner_start_inline_bot(self) -> None:
+        if not self.user_client or not self.bot_username:
+            return
+        now = int(time.time())
+        settings = profile_settings()
+        try:
+            last_sent = int(settings.get("onboarding_start_hint_sent_at") or 0)
+        except Exception:
+            last_sent = 0
+        if last_sent and now - last_sent < self._owner_start_notice_window:
+            return
+        bot = self.bot_username.lstrip("@")
+        if settings.get("language") == "ru":
+            text = (
+                "DeathTG ждёт запуск inline-бота.\n\n"
+                "Telegram не разрешает боту первым писать владельцу. Открой inline-бота и нажми Start:\n"
+                f"https://t.me/{bot}?start=owner\n\n"
+                "После /start DeathTG покажет выбор языка и настройку backup уже там."
+            )
+        else:
+            text = (
+                "DeathTG inline setup is waiting.\n\n"
+                "Telegram does not allow a bot to message you first. Open the inline bot and press Start:\n"
+                f"https://t.me/{bot}?start=owner\n\n"
+                "After /start DeathTG will show language and backup setup there."
+            )
+        try:
+            await self.user_client.send_message("me", text, link_preview=False)
+            save_profile_settings(onboarding_start_hint_sent_at=str(now))
+        except Exception:
+            pass
 
     async def _on_callback(self, event) -> None:
         self._cleanup()
@@ -575,13 +628,7 @@ class InlineManager:
         settings = profile_settings()
         if not self.owner_id or settings.get("onboarding_done") == "1":
             return
-        with contextlib.suppress(Exception):
-            await self.bot_client.get_input_entity(int(self.owner_id))
         if not self.bot_client:
-            return
-        try:
-            await self.bot_client.get_input_entity(int(self.owner_id))
-        except Exception:
             return
         await self._send_language_picker(int(self.owner_id), onboarding=True)
 
