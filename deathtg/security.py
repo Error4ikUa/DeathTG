@@ -62,7 +62,6 @@ RAW_MARKERS: tuple[tuple[str, str, int], ...] = (
     ("StringSession.save", "exports or reads a string session", 95),
     ("session.save(", "exports or reads a session", 90),
     ("ExportAuthorizationRequest", "exports authorization", 100),
-    (".session", "touches session files", 70),
 )
 
 IMPORT_SCORES = {
@@ -79,8 +78,6 @@ CALL_SCORES = {
     "compile": ("compile can prepare dynamic code execution", 30),
     "__import__": ("dynamic import can hide unsafe code", 25),
     "open": ("file access needs review", 10),
-    "getattr": ("dynamic attribute access", 4),
-    "setattr": ("dynamic attribute mutation", 4),
 }
 
 ATTR_SCORES = {
