@@ -50,6 +50,7 @@ from deathtg.module_repo import fetch_module_bundle, fetch_repo_modules, parse_r
 from deathtg.profile_store import profile_settings
 from deathtg.registry import CommandRegistry
 from deathtg.security import is_trusted_module_link
+from deathtg.session_guard import current_session_name, session_main_file
 from deathtg.startup_sync import STATUS_PATH
 from deathtg.startup_state import PHASE_SETUP_WAIT_2FA, PHASE_SETUP_WAIT_QR, startup_snapshot
 
@@ -101,7 +102,10 @@ def has_env() -> bool:
 
 def has_session() -> bool:
     """Return True if there is at least one Telethon session file."""
-    return bool(list(ROOT_DIR.glob("*.session")))
+    try:
+        return session_main_file(current_session_name()).exists()
+    except Exception:
+        return bool(list(ROOT_DIR.glob("*.session")))
 
 
 def avatar_url() -> str:

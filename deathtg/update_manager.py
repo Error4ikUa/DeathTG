@@ -8,6 +8,7 @@ import threading
 import time
 
 from deathtg.config import ROOT_DIR, RUNTIME_DIR
+from deathtg.session_guard import protect_update_session_snapshot, recover_update_session_snapshot
 
 
 UPDATE_STATE_PATH = RUNTIME_DIR / "update_state.json"
@@ -147,13 +148,35 @@ def clear_ignored_update() -> dict[str, object]:
     return save_update_state(state)
 
 
+def _protect_sessions() -> dict[str, object]:
+    try:
+        return protect_update_session_snapshot()
+    except Exception as exc:
+        return {"ok": False, "count": 0, "message": f"{type(exc).__name__}: {exc}"}
+
+
+def _recover_sessions() -> dict[str, object]:
+    try:
+        return recover_update_session_snapshot(clear=True)
+    except Exception as exc:
+        return {"ok": False, "restored": 0, "message": f"{type(exc).__name__}: {exc}"}
+
+
 def apply_update() -> dict[str, object]:
+    session_snapshot = _protect_sessions()
     before = _run_git("rev-parse", "HEAD", timeout=20)
     before_sha = (before.stdout or "").strip() if before.returncode == 0 else ""
     pull_result = _run_git("pull", "--ff-only", timeout=240)
     message = _output(pull_result)[-3500:]
     if pull_result.returncode != 0:
-        result = {"ok": False, "updated": False, "restart_required": False, "message": message}
+        session_restore = _recover_sessions()
+        result = {
+            "ok": False,
+            "updated": False,
+            "restart_required": False,
+            "message": message,
+            "session_guard": {"snapshot": session_snapshot, "restore": session_restore},
+        }
         save_update_state(result)
         return result
 
@@ -176,21 +199,25 @@ def apply_update() -> dict[str, object]:
             pip_output = _output(pip_result)[-2000:]
             message = f"{message}\n\nRequirements:\n{pip_output}"
             if pip_result.returncode != 0:
+                session_restore = _recover_sessions()
                 result = {
                     "ok": False,
                     "updated": changed,
                     "restart_required": False,
                     "message": message,
+                    "session_guard": {"snapshot": session_snapshot, "restore": session_restore},
                 }
                 save_update_state(result)
                 return result
 
+    session_restore = _recover_sessions()
     result = {
         "ok": True,
         "updated": changed,
         "restart_required": changed,
         "requirements_changed": requirements_changed,
         "message": message,
+        "session_guard": {"snapshot": session_snapshot, "restore": session_restore},
         "ignored_upcoming": "",
         "notified_upcoming": "",
         "applied_at": int(time.time()),

@@ -8,7 +8,8 @@ from pathlib import Path
 
 from dotenv import dotenv_values, load_dotenv
 
-from deathtg.config import ENV_PATH, ROOT_DIR, RUNTIME_DIR
+from deathtg.config import ENV_PATH, RUNTIME_DIR
+from deathtg.session_guard import session_main_file
 
 
 STARTUP_STATE_PATH = RUNTIME_DIR / "startup_state.json"
@@ -61,7 +62,7 @@ def _env_flag(values: dict[str, str], key: str) -> bool:
 
 def _session_path(values: dict[str, str]) -> Path:
     session_name = str(values.get("SESSION_NAME") or "deathtg").strip() or "deathtg"
-    return ROOT_DIR / f"{session_name}.session"
+    return session_main_file(session_name)
 
 
 def _has_env(values: dict[str, str]) -> bool:

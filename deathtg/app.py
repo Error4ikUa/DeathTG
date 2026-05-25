@@ -44,6 +44,7 @@ from deathtg.registry import CommandRegistry, PROTECTED_MODULES
 from deathtg.startup_sync import run_startup_sync
 from deathtg.startup_sync import check_runtime_integrity
 from deathtg.server_bootstrap import update_env_values
+from deathtg.session_guard import session_files
 from deathtg.telethon_policy import client_retry_kwargs, quiet_telethon_network_logs
 from deathtg.update_manager import (
     apply_update,
@@ -75,7 +76,7 @@ RUNTIME_LOG_PATH = RUNTIME_DIR / "deathtg.log"
 class DeathTG:
     def __init__(self, config: DeathTGConfig) -> None:
         self.config = config
-        self.client = TelegramClient(config.session_name, config.api_id, config.api_hash, **client_retry_kwargs())
+        self.client = TelegramClient(str(ROOT_DIR / config.session_name), config.api_id, config.api_hash, **client_retry_kwargs())
         self.client.deathtg_app = self
         self.registry = CommandRegistry()
         self.loader = ModuleLoader(self.registry, MODULES_DIR)
@@ -192,9 +193,7 @@ class DeathTG:
         log.error("Telegram session became invalid; DeathTG switched back to setup mode: %s", exc)
 
     def _invalidate_broken_session(self) -> None:
-        session_path = ROOT_DIR / f"{self.config.session_name}.session"
-        journal_path = ROOT_DIR / f"{self.config.session_name}.session-journal"
-        for path in (session_path, journal_path):
+        for path in session_files(self.config.session_name):
             if not path.exists():
                 continue
             backup = path.with_suffix(path.suffix + ".invalid")
