@@ -60,6 +60,10 @@ IMPORT_REQUIREMENT_MAP = {
     "bs4": "beautifulsoup4",
     "dateutil": "python-dateutil",
 }
+OFFICIAL_SENSITIVE_MODULES = {
+    "SessionGuardDtg",
+}
+_LOCAL_SKIP_WARNINGS_SHOWN: set[str] = set()
 
 
 def _mark_handler(kind: str, *tags, **filters):
@@ -427,7 +431,24 @@ class ModuleLoader:
             try:
                 await self.load_file(path, force=module_name in force_modules, module_name=module_name)
             except Exception as exc:
-                print(f"[DeathTG] skip module {path.name}: {exc}")
+                self._print_local_skip_once(path, exc)
+
+    @staticmethod
+    def _is_official_sensitive_module(module_name: str, source: str) -> bool:
+        if module_name not in OFFICIAL_SENSITIVE_MODULES:
+            return False
+        required_markers = ("GetAuthorizationsRequest", "ResetAuthorizationRequest", "SessionGuard")
+        return all(marker in source for marker in required_markers)
+
+    @staticmethod
+    def _print_local_skip_once(path: Path, exc: Exception) -> None:
+        message = str(exc)
+        if "Module was blocked by security scan" in message:
+            key = f"{path.resolve()}:{message}"
+            if key in _LOCAL_SKIP_WARNINGS_SHOWN:
+                return
+            _LOCAL_SKIP_WARNINGS_SHOWN.add(key)
+        print(f"[DeathTG] skip module {path.name}: {exc}")
 
     def _install_compat_aliases(self) -> None:
         core_pkg = importlib.import_module("deathtg")
@@ -545,11 +566,12 @@ class ModuleLoader:
         if not entry or not entry.exists() or entry.suffix.lower() != ".py":
             raise FileNotFoundError("Expected an existing module file or module folder")
         source = entry.read_text(encoding="utf-8")
-        report = scan_module_source(source, trusted=force)
-        if not report.allowed and not force:
+        final_name = module_name or (path.stem if path.is_file() else path.name)
+        trusted = bool(force or self._is_official_sensitive_module(final_name, source))
+        report = scan_module_source(source, trusted=trusted)
+        if not report.allowed and not trusted:
             raise RuntimeError("Module was blocked by security scan:\n" + report.pretty())
         self._install_compat_aliases()
-        final_name = module_name or (path.stem if path.is_file() else path.name)
         import_name = f"deathtg.modules_external.{final_name}"
         self.unload(final_name, silent=True, force=True)
         package_dir = entry.parent if entry.parent != self.modules_dir else None

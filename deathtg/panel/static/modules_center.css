@@ -42,7 +42,7 @@ html{scrollbar-width:thin;scrollbar-color:rgba(var(--accent-rgb),.55) rgba(2,10,
 
 .module-inline-form{display:flex;justify-content:flex-start;margin-top:12px}.module-inline-form button{min-height:34px!important}
 
-.module-top-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}.module-top-actions input{flex:1 1 220px;min-width:220px}.module-top-actions .small{flex:0 0 auto;white-space:nowrap}@media(max-width:860px){.module-top-actions{justify-content:stretch}.module-top-actions input,.module-top-actions .small{width:100%}}
+.module-top-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}.module-top-actions input{flex:1 1 220px;min-width:220px}.module-top-actions .small{flex:0 0 auto;min-width:104px!important;min-height:38px!important;padding:10px 16px!important;white-space:nowrap;text-align:center}@media(max-width:860px){.module-top-actions{justify-content:stretch}.module-top-actions input,.module-top-actions .small{width:100%}}
 
 /* Repository cards use the module artwork as a real 16:9 cover, not as a cropped full-card wallpaper. */
 .repo-card,.installed-card{min-height:0!important;padding:12px!important;gap:10px!important}

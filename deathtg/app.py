@@ -9,7 +9,14 @@ import os
 from pathlib import Path
 
 from telethon import TelegramClient, events
-from telethon.errors import YouBlockedUserError
+from telethon.errors import (
+    AuthKeyInvalidError,
+    AuthKeyUnregisteredError,
+    SessionRevokedError,
+    UnauthorizedError,
+    UserDeactivatedError,
+    YouBlockedUserError,
+)
 
 from deathtg.assets import system_image
 from deathtg.community_bot import CommunityBotService
@@ -53,6 +60,13 @@ from deathtg.ui import fail
 
 log = logging.getLogger("deathtg")
 CORE_MODULES = ["core", "root", "info", "system", "antivirus", "terminal"]
+INVALID_SESSION_ERRORS = (
+    AuthKeyInvalidError,
+    AuthKeyUnregisteredError,
+    SessionRevokedError,
+    UnauthorizedError,
+    UserDeactivatedError,
+)
 PANEL_ACTIONS_PATH = RUNTIME_DIR / "panel_actions.jsonl"
 MODULE_META_PATH = RUNTIME_DIR / "module_meta.json"
 RUNTIME_LOG_PATH = RUNTIME_DIR / "deathtg.log"
@@ -79,8 +93,14 @@ class DeathTG:
 
     async def start(self) -> None:
         await init_metrics()
-        await self.client.connect()
-        if not await self.client.is_user_authorized():
+        try:
+            await self.client.connect()
+            authorized = await self.client.is_user_authorized()
+        except INVALID_SESSION_ERRORS as exc:
+            self._handle_invalid_runtime_session(exc)
+            await self.client.disconnect()
+            return
+        if not authorized:
             self._invalidate_broken_session()
             write_startup_state(
                 PHASE_DEGRADED,
@@ -97,7 +117,12 @@ class DeathTG:
             await self.client.disconnect()
             return
 
-        me = await self.client.get_me()
+        try:
+            me = await self.client.get_me()
+        except INVALID_SESSION_ERRORS as exc:
+            self._handle_invalid_runtime_session(exc)
+            await self.client.disconnect()
+            return
         self.owner_premium = bool(getattr(me, "premium", False))
         if self.config.owner_id is None:
             self.config.owner_id = me.id
@@ -130,6 +155,8 @@ class DeathTG:
         log.info("%s DeathTG started as @%s", FALLBACK_EMOJI["check"], getattr(me, "username", None) or me.id)
         try:
             await self.client.run_until_disconnected()
+        except INVALID_SESSION_ERRORS as exc:
+            self._handle_invalid_runtime_session(exc)
         finally:
             if self._bootstrap_task:
                 self._bootstrap_task.cancel()
@@ -149,6 +176,20 @@ class DeathTG:
                     await self._integrity_watch_task
             await self.community_bot.stop()
             await self.inline.stop()
+
+    def _handle_invalid_runtime_session(self, exc: BaseException) -> None:
+        reason = type(exc).__name__
+        message = f"Telegram session expired or was revoked ({reason}). Open setup and reconnect the account."
+        self._invalidate_broken_session()
+        write_startup_state(PHASE_DEGRADED, message)
+        save_health_state(
+            last_action={
+                "kind": "session_invalid_runtime",
+                "ok": False,
+                "message": message,
+            }
+        )
+        log.error("Telegram session became invalid; DeathTG switched back to setup mode: %s", exc)
 
     def _invalidate_broken_session(self) -> None:
         session_path = ROOT_DIR / f"{self.config.session_name}.session"
