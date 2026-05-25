@@ -22,6 +22,7 @@ from deathtg.startup_state import (
     sync_startup_state,
     write_startup_state,
 )
+from deathtg.telethon_policy import client_retry_kwargs
 
 
 @dataclass
@@ -93,7 +94,7 @@ def _cleanup_session_files(session_name: str) -> None:
 
 def _new_client(session_name: str, api_id: int, api_hash: str) -> TelegramClient:
     session_path = str(ROOT_DIR / session_name)
-    return TelegramClient(session_path, api_id, api_hash)
+    return TelegramClient(session_path, api_id, api_hash, **client_retry_kwargs())
 
 
 async def _request_login_code(client: TelegramClient, phone: str):

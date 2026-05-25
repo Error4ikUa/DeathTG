@@ -14,6 +14,7 @@ from deathtg.loader import ModuleLoader
 from deathtg.metrics import installed_days, level_info, top_modules, usage_by_day, usage_total
 from deathtg.registry import CommandRegistry, PROTECTED_MODULES
 from deathtg.security import scan_module_source
+from deathtg.telethon_policy import client_retry_kwargs
 
 router = APIRouter()
 PANEL_DIR = Path(__file__).resolve().parent
@@ -48,7 +49,7 @@ async def profile_info() -> dict[str, str]:
     try:
         from telethon import TelegramClient
         cfg = load_config()
-        client = TelegramClient(str(ROOT_DIR / cfg.session_name), cfg.api_id, cfg.api_hash)
+        client = TelegramClient(str(ROOT_DIR / cfg.session_name), cfg.api_id, cfg.api_hash, **client_retry_kwargs())
         await client.connect()
         me = await client.get_me()
         await client.disconnect()

@@ -82,6 +82,7 @@
             {% set image = mod.image or mod.modul_png or '' %}
             <article class="module-card repo-card {% if image %}has-bg{% endif %}" data-name="{{ mod.name }} {{ mod.description }}" {% if image %}style="--module-bg:url('{{ image }}')"{% endif %}>
                 <div class="module-card-glow"></div>
+                <div class="module-cover" aria-hidden="true"></div>
                 <div class="module-head">
                     <h2>{{ mod.name }}</h2>
                     {% if mod.verified %}<span class="verified-pill">{{ tr('browser.verified') }}</span>{% endif %}
@@ -110,11 +111,11 @@
             {% endif %}
         </div>
         {% if browser_pages and browser_pages > 1 %}
-        <div class="module-actions" style="margin-top:14px">
+        <nav class="module-pagination" aria-label="Module pages">
             {% for page_no in range(1, browser_pages + 1) %}
-            <a class="small {% if page_no == browser_page %}{% else %}ghost{% endif %}" href="/browser?page={{ page_no }}#browserPane">{{ page_no }}</a>
+            <a class="page-chip {% if page_no == browser_page %}active{% endif %}" href="/browser?page={{ page_no }}#browserPane" aria-label="Page {{ page_no }}">{{ page_no }}</a>
             {% endfor %}
-        </div>
+        </nav>
         {% endif %}
         <article class="card panel inline-bridge-card">
             <p class="eyebrow">{{ tr('browser.inline_bridge') }}</p>
@@ -147,6 +148,7 @@
             <article class="module-card installed-card {% if image %}has-bg{% endif %}" data-name="{{ module }} {{ meta.get('description', '') }}" {% if image %}style="--module-bg:url('{{ image }}')"{% endif %}>
                 <a class="module-card-link" href="/modules/{{ module }}" aria-label="Open {{ module }} details"></a>
                 <div class="module-card-glow"></div>
+                <div class="module-cover" aria-hidden="true"></div>
                 <div class="module-head">
                     <h2>{% if module in protected %}[core]{% else %}[ext]{% endif %} {{ module }}</h2>
                     {% if card.get('verified') %}<span class="verified-pill">{{ tr('browser.verified') }}</span>{% endif %}
