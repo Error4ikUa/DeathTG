@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from deathtg.config import ENV_PATH, ROOT_DIR, RUNTIME_DIR
 from deathtg.server_bootstrap import parse_env_file
+from deathtg.session_guard import session_main_file
 from deathtg.state_db import set_health, upsert, event
 
 
@@ -69,7 +70,7 @@ def _session_name(env: dict[str, str]) -> str:
 
 def _session_present(raw_path: str, env: dict[str, str]) -> bool:
     if raw_path == "user-session":
-        return (ROOT_DIR / f"{_session_name(env)}.session").exists()
+        return session_main_file(_session_name(env)).exists()
     path = ROOT_DIR / raw_path
     return path.exists() or any(path.parent.glob(path.name + "*"))
 

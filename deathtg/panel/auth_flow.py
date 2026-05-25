@@ -14,6 +14,7 @@ from telethon.tl import functions, types
 
 from deathtg.config import ROOT_DIR
 from deathtg.server_bootstrap import secure_panel_secret, update_env_values
+from deathtg.session_guard import backup_session_files, session_files
 from deathtg.startup_state import (
     PHASE_FIRST_RUN,
     PHASE_POST_SETUP_SYNC,
@@ -84,8 +85,9 @@ def _render_qr_data_url(url: str) -> str:
     return f"data:image/svg+xml;base64,{payload}"
 
 
-def _cleanup_session_files(session_name: str) -> None:
-    for path in ROOT_DIR.glob(f"{session_name}.session*"):
+def _cleanup_session_files(session_name: str, reason: str = "login-replace") -> None:
+    backup_session_files(session_name, reason=reason)
+    for path in session_files(session_name):
         try:
             path.unlink()
         except Exception:
@@ -183,10 +185,13 @@ async def begin_qr_login(flow_id: str, api_id: int, api_hash: str, session_name:
     _set_login_pending(True)
     _set_login_stage("starting")
     _auth_log("saved setup data and started Telegram QR login")
-    _cleanup_session_files(session_name)
     client = _new_client(session_name, api_id, api_hash)
     await client.connect()
-    if await client.is_user_authorized():
+    try:
+        authorized = await client.is_user_authorized()
+    except Exception:
+        authorized = False
+    if authorized:
         _set_login_stage("authorized")
         _auth_log("existing session is already authorized")
         PENDING[flow_id] = PendingLogin(
@@ -198,6 +203,10 @@ async def begin_qr_login(flow_id: str, api_id: int, api_hash: str, session_name:
         )
         return qr_status(flow_id)
 
+    await client.disconnect()
+    _cleanup_session_files(session_name, reason="qr-login-replace")
+    client = _new_client(session_name, api_id, api_hash)
+    await client.connect()
     qr_login = await client.qr_login()
     pending = PendingLogin(
         client=client,
@@ -251,10 +260,13 @@ async def begin_login(flow_id: str, api_id: int, api_hash: str, phone: str, sess
     _set_login_pending(True)
     _set_login_stage("starting")
     _auth_log(f"saved setup data and started Telegram login for {_mask_phone(phone)}")
-    _cleanup_session_files(session_name)
     client = _new_client(session_name, api_id, api_hash)
     await client.connect()
-    if await client.is_user_authorized():
+    try:
+        authorized = await client.is_user_authorized()
+    except Exception:
+        authorized = False
+    if authorized:
         _set_login_stage("authorized")
         _auth_log("existing session is already authorized")
         PENDING[flow_id] = PendingLogin(
@@ -266,6 +278,11 @@ async def begin_login(flow_id: str, api_id: int, api_hash: str, phone: str, sess
             phone_code_hash=None,
         )
         return "authorized"
+
+    await client.disconnect()
+    _cleanup_session_files(session_name, reason="phone-login-replace")
+    client = _new_client(session_name, api_id, api_hash)
+    await client.connect()
     sent = await _request_login_code(client, phone)
     _set_login_stage("waiting_code")
     delivery_hint, next_delivery_hint, timeout_seconds = _delivery_hint(sent)
@@ -299,7 +316,7 @@ def login_hint(flow_id: str) -> dict[str, object]:
 async def resend_code(flow_id: str) -> dict[str, object]:
     pending = PENDING[flow_id]
     await pending.client.disconnect()
-    _cleanup_session_files(pending.session_name)
+    _cleanup_session_files(pending.session_name, reason="login-resend")
     pending.client = _new_client(pending.session_name, pending.api_id, pending.api_hash)
     await pending.client.connect()
     sent = await _request_login_code(pending.client, pending.phone)
