@@ -10,6 +10,7 @@ from deathtg.loader import Module
 from deathtg.module_repo import fetch_repo_modules, find_repo_module, is_url, normalize_github_raw_url, trusted_repo_link
 from deathtg.panel_access import issue_device_grant
 from deathtg.permissions import parse_security
+from deathtg.premium_emoji import FALLBACK_EMOJI, premium_emoji
 from deathtg.profile_store import update_env_value
 from deathtg.registry import PROTECTED_MODULES
 from deathtg.startup_sync import (
@@ -25,6 +26,16 @@ from deathtg.update_manager import apply_update
 
 HELP_PAGE_SIZE = 8
 DLMOD_PAGE_SIZE = 5
+CORE_MODULE_ORDER = ("core", "root", "info", "system", "antivirus", "terminal")
+HELP_HIDDEN_COMMANDS = {"crebot1", "crebot2", "crebot3"}
+CORE_COMMAND_GROUPS = (
+    ("Navigation", {"help", "helpb", "modules", "panelkey"}),
+    ("Health", {"dtgcheck", "repair", "logs"}),
+    ("Modules", {"dlmod", "loadmod", "unloadmod"}),
+    ("Access", {"sudoadd", "sudolist", "sudorm"}),
+    ("Updates", {"tdgup"}),
+    ("Manual bot fallback", HELP_HIDDEN_COMMANDS),
+)
 
 
 def _cmd(name: str) -> str:
@@ -387,35 +398,55 @@ class CoreMod(Module):
 
     def _help_all_text(self) -> str:
         grouped = self.app.registry.by_module()
-        command_count = sum(len(commands) for commands in grouped.values())
-        module_count = len(grouped)
+        visible_grouped = {
+            module: self._visible_commands(module, commands)
+            for module, commands in grouped.items()
+        }
+        command_count = sum(len(commands) for commands in visible_grouped.values())
+        module_count = sum(1 for commands in visible_grouped.values() if commands)
         lines = [
             "<b>DeathTG Commands</b>",
             f"Modules: <code>{module_count}</code> | Commands: <code>{command_count}</code>",
             "",
         ]
-        for module, commands in sorted(grouped.items()):
-            names = " ".join(_cmd(cmd.name) for cmd in sorted(commands, key=lambda item: item.name))
-            lock = " [protected]" if module in PROTECTED_MODULES else ""
-            lines.append(f"<b>{self._module_icon(module)} {html.escape(module)}{lock}</b>\n{names}")
+        ordered = self._ordered_modules(grouped)
+        protected_modules = [name for name in ordered if name in PROTECTED_MODULES]
+        external_modules = [name for name in ordered if name not in PROTECTED_MODULES]
+
+        def append_section(title: str, modules: list[str]) -> None:
+            visible_modules = [module for module in modules if visible_grouped.get(module)]
+            if not visible_modules:
+                return
+            lines.append(f"<b>{html.escape(title)}</b>")
+            for module in visible_modules:
+                commands = visible_grouped[module]
+                names = " ".join(_cmd(cmd.name) for cmd in sorted(commands, key=lambda item: item.name))
+                lock = " [protected]" if module in PROTECTED_MODULES else ""
+                lines.append(f"{self._module_icon(module)} <b>{html.escape(module)}{lock}</b>\n{names}")
+            lines.append("")
+
+        append_section("Core modules", protected_modules)
+        append_section("Installed modules", external_modules)
+        if lines and lines[-1] == "":
+            lines.pop()
         lines.extend(["", "Use <code>.help module</code> for details and <code>.helpb</code> for inline browser."])
         return "\n".join(lines)
 
     def _helpb_index_text(self, page: int) -> str:
         grouped = self.app.registry.by_module()
-        modules = sorted(grouped)
+        modules = [name for name in self._ordered_modules(grouped) if self._visible_commands(name, grouped.get(name, []))]
         pages = self._page_count(modules)
         page = max(0, min(page, pages - 1))
         start = page * HELP_PAGE_SIZE
         chunk = modules[start:start + HELP_PAGE_SIZE]
         lines = [
             "<b>DeathTG Help Browser</b>",
-            "Choose a module below.",
+            "Choose a module below. Core modules are first; installed modules are below them.",
             "",
             f"Page <code>{page + 1}</code>/<code>{pages}</code>",
         ]
         for name in chunk:
-            count = len(grouped.get(name, []))
+            count = len(self._visible_commands(name, grouped.get(name, [])))
             lock = "protected" if name in PROTECTED_MODULES else "external"
             lines.append(f"{self._module_icon(name)} <b>{html.escape(name)}</b> - <code>{count}</code> cmds ({lock})")
         return "\n".join(lines)
@@ -471,35 +502,55 @@ class CoreMod(Module):
         return self.inline_buttons(*rows)
 
     def _modules_text(self) -> str:
-        items = sorted(self.app.loader.loaded)
+        items = self._ordered_names(list(self.app.loader.loaded))
         if not items:
             return "<b>Loaded modules</b>\nNo modules loaded yet."
         lines = ["<b>Loaded modules</b>"]
-        for name in items:
-            marker = "protected" if name in PROTECTED_MODULES else "external"
-            lines.append(f"{self._module_icon(name)} <code>{html.escape(name)}</code> <i>{marker}</i>")
+        for title, names in (
+            ("Core modules", [name for name in items if name in PROTECTED_MODULES]),
+            ("Installed modules", [name for name in items if name not in PROTECTED_MODULES]),
+        ):
+            if not names:
+                continue
+            lines.append("")
+            lines.append(f"<b>{html.escape(title)}</b>")
+            for name in names:
+                marker = "protected" if name in PROTECTED_MODULES else "external"
+                lines.append(f"{self._module_icon(name)} <code>{html.escape(name)}</code> <i>{marker}</i>")
         return "\n".join(lines)
 
     def _module_help_text(self, module_name: str) -> str:
         grouped = self.app.registry.by_module()
         real_name = self._find_module_name(module_name, grouped)
-        commands = grouped.get(real_name)
+        commands = self._visible_commands(real_name, grouped.get(real_name) or [], include_hidden=True)
         if not commands:
             return f"<b>Module not found:</b> <code>{html.escape(module_name)}</code>"
         marker = "protected" if real_name in PROTECTED_MODULES else "module"
         lines = [f"<b>{self._module_icon(real_name)} DeathTG / {html.escape(real_name)}</b> <i>{marker}</i>", ""]
-        for cmd in sorted(commands, key=lambda item: item.name):
-            usage = f"\n  <i>{html.escape(cmd.usage)}</i>" if cmd.usage else ""
-            aliases = f" | aliases: <code>{html.escape(', '.join(cmd.aliases))}</code>" if cmd.aliases else ""
-            security = ", ".join(sorted(parse_security(cmd.security)))
-            lines.append(
-                f"- {_cmd(cmd.name)} - {html.escape(cmd.description)}{aliases}\n"
-                f"  security: <code>{html.escape(security)}</code>{usage}"
-            )
-        return "\n".join(lines)
+        if real_name == "core":
+            used: set[str] = set()
+            for title, names in CORE_COMMAND_GROUPS:
+                group = [cmd for cmd in commands if cmd.name in names]
+                if not group:
+                    continue
+                lines.append(f"<b>{html.escape(title)}</b>")
+                for cmd in sorted(group, key=lambda item: item.name):
+                    used.add(cmd.name)
+                    lines.extend(self._format_command_help(cmd))
+                lines.append("")
+            rest = [cmd for cmd in commands if cmd.name not in used]
+            if rest:
+                lines.append("<b>Other</b>")
+                for cmd in sorted(rest, key=lambda item: item.name):
+                    lines.extend(self._format_command_help(cmd))
+        else:
+            for cmd in sorted(commands, key=lambda item: item.name):
+                lines.extend(self._format_command_help(cmd))
+        return "\n".join(lines).strip()
 
     def _helpb_index_buttons(self, page: int):
-        modules = sorted(self.app.registry.by_module())
+        grouped = self.app.registry.by_module()
+        modules = [name for name in self._ordered_modules(grouped) if self._visible_commands(name, grouped.get(name, []))]
         pages = self._page_count(modules)
         page = max(0, min(page, pages - 1))
         start = page * HELP_PAGE_SIZE
@@ -510,7 +561,7 @@ class CoreMod(Module):
             for name in chunk[idx:idx + 2]:
                 row.append(
                     {
-                        "text": f"{self._module_icon(name)} {name}"[:32],
+                        "text": f"{self._module_icon(name, markup=False)} {name}"[:32],
                         "callback": self.module_help_callback,
                         "args": (name, page),
                     }
@@ -539,20 +590,54 @@ class CoreMod(Module):
         return module_name
 
     @staticmethod
-    def _module_icon(name: str) -> str:
+    def _format_command_help(cmd) -> list[str]:
+        usage = f"\n  <i>{html.escape(cmd.usage)}</i>" if cmd.usage else ""
+        aliases = f" | aliases: <code>{html.escape(', '.join(cmd.aliases))}</code>" if cmd.aliases else ""
+        security = ", ".join(sorted(parse_security(cmd.security)))
+        return [
+            f"- {_cmd(cmd.name)} - {html.escape(cmd.description)}{aliases}\n"
+            f"  security: <code>{html.escape(security)}</code>{usage}"
+        ]
+
+    @staticmethod
+    def _visible_commands(module: str, commands: list, *, include_hidden: bool = False) -> list:
+        if include_hidden or module != "core":
+            return list(commands)
+        return [cmd for cmd in commands if cmd.name not in HELP_HIDDEN_COMMANDS]
+
+    @staticmethod
+    def _ordered_names(names: list[str]) -> list[str]:
+        order = {name: index for index, name in enumerate(CORE_MODULE_ORDER)}
+        return sorted(
+            names,
+            key=lambda name: (
+                0 if name in PROTECTED_MODULES else 1,
+                order.get(name, 999),
+                name.lower(),
+            ),
+        )
+
+    def _ordered_modules(self, grouped: dict[str, list]) -> list[str]:
+        return self._ordered_names(list(grouped))
+
+    def _module_icon(self, name: str, *, markup: bool = True) -> str:
         lowered = name.lower()
         if lowered in {"core", "help"}:
-            return "⌚️"
-        if lowered == "root":
-            return "🏴‍☠️"
-        if lowered == "info":
-            return "💻"
-        if lowered == "system":
-            return "⌛️"
-        if lowered == "antivirus":
-            return "✅"
-        if lowered == "terminal":
-            return "💾"
-        if "music" in lowered or "track" in lowered:
-            return "🎵"
-        return "⬛️"
+            key = "sync"
+        elif lowered == "root":
+            key = "pirate"
+        elif lowered == "info":
+            key = "laptop"
+        elif lowered == "system":
+            key = "sync"
+        elif lowered == "antivirus":
+            key = "check"
+        elif lowered == "terminal":
+            key = "laptop"
+        elif "music" in lowered or "track" in lowered:
+            key = "music"
+        else:
+            key = "user"
+        if markup:
+            return premium_emoji(key, bool(getattr(self.app, "owner_premium", False)))
+        return FALLBACK_EMOJI.get(key, "⬛️")

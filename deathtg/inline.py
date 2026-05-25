@@ -18,6 +18,7 @@ from deathtg.i18n import translate
 from deathtg.panel_access import issue_device_grant, panel_remote_access_ready
 from deathtg.premium_emoji import emoji_line, premium_emoji
 from deathtg.profile_store import profile_settings, save_profile_settings
+from deathtg.telethon_policy import client_retry_kwargs
 
 
 CallbackFunc = Callable[..., Awaitable[Any]]
@@ -119,7 +120,7 @@ class InlineManager:
             return
         RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
         session = str(RUNTIME_DIR / "inline_bot")
-        client = TelegramClient(session, self.api_id, self.api_hash)
+        client = TelegramClient(session, self.api_id, self.api_hash, **client_retry_kwargs())
         try:
             await client.start(bot_token=token)
             me = await client.get_me()
@@ -138,7 +139,7 @@ class InlineManager:
         except Exception as exc:
             if isinstance(exc, UserDeactivatedError) or exc.__class__.__name__ == "UserDeactivatedError" or "Recreating session" in str(exc):
                 await self._drop_session_files()
-                client = TelegramClient(session, self.api_id, self.api_hash)
+                client = TelegramClient(session, self.api_id, self.api_hash, **client_retry_kwargs())
                 try:
                     await client.start(bot_token=token)
                     me = await client.get_me()

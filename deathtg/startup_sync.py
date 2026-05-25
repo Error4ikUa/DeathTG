@@ -35,6 +35,10 @@ FOLDER_NAME = "DeathTG"
 STATUS_PATH = RUNTIME_DIR / "startup_status.json"
 BOT_TOKEN_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b")
 BOTFATHER_RETRY_RE = re.compile(r"too many attempts.*?try again in\s+(\d+)\s+seconds?", re.IGNORECASE)
+BOTFATHER_NETWORK_RE = re.compile(
+    r"(WinError\s+(?:121|10054|1231|1236)|timeout|timed out|network|connection|semaphore)",
+    re.IGNORECASE,
+)
 BOT_AVATAR = default_avatar_path() or (ROOT_DIR / "deathtg" / "panel" / "static" / "default_avatar.png")
 BOTFATHER_CREATE_TIMEOUT = 35
 AUTO_BOT_REPAIR_INTERVAL = 60 * 15
@@ -182,8 +186,7 @@ async def _discover_service_bot_peers(client, owner_id: int, current_usernames: 
             continue
         seen.add(key)
         include_peers.append(peer)
-        if username:
-            include_usernames.append(f"@{username}")
+        include_usernames.append(f"@{username}" if username else getattr(dialog, "name", "") or "DeathTG bot")
     return include_peers, include_usernames
 
 
@@ -232,6 +235,15 @@ def _botfather_cooldown_error() -> str | None:
     if wait_left <= 0:
         return None
     return f"BotFather cooldown active ({wait_left}s left)"
+
+
+def _botfather_network_error(exc: Exception) -> str | None:
+    text = f"{type(exc).__name__}: {exc}"
+    if not BOTFATHER_NETWORK_RE.search(text):
+        return None
+    message = "Telegram network is unstable; BotFather auto-create paused for 30 minutes"
+    _set_botfather_cooldown(60 * 30, text[:240])
+    return message
 
 
 def _language() -> str:
@@ -670,7 +682,8 @@ async def _create_bot_with_botfather(client, owner_id: int, role: str = "inline"
                     if all(word not in lower for word in ("taken", "sorry", "username", "invalid")):
                         return "", text[:240]
     except Exception as exc:
-        return "", str(exc)
+        network_error = _botfather_network_error(exc)
+        return "", network_error or str(exc)
     return "", "BotFather did not return a token"
 
 
@@ -713,7 +726,8 @@ async def _create_named_bot_with_botfather(client, display_name: str, username: 
                     return "", text[:240]
                 return "", text[:240] or "BotFather did not return a token"
     except Exception as exc:
-        return "", str(exc)
+        network_error = _botfather_network_error(exc)
+        return "", network_error or str(exc)
 
 
 async def _set_bot_profile(bot_token: str, owner_id: int, role: str = "inline") -> tuple[bool, str | None]:
@@ -828,12 +842,13 @@ async def _ensure_bot_inline(client, bot_username: str) -> tuple[bool, str | Non
         return False, str(exc)
 
 
-async def _archive_bot_dialog(client, bot_username: str) -> tuple[bool, str | None]:
-    if not bot_username:
-        return False, "missing bot username"
+async def _unarchive_folder_peer(client, peer) -> tuple[bool, str | None]:
+    if not peer:
+        return False, "missing peer"
     try:
-        bot_peer = await client.get_input_entity(bot_username)
-        await client(EditPeerFoldersRequest(folder_peers=[InputFolderPeer(bot_peer, 1)]))
+        # Keep DeathTG resources visible inside the custom folder instead of
+        # pushing them to Telegram's Archive folder.
+        await client(EditPeerFoldersRequest(folder_peers=[InputFolderPeer(peer, 0)]))
         return True, None
     except Exception as exc:
         return False, str(exc)
@@ -1165,30 +1180,22 @@ async def _run_startup_sync_locked(client) -> dict:
     helper_status["start_ping"] = helper_start_ping
     community_status["start_ping"] = community_start_ping
 
-    archived, archive_error = await _archive_bot_dialog(client, bot_username)
-    helper_archived, helper_archive_error = await _archive_bot_dialog(client, helper_username)
-    community_archived = False
-    community_archive_error = None
-    if community_enabled_for_owner(owner_id):
-        community_archived, community_archive_error = await _archive_bot_dialog(client, community_username)
-    bot_status["archived"] = archived
-    helper_status["archived"] = helper_archived
-    community_status["archived"] = community_archived
+    bot_status["archived"] = False
+    helper_status["archived"] = False
+    community_status["archived"] = False
 
     if not bot_status.get("error"):
-        bot_status["error"] = _collect_error(commands_error, inline_error, avatar_error, archive_error, start_ping_error)
+        bot_status["error"] = _collect_error(commands_error, inline_error, avatar_error, start_ping_error)
     if not helper_status.get("error"):
         helper_status["error"] = _collect_error(
             helper_commands_error,
             helper_avatar_error,
-            helper_archive_error,
             helper_start_ping_error,
         )
     if community_enabled_for_owner(owner_id) and not community_status.get("error"):
         community_status["error"] = _collect_error(
             community_commands_error,
             community_avatar_error,
-            community_archive_error,
             community_start_ping_error,
         )
 
@@ -1214,8 +1221,30 @@ async def _run_startup_sync_locked(client) -> dict:
     previous_sent_at = int(previous_shortcuts.get("sent_at", 0) or 0) if isinstance(previous_shortcuts, dict) else 0
 
     folder_peers: list = []
+    folder_seen: set[tuple] = set()
     include_usernames: list[str] = []
-    for username in (bot_username, helper_username, community_username if community_enabled_for_owner(owner_id) else ""):
+    include_seen: set[str] = set()
+    foldered_roles = {"inline": False, "helper": False, "community": False}
+
+    async def _add_folder_peer(peer, label: str) -> None:
+        key = _peer_key(peer)
+        if key not in folder_seen:
+            folder_seen.add(key)
+            folder_peers.append(peer)
+            ok, error = await _unarchive_folder_peer(client, peer)
+            if not ok and error and not status["last_sync_error"]:
+                status["last_sync_error"] = f"{label}: {error}"
+        clean_label = str(label or "").strip()
+        clean_key = clean_label.lower()
+        if clean_label and clean_key not in include_seen:
+            include_seen.add(clean_key)
+            include_usernames.append(clean_label)
+
+    for role, username in (
+        ("inline", bot_username),
+        ("helper", helper_username),
+        ("community", community_username if community_enabled_for_owner(owner_id) else ""),
+    ):
         if not username:
             continue
         try:
@@ -1223,11 +1252,23 @@ async def _run_startup_sync_locked(client) -> dict:
             bot_peer = await client.get_input_entity(bot_entity)
             with contextlib.suppress(Exception):
                 await client(UnblockRequest(bot_peer))
-            folder_peers.append(bot_peer)
-            include_usernames.append(f"@{username}")
+            await _add_folder_peer(bot_peer, f"@{username}")
+            foldered_roles[role] = True
         except Exception as exc:
             if not status["last_sync_error"]:
                 status["last_sync_error"] = str(exc)
+
+    try:
+        discovered_peers, discovered_usernames = await _discover_service_bot_peers(
+            client,
+            owner_id,
+            [bot_username, helper_username, community_username],
+        )
+        for peer, label in zip(discovered_peers, discovered_usernames):
+            await _add_folder_peer(peer, label)
+    except Exception as exc:
+        if not status["last_sync_error"]:
+            status["last_sync_error"] = str(exc)
 
     for channel_name in TARGET_CHANNELS:
         row = {"username": channel_name, "joined": False, "title": "", "error": None}
@@ -1239,8 +1280,7 @@ async def _run_startup_sync_locked(client) -> dict:
             except Exception:
                 pass
             channel_peer = await client.get_input_entity(entity)
-            folder_peers.append(channel_peer)
-            include_usernames.append(f"@{channel_name}")
+            await _add_folder_peer(channel_peer, f"@{channel_name}")
             row["joined"] = True
         except Exception as exc:
             row["error"] = str(exc)
@@ -1251,6 +1291,9 @@ async def _run_startup_sync_locked(client) -> dict:
     status["folder"]["error"] = folder_error
     status["folder"]["include_count"] = len(folder_peers)
     status["folder"]["include_usernames"] = include_usernames
+    bot_status["foldered"] = bool(folder_ok and foldered_roles["inline"])
+    helper_status["foldered"] = bool(folder_ok and foldered_roles["helper"])
+    community_status["foldered"] = bool(folder_ok and foldered_roles["community"])
 
     channel_error = next((item.get("error") for item in status["channels"] if item.get("error")), None)
     status["last_sync_error"] = (

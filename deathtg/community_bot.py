@@ -19,6 +19,7 @@ from deathtg.community_roles import (
 )
 from deathtg.config import ENV_PATH, RUNTIME_DIR
 from deathtg.role_gate import OWNER_TG_ID
+from deathtg.telethon_policy import client_retry_kwargs
 
 
 class CommunityBotService:
@@ -40,7 +41,7 @@ class CommunityBotService:
             self.error = "Community bot token is not configured"
             return
         session = str(RUNTIME_DIR / "community_bot")
-        client = TelegramClient(session, self.api_id, self.api_hash)
+        client = TelegramClient(session, self.api_id, self.api_hash, **client_retry_kwargs())
         try:
             await client.start(bot_token=token)
             me = await client.get_me()

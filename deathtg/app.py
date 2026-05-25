@@ -37,6 +37,7 @@ from deathtg.registry import CommandRegistry, PROTECTED_MODULES
 from deathtg.startup_sync import run_startup_sync
 from deathtg.startup_sync import check_runtime_integrity
 from deathtg.server_bootstrap import update_env_values
+from deathtg.telethon_policy import client_retry_kwargs, quiet_telethon_network_logs
 from deathtg.update_manager import (
     apply_update,
     ignore_update,
@@ -60,7 +61,7 @@ RUNTIME_LOG_PATH = RUNTIME_DIR / "deathtg.log"
 class DeathTG:
     def __init__(self, config: DeathTGConfig) -> None:
         self.config = config
-        self.client = TelegramClient(config.session_name, config.api_id, config.api_hash)
+        self.client = TelegramClient(config.session_name, config.api_id, config.api_hash, **client_retry_kwargs())
         self.client.deathtg_app = self
         self.registry = CommandRegistry()
         self.loader = ModuleLoader(self.registry, MODULES_DIR)
@@ -588,9 +589,9 @@ def run_async(config: DeathTGConfig) -> None:
         force=True,
     )
     logging.getLogger("telethon").setLevel(logging.WARNING)
-    logging.getLogger("telethon.network").setLevel(logging.WARNING)
     logging.getLogger("telethon.client.updates").setLevel(logging.WARNING)
     logging.getLogger("telethon.client.uploads").setLevel(logging.WARNING)
+    quiet_telethon_network_logs()
     bot = DeathTG(config)
     try:
         asyncio.run(bot.start())
