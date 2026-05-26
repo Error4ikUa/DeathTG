@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 import re
 import hashlib
+import io
 import json
 import time
+import zipfile
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
@@ -20,6 +22,10 @@ MODULE_REPO_INDEX = os.getenv(
 MODULE_REPO_API = os.getenv(
     "MODULE_REPO_API",
     "https://api.github.com/repos/Error4ikUa/DTG_Modules/contents?ref=main",
+)
+MODULE_REPO_ZIP = os.getenv(
+    "MODULE_REPO_ZIP",
+    "https://codeload.github.com/Error4ikUa/DTG_Modules/zip/refs/heads/main",
 )
 
 GITHUB_TREE_RE = re.compile(
@@ -256,6 +262,180 @@ def _pick_python_file(items: list[dict], folder_name: str) -> dict | None:
     return None
 
 
+def _pick_zip_entry(entries: list[str], folder_name: str) -> str:
+    preferred = [
+        f"{folder_name}/{folder_name}.py",
+        f"{folder_name}/main.py",
+        f"{folder_name}/__init__.py",
+    ]
+    entry_set = set(entries)
+    for candidate in preferred:
+        if candidate in entry_set:
+            return candidate
+    for entry in entries:
+        name = PurePosixPath(entry).name
+        if entry.lower().endswith(".py") and not name.startswith("_"):
+            return entry
+    return ""
+
+
+def _zip_module_items(data: bytes, owner: str, repo: str, ref: str) -> list[dict]:
+    modules: list[dict] = []
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        names = [name for name in archive.namelist() if name and not name.endswith("/")]
+    if not names:
+        return modules
+    root = names[0].split("/", 1)[0]
+    relative = [name.split("/", 1)[1] for name in names if "/" in name and name.split("/", 1)[1]]
+    by_folder: dict[str, list[str]] = {}
+    top_level_py: list[str] = []
+    for item in relative:
+        parts = item.split("/", 1)
+        if len(parts) == 1:
+            if item.lower().endswith(".py") and not item.startswith("_"):
+                top_level_py.append(item)
+            continue
+        folder = parts[0].strip()
+        if not folder or folder.startswith(".") or folder.startswith("_"):
+            continue
+        by_folder.setdefault(folder, []).append(item)
+
+    for folder, entries in sorted(by_folder.items(), key=lambda row: row[0].lower()):
+        py_entry = _pick_zip_entry(entries, folder)
+        if not py_entry:
+            continue
+        image_entry = next(
+            (
+                entry
+                for entry in entries
+                if PurePosixPath(entry).name.lower() in {"module.png", "image.png"}
+                and str(PurePosixPath(entry).parent).strip("/") == folder
+            ),
+            "",
+        )
+        modules.append(
+            _normalize_repo_item(
+                {
+                    "name": folder,
+                    "description": f"{folder} module from DTG_Modules",
+                    "image": _github_raw_url(owner, repo, ref, image_entry) if image_entry else "",
+                    "link": _github_tree_url(owner, repo, ref, folder),
+                    "raw_link": _github_raw_url(owner, repo, ref, py_entry),
+                }
+            )
+        )
+
+    for path in sorted(top_level_py, key=str.lower):
+        name = PurePosixPath(path).stem
+        modules.append(
+            _normalize_repo_item(
+                {
+                    "name": name,
+                    "description": f"{name} module from DTG_Modules",
+                    "link": _github_raw_url(owner, repo, ref, path),
+                    "raw_link": _github_raw_url(owner, repo, ref, path),
+                }
+            )
+        )
+    return modules
+
+
+async def _from_github_zip_archive(
+    session: aiohttp.ClientSession,
+    owner: str = "Error4ikUa",
+    repo: str = "DTG_Modules",
+    ref: str = "main",
+) -> list[dict]:
+    url = MODULE_REPO_ZIP or f"https://codeload.github.com/{owner}/{repo}/zip/refs/heads/{ref}"
+    async with session.get(url, timeout=30, headers=GITHUB_HEADERS) as response:
+        if response.status != 200:
+            return []
+        payload = await response.read()
+    return _zip_module_items(payload, owner, repo, ref)
+
+
+async def _fetch_folder_bundle_from_zip(
+    session: aiohttp.ClientSession,
+    owner: str,
+    repo: str,
+    ref: str,
+    path: str,
+) -> dict:
+    url = MODULE_REPO_ZIP or f"https://codeload.github.com/{owner}/{repo}/zip/refs/heads/{ref}"
+    async with session.get(url, timeout=30, headers=GITHUB_HEADERS) as response:
+        if response.status != 200:
+            raise RuntimeError(f"GitHub archive failed, HTTP {response.status}")
+        payload = await response.read()
+    clean_path = path.strip("/")
+    folder_name = PurePosixPath(clean_path).name or "module"
+    prefix = clean_path + "/"
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        names = [name for name in archive.namelist() if name and not name.endswith("/")]
+        relative = [name.split("/", 1)[1] for name in names if "/" in name and name.split("/", 1)[1]]
+        entries = [entry for entry in relative if entry.startswith(prefix)]
+        preferred = [
+            f"{clean_path}/{folder_name}.py",
+            f"{clean_path}/main.py",
+            f"{clean_path}/__init__.py",
+        ]
+        py_entry = next((candidate for candidate in preferred if candidate in entries), "")
+        if not py_entry:
+            py_entry = next(
+                (
+                    entry
+                    for entry in entries
+                    if entry.lower().endswith(".py")
+                    and not PurePosixPath(entry).name.startswith("_")
+                ),
+                "",
+            )
+        if not py_entry:
+            raise RuntimeError("Folder does not contain a Python module entry")
+        zip_py_entry = next(name for name in names if name.endswith("/" + py_entry))
+        source = archive.read(zip_py_entry).decode("utf-8", errors="replace")
+        image_entry = next(
+            (
+                entry
+                for entry in entries
+                if PurePosixPath(entry).name.lower() in {"module.png", "image.png"}
+                and str(PurePosixPath(entry).parent).strip("/") == clean_path
+            ),
+            "",
+        )
+        requirements_entry = next(
+            (
+                entry
+                for entry in entries
+                if PurePosixPath(entry).name.lower() == "requirements.txt"
+                and str(PurePosixPath(entry).parent).strip("/") == clean_path
+            ),
+            "",
+        )
+        requirements_text = ""
+        if requirements_entry:
+            zip_req_entry = next(name for name in names if name.endswith("/" + requirements_entry))
+            requirements_text = archive.read(zip_req_entry).decode("utf-8", errors="replace")
+
+    return {
+        "kind": "folder",
+        "module_name": folder_name,
+        "entry_filename": PurePosixPath(py_entry).name,
+        "source": source,
+        "source_url": _github_raw_url(owner, repo, ref, py_entry),
+        "link": _github_tree_url(owner, repo, ref, clean_path),
+        "image_url": _github_raw_url(owner, repo, ref, image_entry) if image_entry else "",
+        "image_name": PurePosixPath(image_entry).name if image_entry else "",
+        "requirements_text": requirements_text,
+        "requirements": parse_requirements_text(requirements_text),
+        "requirements_url": _github_raw_url(owner, repo, ref, requirements_entry) if requirements_entry else "",
+        "trusted": trusted_repo_link(_github_tree_url(owner, repo, ref, clean_path)),
+        "repo_owner": owner,
+        "repo_name": repo,
+        "repo_ref": ref,
+        "repo_path": clean_path,
+    }
+
+
 async def _fetch_folder_bundle(session: aiohttp.ClientSession, owner: str, repo: str, ref: str, path: str) -> dict:
     listing_url = _github_contents_url(owner, repo, path, ref)
     folder_name = PurePosixPath(path).name or "module"
@@ -304,42 +484,45 @@ async def _fetch_folder_bundle(session: aiohttp.ClientSession, owner: str, repo:
                 except Exception:
                     requirements_text = ""
     except Exception:
-        html_url = _github_tree_url(owner, repo, ref, path)
-        html = await _fetch_html(session, html_url)
-        blob_paths = sorted(
-            {
-                match.group("path")
-                for match in GITHUB_BLOB_LINK_RE.finditer(html)
-                if str(match.group("owner")).lower() == owner.lower()
-                and str(match.group("repo")).lower() == repo.lower()
-                and str(match.group("ref")) == ref
-                and str(match.group("path")).startswith(path.strip("/") + "/")
-            }
-        )
-        py_candidates = [blob for blob in blob_paths if blob.lower().endswith(".py")]
-        preferred = [
-            f"{path.strip('/')}/{folder_name}.py",
-            f"{path.strip('/')}/main.py",
-            f"{path.strip('/')}/__init__.py",
-        ]
-        chosen = next((candidate for candidate in preferred if candidate in py_candidates), None)
-        if not chosen and py_candidates:
-            chosen = next((candidate for candidate in py_candidates if not PurePosixPath(candidate).name.startswith("_")), py_candidates[0])
-        if not chosen:
-            raise RuntimeError("Folder does not contain a Python module entry")
-        entry_name = PurePosixPath(chosen).name
-        source = await _fetch_text(session, _github_raw_url(owner, repo, ref, chosen))
-        image_candidates = [blob for blob in blob_paths if PurePosixPath(blob).name.lower() in {"module.png", "image.png"}]
-        if image_candidates:
-            image_name = PurePosixPath(image_candidates[0]).name
-            image_url = _github_raw_url(owner, repo, ref, image_candidates[0])
-        requirements_candidates = [blob for blob in blob_paths if PurePosixPath(blob).name.lower() == "requirements.txt"]
-        if requirements_candidates:
-            requirements_url = _github_raw_url(owner, repo, ref, requirements_candidates[0])
-            try:
-                requirements_text = await _fetch_text(session, requirements_url)
-            except Exception:
-                requirements_text = ""
+        try:
+            html_url = _github_tree_url(owner, repo, ref, path)
+            html = await _fetch_html(session, html_url)
+            blob_paths = sorted(
+                {
+                    match.group("path")
+                    for match in GITHUB_BLOB_LINK_RE.finditer(html)
+                    if str(match.group("owner")).lower() == owner.lower()
+                    and str(match.group("repo")).lower() == repo.lower()
+                    and str(match.group("ref")) == ref
+                    and str(match.group("path")).startswith(path.strip("/") + "/")
+                }
+            )
+            py_candidates = [blob for blob in blob_paths if blob.lower().endswith(".py")]
+            preferred = [
+                f"{path.strip('/')}/{folder_name}.py",
+                f"{path.strip('/')}/main.py",
+                f"{path.strip('/')}/__init__.py",
+            ]
+            chosen = next((candidate for candidate in preferred if candidate in py_candidates), None)
+            if not chosen and py_candidates:
+                chosen = next((candidate for candidate in py_candidates if not PurePosixPath(candidate).name.startswith("_")), py_candidates[0])
+            if not chosen:
+                raise RuntimeError("Folder does not contain a Python module entry")
+            entry_name = PurePosixPath(chosen).name
+            source = await _fetch_text(session, _github_raw_url(owner, repo, ref, chosen))
+            image_candidates = [blob for blob in blob_paths if PurePosixPath(blob).name.lower() in {"module.png", "image.png"}]
+            if image_candidates:
+                image_name = PurePosixPath(image_candidates[0]).name
+                image_url = _github_raw_url(owner, repo, ref, image_candidates[0])
+            requirements_candidates = [blob for blob in blob_paths if PurePosixPath(blob).name.lower() == "requirements.txt"]
+            if requirements_candidates:
+                requirements_url = _github_raw_url(owner, repo, ref, requirements_candidates[0])
+                try:
+                    requirements_text = await _fetch_text(session, requirements_url)
+                except Exception:
+                    requirements_text = ""
+        except Exception:
+            return await _fetch_folder_bundle_from_zip(session, owner, repo, ref, path)
     return {
         "kind": "folder",
         "module_name": folder_name,
@@ -601,6 +784,8 @@ async def fetch_repo_modules(*, refresh: bool = False) -> list[dict]:
             items = await _from_index(session)
             if not items:
                 items = await _from_github_contents(session)
+            if not items:
+                items = await _from_github_zip_archive(session)
             if not items:
                 items = await _from_github_tree_html(session)
     except Exception:
