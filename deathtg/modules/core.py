@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 
 from deathtg.command import command
+from deathtg.backup_manager import create_modules_backup, restore_modules_backup
 from deathtg.config import MODULES_DIR, ROOT_DIR, RUNTIME_DIR
 from deathtg.loader import Module
 from deathtg.module_repo import fetch_repo_modules, find_repo_module, is_url, normalize_github_raw_url, trusted_repo_link
@@ -31,7 +32,7 @@ HELP_HIDDEN_COMMANDS = {"crebot1", "crebot2", "crebot3"}
 CORE_COMMAND_GROUPS = (
     ("Navigation", {"help", "helpb", "modules", "panelkey"}),
     ("Health", {"dtgcheck", "repair", "logs"}),
-    ("Modules", {"dlmod", "loadmod", "unloadmod"}),
+    ("Modules", {"dlmod", "loadmod", "unloadmod", "backup", "restorebackup"}),
     ("Access", {"sudoadd", "sudolist", "sudorm"}),
     ("Updates", {"tdgup"}),
     ("Manual bot fallback", HELP_HIDDEN_COMMANDS),
@@ -358,6 +359,51 @@ class CoreMod(Module):
         except Exception as exc:
             await event.edit(
                 f"<b>unloadmod failed:</b>\n<code>{html.escape(type(exc).__name__ + ': ' + str(exc))}</code>",
+                parse_mode="html",
+            )
+
+    @command("backup", description="Create portable modules backup", usage=".backup", aliases=("dtgbackup",), security="owner")
+    async def backup_cmd(self, event, args):
+        await event.edit("<b>Creating DeathTG modules backup...</b>", parse_mode="html")
+        try:
+            result = create_modules_backup("command")
+            path = str(result.get("path") or "")
+            caption = (
+                f"{FALLBACK_EMOJI['inbox']} <b>DeathTG modules backup</b>\n"
+                f"Modules: <code>{result.get('module_count', 0)}</code>\n"
+                f"Files: <code>{result.get('file_count', 0)}</code>\n\n"
+                "Restore later by replying to this file with <code>.restorebackup</code>."
+            )
+            await event.client.send_file(event.chat_id, path, caption=caption, parse_mode="html")
+            await event.delete()
+        except Exception as exc:
+            await event.edit(
+                f"<b>backup failed:</b>\n<code>{html.escape(type(exc).__name__ + ': ' + str(exc))}</code>",
+                parse_mode="html",
+            )
+
+    @command("restorebackup", description="Restore modules from .dtgbak backup", usage=".restorebackup reply_to_backup", aliases=("restorebak", "dtgrestore"), security="owner")
+    async def restorebackup_cmd(self, event, args):
+        reply = await event.get_reply_message()
+        if not reply or not getattr(reply, "media", None):
+            await event.edit("<b>Reply to a DeathTG .dtgbak file.</b>", parse_mode="html")
+            return
+        await event.edit("<b>Restoring DeathTG modules backup...</b>", parse_mode="html")
+        try:
+            target_dir = RUNTIME_DIR / "incoming_backups"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            downloaded = await reply.download_media(file=str(target_dir))
+            result = restore_modules_backup(downloaded, overwrite=True)
+            if not result.get("ok"):
+                raise RuntimeError(str(result.get("message") or "restore failed"))
+            await self.app.loader.load_all_local(force_modules=set(result.get("modules") or []))
+            await event.edit(
+                f"<b>Backup restored.</b>\nModules: <code>{result.get('module_count', 0)}</code>\nFiles: <code>{result.get('restored', 0)}</code>",
+                parse_mode="html",
+            )
+        except Exception as exc:
+            await event.edit(
+                f"<b>restorebackup failed:</b>\n<code>{html.escape(type(exc).__name__ + ': ' + str(exc))}</code>",
                 parse_mode="html",
             )
 

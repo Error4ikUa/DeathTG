@@ -16,6 +16,7 @@ from deathtg.requirements_manager import check_requirements
 from deathtg.server_bootstrap import ensure_server_env, parse_env_file, update_env_values
 from deathtg.session_guard import ensure_session_available, session_main_file
 from deathtg.state_db import ensure_state_db, event, set_health, sync_settings_from_config
+from deathtg.startup_state import repair_stale_login_pending
 
 LOGS_DIR = ROOT_DIR / "logs"
 ASSETS_DIR = ROOT_DIR / "assets"
@@ -210,7 +211,7 @@ def print_report(report: StartupReport) -> None:
 
 
 def ready_to_start_userbot() -> bool:
-    env = parse_env_file(ENV_PATH)
+    env = repair_stale_login_pending(parse_env_file(ENV_PATH))
     state_path = RUNTIME_DIR / "startup_state.json"
     if state_path.exists():
         try:

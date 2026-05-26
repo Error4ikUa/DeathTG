@@ -367,7 +367,7 @@ async def setup_page(request: Request):
     if request.session.get("auth") and not snapshot.get("setup_required"):
         return RedirectResponse("/", status_code=303)
     if not snapshot.get("setup_required") and has_env() and has_session():
-        return RedirectResponse("/login", status_code=303)
+        return RedirectResponse("/", status_code=303)
     if not _setup_allowed(request):
         return HTMLResponse(
             "<html><body style='background:#050b08;color:#eaffef;font-family:sans-serif;padding:40px'>"

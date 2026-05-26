@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import inspect
 import os
@@ -13,6 +14,7 @@ from telethon import Button, TelegramClient, events
 from telethon.errors import PeerIdInvalidError, UserDeactivatedError
 
 from deathtg.assets import system_image
+from deathtg.backup_manager import create_modules_backup
 from deathtg.config import ENV_PATH, RUNTIME_DIR
 from deathtg.i18n import translate
 from deathtg.panel_access import issue_device_grant, panel_remote_access_ready
@@ -478,10 +480,10 @@ class InlineManager:
         bot = self.bot_username.lstrip("@")
         if settings.get("language") == "ru":
             text = (
-                "DeathTG ждёт запуск inline-бота.\n\n"
-                "Telegram не разрешает боту первым писать владельцу. Открой inline-бота и нажми Start:\n"
+                "DeathTG \u0436\u0434\u0435\u0442 \u0437\u0430\u043f\u0443\u0441\u043a inline-\u0431\u043e\u0442\u0430.\n\n"
+                "Telegram \u043d\u0435 \u0440\u0430\u0437\u0440\u0435\u0448\u0430\u0435\u0442 \u0431\u043e\u0442\u0443 \u043f\u0435\u0440\u0432\u044b\u043c \u043f\u0438\u0441\u0430\u0442\u044c \u0432\u043b\u0430\u0434\u0435\u043b\u044c\u0446\u0443. \u041e\u0442\u043a\u0440\u043e\u0439 inline-\u0431\u043e\u0442\u0430 \u0438 \u043d\u0430\u0436\u043c\u0438 Start:\n"
                 f"https://t.me/{bot}?start=owner\n\n"
-                "После /start DeathTG покажет выбор языка и настройку backup уже там."
+                "\u041f\u043e\u0441\u043b\u0435 /start DeathTG \u043f\u043e\u043a\u0430\u0436\u0435\u0442 \u0432\u044b\u0431\u043e\u0440 \u044f\u0437\u044b\u043a\u0430 \u0438 \u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0443 backup \u0443\u0436\u0435 \u0442\u0430\u043c."
             )
         else:
             text = (
@@ -579,6 +581,19 @@ class InlineManager:
     def _t(self, key: str, lang: str | None = None, **kwargs) -> str:
         return translate(key, lang or self._current_language(), **kwargs)
 
+    def _owner_display_name(self) -> str:
+        if self.owner_username:
+            return f"@{self.owner_username}"
+        if self.owner_id:
+            return str(self.owner_id)
+        return "DeathTG operator"
+
+    @staticmethod
+    def _backup_interval_label(minutes: int) -> str:
+        if minutes < 60:
+            return f"{minutes}m"
+        return f"{minutes // 60}h"
+
     def _help_buttons_native(self):
         return [[
             Button.url(self._t("bot.news"), "https://t.me/Death_Telega"),
@@ -612,12 +627,22 @@ class InlineManager:
         return rows
 
     async def _send_language_picker(self, chat_id: int, *, onboarding: bool) -> None:
+        owner = self._owner_display_name()
+        text = (
+            emoji_line("pirate", f"\u0417\u0434\u0440\u0430\u0432\u0441\u0442\u0432\u0443\u0439\u0442\u0435, {owner}", self.owner_premium)
+            + "\n"
+            + emoji_line("heart", f"God Bless America, {owner}", self.owner_premium)
+            + "\n\n"
+            + emoji_line("phone", "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u044f\u0437\u044b\u043a / Choose language", self.owner_premium)
+        )
         await self.push_form(
             chat_id,
-            emoji_line("pirate", self._t("bot.welcome", "en"), self.owner_premium) + "\n\n" + emoji_line("phone", self._t("bot.choose_language", "en"), self.owner_premium),
+            text,
             reply_markup=[
-                [{"text": "Русский", "callback": self._language_picker_callback, "args": ("ru", "1" if onboarding else "0")}],
-                [{"text": "English", "callback": self._language_picker_callback, "args": ("en", "1" if onboarding else "0")}],
+                [
+                    {"text": "Русский", "callback": self._language_picker_callback, "args": ("ru", "1" if onboarding else "0")},
+                    {"text": "English", "callback": self._language_picker_callback, "args": ("en", "1" if onboarding else "0")},
+                ],
             ],
             ttl=60 * 60 * 24,
             parse_mode="html",
@@ -654,11 +679,23 @@ class InlineManager:
     async def _language_picker_callback(self, call, language: str, onboarding: str) -> None:
         lang = "ru" if language == "ru" else "en"
         save_profile_settings(language=lang)
+        if onboarding == "1":
+            await call.edit(
+                emoji_line("check", self._t("bot.language_saved", lang), self.owner_premium)
+                + "\n\n"
+                + emoji_line("sync", self._t("bot.backup", lang), self.owner_premium),
+                reply_markup=[
+                    [
+                        {"text": self._t("bot.yes", lang), "callback": self._onboarding_backup_toggle_callback, "args": (lang, "1")},
+                        {"text": self._t("bot.no", lang), "callback": self._onboarding_backup_toggle_callback, "args": (lang, "0")},
+                    ],
+                ],
+                parse_mode="html",
+                ttl=60 * 60 * 24,
+            )
+            return
         with contextlib.suppress(Exception):
             await call.delete()
-        if onboarding == "1":
-            await self._send_backup_prompt(int(call.chat_id), lang)
-            return
         await self.push_form(
             int(call.chat_id),
             self._t("bot.language_saved", lang),
@@ -674,22 +711,55 @@ class InlineManager:
             await call.edit(emoji_line("heart", self._t("bot.backup_off", lang), self.owner_premium) + "\n\n" + emoji_line("check", self._t("bot.ready", lang), self.owner_premium), reply_markup=None, parse_mode="html")
             return
         rows = []
-        labels = [1, 2, 4, 6, 8, 12, 24, 48, 168]
+        labels = [10, 30, 60, 120, 180, 360, 720, 1440]
         for start_row in range(0, len(labels), 3):
             row = []
-            for hours in labels[start_row:start_row + 3]:
-                row.append({"text": f"{hours}h", "callback": self._onboarding_backup_interval_callback, "args": (lang, str(hours))})
+            for minutes in labels[start_row:start_row + 3]:
+                row.append(
+                    {
+                        "text": self._backup_interval_label(minutes),
+                        "callback": self._onboarding_backup_interval_callback,
+                        "args": (lang, str(minutes)),
+                    }
+                )
             rows.append(row)
         rows.append([{"text": self._t("bot.never", lang), "callback": self._onboarding_backup_interval_callback, "args": (lang, "0")}])
         await call.edit(emoji_line("sync", self._t("bot.choose_interval", lang), self.owner_premium), reply_markup=rows, parse_mode="html")
 
-    async def _onboarding_backup_interval_callback(self, call, language: str, hours: str) -> None:
+    async def _onboarding_backup_interval_callback(self, call, language: str, minutes: str) -> None:
         lang = "ru" if language == "ru" else "en"
-        enabled = "1" if hours not in {"", "0"} else "0"
-        interval = hours if hours.isdigit() and int(hours) > 0 else "24"
-        save_profile_settings(language=lang, backup_enabled=enabled, backup_interval_hours=interval, onboarding_done="1")
+        enabled = "1" if minutes not in {"", "0"} else "0"
+        interval_minutes = int(minutes) if minutes.isdigit() and int(minutes) > 0 else 1440
+        interval_hours = max(1, interval_minutes // 60)
+        save_profile_settings(
+            language=lang,
+            backup_enabled=enabled,
+            backup_interval_minutes=str(interval_minutes),
+            backup_interval_hours=str(interval_hours),
+            onboarding_done="1",
+            backup_last_sent_at="0",
+        )
         if enabled == "1":
-            message = f"{emoji_line('check', self._t('bot.backup_saved', lang), self.owner_premium)}\n\n{emoji_line('sync', self._t('bot.interval', lang), self.owner_premium)}: {interval}h\n\n{emoji_line('pirate', self._t('bot.ready', lang), self.owner_premium)}"
+            backup_note = ""
+            try:
+                result = await asyncio.to_thread(create_modules_backup, "onboarding")
+                path = str(result.get("path") or "")
+                if path and self.user_client:
+                    await self.user_client.send_file(
+                        "me",
+                        path,
+                        caption=(
+                            f"{premium_emoji('inbox', self.owner_premium)} DeathTG backup\n"
+                            f"Modules: {result.get('module_count', 0)}\n"
+                            f"Files: {result.get('file_count', 0)}"
+                        ),
+                    )
+                    save_profile_settings(backup_last_sent_at=str(int(time.time())), backup_last_path=path)
+                    backup_note = "\n" + emoji_line("mail", self._t("bot.backup_file_sent", lang), self.owner_premium)
+            except Exception as exc:
+                backup_note = "\n" + emoji_line("alert", f"Backup file error: {type(exc).__name__}: {exc}", self.owner_premium)
+            label = self._backup_interval_label(interval_minutes)
+            message = f"{emoji_line('check', self._t('bot.backup_saved', lang), self.owner_premium)}\n\n{emoji_line('sync', self._t('bot.interval', lang), self.owner_premium)}: {label}{backup_note}\n\n{emoji_line('pirate', self._t('bot.ready', lang), self.owner_premium)}"
         else:
             message = emoji_line("heart", self._t("bot.backup_off", lang), self.owner_premium) + "\n\n" + emoji_line("check", self._t("bot.ready", lang), self.owner_premium)
         await call.edit(message, reply_markup=None, parse_mode="html")

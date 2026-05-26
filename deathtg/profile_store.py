@@ -16,6 +16,9 @@ DEFAULT_PROFILE_SETTINGS = {
     "info_text": "",
     "backup_enabled": "0",
     "backup_interval_hours": "24",
+    "backup_interval_minutes": "1440",
+    "backup_last_sent_at": "0",
+    "backup_last_path": "",
     "onboarding_done": "0",
 }
 
