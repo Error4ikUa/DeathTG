@@ -982,13 +982,13 @@ async def _ensure_bot_inline(client, bot_username: str) -> tuple[bool, str | Non
         return False, str(exc)
 
 
-async def _unarchive_folder_peer(client, peer) -> tuple[bool, str | None]:
+async def _set_peer_archive_state(client, peer, *, archived: bool) -> tuple[bool, str | None]:
     if not peer:
         return False, "missing peer"
     try:
-        # Keep DeathTG resources visible inside the custom folder instead of
-        # pushing them to Telegram's Archive folder.
-        await client(EditPeerFoldersRequest(folder_peers=[InputFolderPeer(peer, 0)]))
+        # Bots stay inside the DeathTG dialog folder, but live in Telegram's
+        # Archive so they do not clutter the main chat list.
+        await client(EditPeerFoldersRequest(folder_peers=[InputFolderPeer(peer, 1 if archived else 0)]))
         return True, None
     except Exception as exc:
         return False, str(exc)
@@ -1427,12 +1427,12 @@ async def _run_startup_sync_locked(client) -> dict:
     include_seen: set[str] = set()
     foldered_roles = {"inline": False, "helper": False, "community": False}
 
-    async def _add_folder_peer(peer, label: str) -> None:
+    async def _add_folder_peer(peer, label: str, *, archive: bool = False) -> None:
         key = _peer_key(peer)
         if key not in folder_seen:
             folder_seen.add(key)
             folder_peers.append(peer)
-            ok, error = await _unarchive_folder_peer(client, peer)
+            ok, error = await _set_peer_archive_state(client, peer, archived=archive)
             if not ok and error and not status["last_sync_error"]:
                 status["last_sync_error"] = f"{label}: {error}"
         clean_label = str(label or "").strip()
@@ -1453,8 +1453,14 @@ async def _run_startup_sync_locked(client) -> dict:
             bot_peer = await client.get_input_entity(bot_entity)
             with contextlib.suppress(Exception):
                 await client(UnblockRequest(bot_peer))
-            await _add_folder_peer(bot_peer, f"@{username}")
+            await _add_folder_peer(bot_peer, f"@{username}", archive=True)
             foldered_roles[role] = True
+            if role == "inline":
+                bot_status["archived"] = True
+            elif role == "helper":
+                helper_status["archived"] = True
+            elif role == "community":
+                community_status["archived"] = True
         except Exception as exc:
             if not status["last_sync_error"]:
                 status["last_sync_error"] = str(exc)
@@ -1466,7 +1472,7 @@ async def _run_startup_sync_locked(client) -> dict:
             [bot_username, helper_username, community_username],
         )
         for peer, label in zip(discovered_peers, discovered_usernames):
-            await _add_folder_peer(peer, label)
+            await _add_folder_peer(peer, label, archive=True)
     except Exception as exc:
         if not status["last_sync_error"]:
             status["last_sync_error"] = str(exc)

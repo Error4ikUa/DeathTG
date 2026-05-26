@@ -37,6 +37,14 @@ SETUP_QR_STAGES = {
     "qr_error",
 }
 SETUP_2FA_STAGES = {"waiting_2fa", "2fa_confirmed"}
+ACTIVE_LOGIN_STAGES = {
+    "starting",
+    "waiting_qr",
+    "qr_confirmed",
+    "waiting_2fa",
+    "waiting_code",
+}
+STALE_LOGIN_PENDING_SECONDS = 15 * 60
 
 
 def _load_json(path: Path) -> dict:
@@ -63,6 +71,49 @@ def _env_flag(values: dict[str, str], key: str) -> bool:
 def _session_path(values: dict[str, str]) -> Path:
     session_name = str(values.get("SESSION_NAME") or "deathtg").strip() or "deathtg"
     return session_main_file(session_name)
+
+
+def _profile_session_ok() -> bool:
+    path = RUNTIME_DIR / "profile.json"
+    if not path.exists():
+        return False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    return isinstance(data, dict) and str(data.get("ok") or "") == "1"
+
+
+def repair_stale_login_pending(values: dict[str, str] | None = None) -> dict[str, str]:
+    """Clear a stuck setup flag when a previously valid session is still present.
+
+    QR login creates a .session file before it is fully authorized, so we only
+    auto-clear LOGIN_PENDING when the old runtime profile says the account was
+    already healthy and the active setup stage is not fresh.
+    """
+    env = dict(values or _env_values())
+    if not _env_flag(env, "LOGIN_PENDING") or not _has_env(env):
+        return env
+    session_path = _session_path(env)
+    if not session_path.exists() or not _profile_session_ok():
+        return env
+    login_stage = str(env.get("LOGIN_STAGE") or "idle").strip().lower() or "idle"
+    age_seconds = STALE_LOGIN_PENDING_SECONDS + 1
+    with suppress(Exception):
+        age_seconds = max(0, int(time.time() - session_path.stat().st_mtime))
+    if login_stage in ACTIVE_LOGIN_STAGES and age_seconds <= STALE_LOGIN_PENDING_SECONDS:
+        return env
+    try:
+        from deathtg.server_bootstrap import update_env_values
+
+        update_env_values({"LOGIN_PENDING": "0", "LOGIN_STAGE": "ready"}, path=ENV_PATH)
+    except Exception:
+        pass
+    os.environ["LOGIN_PENDING"] = "0"
+    os.environ["LOGIN_STAGE"] = "ready"
+    env["LOGIN_PENDING"] = "0"
+    env["LOGIN_STAGE"] = "ready"
+    return env
 
 
 def _has_env(values: dict[str, str]) -> bool:
@@ -117,6 +168,7 @@ def load_startup_state() -> dict:
 def startup_snapshot() -> dict:
     load_dotenv(ENV_PATH, override=True)
     env = _env_values()
+    env = repair_stale_login_pending(env)
     has_env = _has_env(env)
     login_pending = _env_flag(env, "LOGIN_PENDING")
     login_stage = str(env.get("LOGIN_STAGE") or "idle").strip().lower() or "idle"

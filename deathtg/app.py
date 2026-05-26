@@ -19,6 +19,7 @@ from telethon.errors import (
 )
 
 from deathtg.assets import system_image
+from deathtg.backup_manager import create_modules_backup
 from deathtg.community_bot import CommunityBotService
 from deathtg.community_roles import (
     community_enabled_for_owner,
@@ -31,6 +32,7 @@ from deathtg.loader import ModuleLoader
 from deathtg.metrics import init_metrics, record_command
 from deathtg.permissions import SecurityManager
 from deathtg.premium_emoji import FALLBACK_EMOJI
+from deathtg.profile_store import profile_settings, save_profile_settings
 from deathtg.health_tools import save_health_state
 from deathtg.startup_state import (
     PHASE_DEGRADED,
@@ -89,6 +91,7 @@ class DeathTG:
         self._panel_actions_task: asyncio.Task | None = None
         self._update_watch_task: asyncio.Task | None = None
         self._integrity_watch_task: asyncio.Task | None = None
+        self._backup_task: asyncio.Task | None = None
         self._bootstrap_task: asyncio.Task | None = None
         self.owner_premium: bool = False
 
@@ -152,6 +155,7 @@ class DeathTG:
         self._panel_actions_task = asyncio.create_task(self._panel_actions_loop())
         self._update_watch_task = asyncio.create_task(self._update_watch_loop())
         self._integrity_watch_task = asyncio.create_task(self._integrity_watch_loop())
+        self._backup_task = asyncio.create_task(self._backup_loop())
         self._bootstrap_task = asyncio.create_task(self._bootstrap_services())
         log.info("%s DeathTG started as @%s", FALLBACK_EMOJI["check"], getattr(me, "username", None) or me.id)
         try:
@@ -175,6 +179,10 @@ class DeathTG:
                 self._integrity_watch_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await self._integrity_watch_task
+            if self._backup_task:
+                self._backup_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._backup_task
             await self.community_bot.stop()
             await self.inline.stop()
 
@@ -360,6 +368,46 @@ class DeathTG:
             except Exception:
                 log.exception("Integrity watch failed")
             await asyncio.sleep(300)
+
+    async def _backup_loop(self) -> None:
+        while True:
+            try:
+                settings = profile_settings()
+                if settings.get("backup_enabled") != "1":
+                    await asyncio.sleep(60)
+                    continue
+                interval_minutes = self._backup_interval_minutes(settings)
+                last_sent = int(settings.get("backup_last_sent_at") or 0)
+                now = int(time.time())
+                if now - last_sent < interval_minutes * 60:
+                    await asyncio.sleep(min(300, max(30, interval_minutes * 60 - (now - last_sent))))
+                    continue
+                result = await asyncio.to_thread(create_modules_backup, "scheduled")
+                path = str(result.get("path") or "")
+                if path:
+                    caption = (
+                        f"{FALLBACK_EMOJI['inbox']} DeathTG backup\n"
+                        f"Modules: {result.get('module_count', 0)}\n"
+                        f"Files: {result.get('file_count', 0)}"
+                    )
+                    await self.client.send_file("me", path, caption=caption)
+                    save_profile_settings(
+                        backup_last_sent_at=str(now),
+                        backup_last_path=path,
+                    )
+            except Exception:
+                log.exception("Backup loop failed")
+                await asyncio.sleep(120)
+
+    @staticmethod
+    def _backup_interval_minutes(settings: dict[str, str]) -> int:
+        raw_minutes = str(settings.get("backup_interval_minutes") or "").strip()
+        if raw_minutes.isdigit() and int(raw_minutes) > 0:
+            return max(10, int(raw_minutes))
+        raw_hours = str(settings.get("backup_interval_hours") or "24").strip()
+        if raw_hours.isdigit() and int(raw_hours) > 0:
+            return max(10, int(raw_hours) * 60)
+        return 24 * 60
 
     async def _check_updates_once(self) -> None:
         if not update_notify_enabled() or not self.inline.ready or not self.config.owner_id:
