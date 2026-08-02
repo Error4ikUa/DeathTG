@@ -46,6 +46,30 @@ class PendingLogin:
 
 
 PENDING: dict[str, PendingLogin] = {}
+QR_FLOW_INDEX: dict[tuple[int, str, str], str] = {}
+QR_FLOW_LOCKS: dict[tuple[int, str, str], asyncio.Lock] = {}
+
+
+def _flow_key(api_id: int, api_hash: str, session_name: str) -> tuple[int, str, str]:
+    return (int(api_id), api_hash.strip(), (session_name.strip() or "deathtg"))
+
+
+def _qr_status_with_flow(flow_id: str) -> dict[str, object]:
+    info = qr_status(flow_id)
+    info["flow_id"] = flow_id
+    return info
+
+
+async def _drop_pending_flow(flow_id: str) -> None:
+    pending = PENDING.pop(flow_id, None)
+    if not pending:
+        return
+    if pending.qr_wait_task:
+        pending.qr_wait_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await pending.qr_wait_task
+    with contextlib.suppress(Exception):
+        await pending.client.disconnect()
 
 
 def _set_login_pending(value: bool) -> None:
@@ -182,47 +206,62 @@ async def _watch_qr_login(flow_id: str) -> None:
 
 
 async def begin_qr_login(flow_id: str, api_id: int, api_hash: str, session_name: str) -> dict[str, object]:
-    _set_login_pending(True)
-    _set_login_stage("starting")
-    _auth_log("saved setup data and started Telegram QR login")
-    client = _new_client(session_name, api_id, api_hash)
-    await client.connect()
-    try:
-        authorized = await client.is_user_authorized()
-    except Exception:
-        authorized = False
-    if authorized:
-        _set_login_stage("authorized")
-        _auth_log("existing session is already authorized")
-        PENDING[flow_id] = PendingLogin(
+    key = _flow_key(api_id, api_hash, session_name)
+    lock = QR_FLOW_LOCKS.setdefault(key, asyncio.Lock())
+    async with lock:
+        existing_flow_id = QR_FLOW_INDEX.get(key)
+        existing = PENDING.get(existing_flow_id or "")
+        if existing and existing.qr_state in {"waiting_qr", "2fa", "done"}:
+            if existing_flow_id != flow_id:
+                _auth_log("reused active Telegram QR login")
+            return _qr_status_with_flow(existing_flow_id or flow_id)
+        if existing_flow_id:
+            await _drop_pending_flow(existing_flow_id)
+            QR_FLOW_INDEX.pop(key, None)
+
+        _set_login_pending(True)
+        _set_login_stage("starting")
+        _auth_log("saved setup data and started Telegram QR login")
+        client = _new_client(session_name, api_id, api_hash)
+        await client.connect()
+        try:
+            authorized = await client.is_user_authorized()
+        except Exception:
+            authorized = False
+        if authorized:
+            _set_login_stage("authorized")
+            _auth_log("existing session is already authorized")
+            PENDING[flow_id] = PendingLogin(
+                client=client,
+                api_id=api_id,
+                api_hash=api_hash,
+                session_name=session_name,
+                qr_state="done",
+            )
+            QR_FLOW_INDEX[key] = flow_id
+            return _qr_status_with_flow(flow_id)
+
+        await client.disconnect()
+        _cleanup_session_files(session_name, reason="qr-login-replace")
+        client = _new_client(session_name, api_id, api_hash)
+        await client.connect()
+        qr_login = await client.qr_login()
+        pending = PendingLogin(
             client=client,
             api_id=api_id,
             api_hash=api_hash,
             session_name=session_name,
-            qr_state="done",
+            qr_login=qr_login,
+            qr_url=qr_login.url,
+            qr_data_url=_render_qr_data_url(qr_login.url),
+            qr_state="waiting_qr",
         )
-        return qr_status(flow_id)
-
-    await client.disconnect()
-    _cleanup_session_files(session_name, reason="qr-login-replace")
-    client = _new_client(session_name, api_id, api_hash)
-    await client.connect()
-    qr_login = await client.qr_login()
-    pending = PendingLogin(
-        client=client,
-        api_id=api_id,
-        api_hash=api_hash,
-        session_name=session_name,
-        qr_login=qr_login,
-        qr_url=qr_login.url,
-        qr_data_url=_render_qr_data_url(qr_login.url),
-        qr_state="waiting_qr",
-    )
-    PENDING[flow_id] = pending
-    pending.qr_wait_task = asyncio.create_task(_watch_qr_login(flow_id))
-    _set_login_stage("waiting_qr")
-    _auth_log("generated QR login and is waiting for a scan from Telegram")
-    return qr_status(flow_id)
+        PENDING[flow_id] = pending
+        QR_FLOW_INDEX[key] = flow_id
+        pending.qr_wait_task = asyncio.create_task(_watch_qr_login(flow_id))
+        _set_login_stage("waiting_qr")
+        _auth_log("generated QR login and is waiting for a scan from Telegram")
+        return _qr_status_with_flow(flow_id)
 
 
 def qr_status(flow_id: str) -> dict[str, object]:
@@ -398,6 +437,7 @@ async def confirm_2fa(flow_id: str, password: str) -> None:
 
 async def finish_login(flow_id: str) -> dict[str, str]:
     pending = PENDING.pop(flow_id)
+    QR_FLOW_INDEX.pop(_flow_key(pending.api_id, pending.api_hash, pending.session_name), None)
     if pending.qr_wait_task:
         pending.qr_wait_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -424,6 +464,7 @@ async def finish_login(flow_id: str) -> dict[str, str]:
 async def cancel_login(flow_id: str) -> None:
     pending = PENDING.pop(flow_id, None)
     if pending:
+        QR_FLOW_INDEX.pop(_flow_key(pending.api_id, pending.api_hash, pending.session_name), None)
         if pending.qr_wait_task:
             pending.qr_wait_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

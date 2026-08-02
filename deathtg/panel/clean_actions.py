@@ -552,15 +552,40 @@ async def update_mod(request: Request, name: str, return_to: str = Form("browser
         module_name = _safe_module_name(name)
         if module_name in PROTECTED_MODULES:
             raise RuntimeError("Protected module cannot be updated from the panel")
+        meta = _load_module_meta().get(module_name, {})
+        source_link = str(meta.get("source_link") or "").strip()
+        if source_link:
+            bundle = await _download_module_source(source_link)
+            trusted = bool(bundle.get("trusted")) or is_trusted_module_link(source_link) or bool(meta.get("verified"))
+            updated_name = await _install_module_source(
+                filename=str(bundle.get("entry_filename") or f"{module_name}.py"),
+                source=str(bundle.get("source") or ""),
+                link=source_link,
+                source_type=str(meta.get("source_type") or ("repo" if trusted else "url")),
+                trusted=trusted,
+                force=bool(meta.get("security_override")),
+                image=str(bundle.get("image_url") or meta.get("image") or ""),
+                description=str(meta.get("description") or bundle.get("description") or ""),
+                author=str(meta.get("author") or bundle.get("author") or ""),
+                version=str(bundle.get("version") or meta.get("version") or ""),
+                install_kind=str(bundle.get("kind") or ("folder" if "/" in str(meta.get("filename") or "") else "file")),
+                module_name=str(bundle.get("module_name") or module_name),
+                image_name=str(bundle.get("image_name") or ""),
+                requirements_text=str(bundle.get("requirements_text") or ""),
+            )
+            return _redirect(_target_path(return_to), message=f"Updated: {updated_name}")
         path = loader.module_path(module_name)
         if not path or not path.exists():
-            raise RuntimeError("Update is not implemented for this module yet")
-        meta = _load_module_meta().get(module_name, {})
+            raise RuntimeError("Module source was not found")
         force = bool(meta.get("verified") or meta.get("security_override"))
         await loader.load_file(path, force=force)
         _queue_userbot_action("install", path=str(path), force=force)
         return _redirect(_target_path(return_to), message=f"Reloaded: {module_name}")
     except Exception as e:
+        text = str(e)
+        if text.startswith("SECURITY_PENDING:"):
+            token = text.split(":", 1)[1]
+            return RedirectResponse(f"{_target_path(return_to)}?warning={quote(token)}", status_code=303)
         return _redirect(_target_path(return_to), error=str(e))
 
 

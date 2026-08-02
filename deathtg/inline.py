@@ -15,12 +15,12 @@ from telethon.errors import PeerIdInvalidError, UserDeactivatedError
 
 from deathtg.assets import system_image
 from deathtg.backup_manager import create_modules_backup
+from deathtg.bot_sessions import drop_session_files, start_bot_client
 from deathtg.config import ENV_PATH, RUNTIME_DIR
 from deathtg.i18n import translate
 from deathtg.panel_access import issue_device_grant, panel_remote_access_ready
 from deathtg.premium_emoji import emoji_line, premium_emoji
 from deathtg.profile_store import profile_settings, save_profile_settings
-from deathtg.telethon_policy import client_retry_kwargs
 
 
 CallbackFunc = Callable[..., Awaitable[Any]]
@@ -95,6 +95,7 @@ class InlineManager:
         self.owner_premium: bool = False
         self.error: str | None = "Inline bot is not configured"
         self.last_error: str = ""
+        self._session_base = None
         self.registry: dict[bytes, CallbackEntry] = {}
         self.forms: dict[str, FormEntry] = {}
         self._owner_start_notice_window = 6 * 60 * 60
@@ -130,13 +131,14 @@ class InlineManager:
             self.error = "Inline bot is not configured"
             return
         RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
-        session = str(RUNTIME_DIR / "inline_bot")
-        client = TelegramClient(session, self.api_id, self.api_hash, **client_retry_kwargs())
         try:
-            await client.start(bot_token=token)
-            me = await client.get_me()
-            if not getattr(me, "bot", False):
-                raise RuntimeError("Inline session is bound to a user, not bot. Recreating session...")
+            client, me, session_base = await start_bot_client(
+                role="inline",
+                token=token,
+                api_id=self.api_id,
+                api_hash=self.api_hash,
+            )
+            self._session_base = session_base
             self.bot_username = getattr(me, "username", "") or ""
             self.bot_client = client
             self.error = None
@@ -148,14 +150,16 @@ class InlineManager:
             client.add_event_handler(self._on_lang, events.NewMessage(incoming=True, pattern=r"(?i)^/lang(?:\s|$)"))
             client.add_event_handler(self._on_private_message, events.NewMessage(incoming=True, func=self._is_private_message))
         except Exception as exc:
-            if isinstance(exc, UserDeactivatedError) or exc.__class__.__name__ == "UserDeactivatedError" or "Recreating session" in str(exc):
+            if isinstance(exc, UserDeactivatedError) or exc.__class__.__name__ == "UserDeactivatedError":
                 await self._drop_session_files()
-                client = TelegramClient(session, self.api_id, self.api_hash, **client_retry_kwargs())
                 try:
-                    await client.start(bot_token=token)
-                    me = await client.get_me()
-                    if not getattr(me, "bot", False):
-                        raise RuntimeError("Inline session still not authorized as bot")
+                    client, me, session_base = await start_bot_client(
+                        role="inline",
+                        token=token,
+                        api_id=self.api_id,
+                        api_hash=self.api_hash,
+                    )
+                    self._session_base = session_base
                     self.bot_username = getattr(me, "username", "") or ""
                     self.bot_client = client
                     self.error = None
@@ -171,7 +175,8 @@ class InlineManager:
                     exc = retry_exc
             self.error = f"{type(exc).__name__}: {exc}"
             with contextlib.suppress(Exception):
-                await client.disconnect()
+                if self.bot_client:
+                    await self.bot_client.disconnect()
 
     async def _read_owner(self) -> None:
         if not self.user_client:
@@ -187,6 +192,8 @@ class InlineManager:
             self.owner_premium = False
 
     async def _drop_session_files(self) -> None:
+        if self._session_base:
+            drop_session_files(self._session_base)
         for path in RUNTIME_DIR.glob("inline_bot.session*"):
             with contextlib.suppress(OSError):
                 path.unlink()

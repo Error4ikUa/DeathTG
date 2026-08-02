@@ -12,6 +12,10 @@ import threading
 import time
 from pathlib import Path
 
+from deathtg.dependency_bootstrap import ensure_core_dependencies
+
+ensure_core_dependencies()
+
 import uvicorn
 from dotenv import load_dotenv
 from deathtg.panel_access import (

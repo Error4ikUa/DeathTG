@@ -435,9 +435,10 @@ async def setup_save(
         write_env(api_id, api_hash, session_name, "", "", secret_value, "")
         ensure_server_env(public_url=_request_origin_url(request))
         os.environ["PANEL_SECRET"] = secret_value
-        flow_id = secrets.token_urlsafe(16)
-        request.session["setup_flow_id"] = flow_id
+        flow_id = str(request.session.get("setup_flow_id") or secrets.token_urlsafe(16))
         qr_info = await begin_qr_login(flow_id, api_id, api_hash, session_name)
+        flow_id = str(qr_info.get("flow_id") or flow_id)
+        request.session["setup_flow_id"] = flow_id
         if qr_info.get("qr_state") == "done":
             await finish_login(flow_id)
             request.session.pop("setup_flow_id", None)

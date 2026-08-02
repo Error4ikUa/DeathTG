@@ -134,6 +134,13 @@ async def refresh_modules() -> None:
     registry._commands.clear()
     registry._aliases.clear()
     loader.loaded.clear()
+    loader.import_names.clear()
+    loader.source_paths.clear()
+    loader.instances.clear()
+    loader.watchers.clear()
+    loader.raw_handlers.clear()
+    loader.inline_handlers.clear()
+    loader.callback_handlers.clear()
     await loader.load_builtin(
         "deathtg.modules", ["core", "root", "info", "system", "antivirus", "terminal"]
     )
