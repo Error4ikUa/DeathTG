@@ -87,7 +87,7 @@ class DeathTG:
         self.community_bot = CommunityBotService(api_id=config.api_id, api_hash=config.api_hash, user_client=self.client)
         self.loader.bind(app=self, client=self.client, inline_manager=self.inline)
         self._force_loaded_modules: set[str] = set()
-        self._panel_action_pos = PANEL_ACTIONS_PATH.stat().st_size if PANEL_ACTIONS_PATH.exists() else 0
+        self._panel_action_pos = self._panel_action_file_size()
         self._panel_actions_task: asyncio.Task | None = None
         self._update_watch_task: asyncio.Task | None = None
         self._integrity_watch_task: asyncio.Task | None = None
@@ -151,7 +151,9 @@ class DeathTG:
         self.client.add_event_handler(self._dispatch, events.NewMessage())
         self.client.add_event_handler(self._dispatch_watchers, events.NewMessage())
 
-        self._panel_action_pos = 0
+        # Do not replay stale panel actions after a restart. The panel appends
+        # fresh actions to this JSONL file, and the userbot tails only new rows.
+        self._panel_action_pos = self._panel_action_file_size()
         self._panel_actions_task = asyncio.create_task(self._panel_actions_loop())
         self._update_watch_task = asyncio.create_task(self._update_watch_loop())
         self._integrity_watch_task = asyncio.create_task(self._integrity_watch_loop())
@@ -509,6 +511,13 @@ class DeathTG:
                     continue
                 await self._apply_panel_action(payload)
             self._panel_action_pos = f.tell()
+
+    @staticmethod
+    def _panel_action_file_size() -> int:
+        try:
+            return PANEL_ACTIONS_PATH.stat().st_size if PANEL_ACTIONS_PATH.exists() else 0
+        except OSError:
+            return 0
 
     async def _resolve_self_user_id(self) -> int:
         me = await self.client.get_me()

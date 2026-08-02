@@ -8,6 +8,7 @@ from typing import Any
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
 
+from deathtg.bot_sessions import start_bot_client
 from deathtg.community_roles import (
     allowed_role,
     community_bot_display_name,
@@ -17,9 +18,8 @@ from deathtg.community_roles import (
     preferred_community_bot_username,
     revoke_role,
 )
-from deathtg.config import ENV_PATH, RUNTIME_DIR
+from deathtg.config import ENV_PATH
 from deathtg.role_gate import OWNER_TG_ID
-from deathtg.telethon_policy import client_retry_kwargs
 
 
 class CommunityBotService:
@@ -40,11 +40,13 @@ class CommunityBotService:
         if not token:
             self.error = "Community bot token is not configured"
             return
-        session = str(RUNTIME_DIR / "community_bot")
-        client = TelegramClient(session, self.api_id, self.api_hash, **client_retry_kwargs())
         try:
-            await client.start(bot_token=token)
-            me = await client.get_me()
+            client, me, _session_base = await start_bot_client(
+                role="community",
+                token=token,
+                api_id=self.api_id,
+                api_hash=self.api_hash,
+            )
             self.bot_username = getattr(me, "username", "") or preferred_community_bot_username()
             self.bot_client = client
             self.error = None
@@ -52,7 +54,8 @@ class CommunityBotService:
         except Exception as exc:
             self.error = f"{type(exc).__name__}: {exc}"
             with contextlib.suppress(Exception):
-                await client.disconnect()
+                if self.bot_client:
+                    await self.bot_client.disconnect()
 
     async def stop(self) -> None:
         if self.bot_client:

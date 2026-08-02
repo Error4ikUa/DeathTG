@@ -25,7 +25,22 @@ PANEL_RUNTIME_DIR = RUNTIME_DIR / "panel"
 STARTUP_REPORT = RUNTIME_DIR / "startup_report.json"
 
 REQUIRED_DIRS = (MODULES_DIR, DOWNLOADS_DIR, RUNTIME_DIR, LOGS_DIR, CACHE_DIR, PANEL_RUNTIME_DIR)
-REQUIRED_IMPORTS = ("dotenv", "uvicorn", "telethon", "fastapi", "jinja2")
+REQUIRED_IMPORTS = (
+    "aiohttp",
+    "aiosqlite",
+    "dotenv",
+    "fastapi",
+    "itsdangerous",
+    "jinja2",
+    "multipart",
+    "PIL",
+    "psutil",
+    "qrcode",
+    "starlette",
+    "telethon",
+    "uvicorn",
+    "yt_dlp",
+)
 
 
 @dataclass(slots=True)
