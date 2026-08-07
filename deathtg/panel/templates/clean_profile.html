@@ -6,11 +6,11 @@
     <title>{{ tr('profile.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
     <link rel="stylesheet" href="/static/clean_patch.css">
-    <link rel="stylesheet" href="/static/accent_fix.css">
-    <link rel="stylesheet" href="/static/theme_cards.css">
     <style>
         .editor-modal,.editor-modal *,.editor-modal *::before,.editor-modal *::after{box-sizing:border-box}
-        .editor-modal{overscroll-behavior:contain}
+        .editor-modal{overscroll-behavior:contain;z-index:300!important}
+        body:has(.editor-modal.open){overflow:hidden!important}
+        #cropModal{z-index:320!important}
         .editor-modal *{scrollbar-width:thin;scrollbar-color:rgba(var(--accent-rgb),.58) rgba(6,10,15,.72)}
         .editor-modal *::-webkit-scrollbar{width:10px;height:10px}
         .editor-modal *::-webkit-scrollbar-track{background:rgba(6,10,15,.74);border-radius:999px}
@@ -53,12 +53,12 @@
         .pill-row{display:flex;flex-wrap:wrap;gap:10px}
         .pill{display:inline-flex;align-items:center;gap:8px;padding:9px 12px;border-radius:999px;border:1px solid rgba(var(--accent-rgb),.22);background:rgba(var(--accent-rgb),.08);color:#eef7ff;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
         .link-input{width:100%;border:1px solid rgba(var(--accent-rgb),.18);border-radius:14px;background:rgba(0,0,0,.3);color:#eff6ff;padding:13px 14px;font:600 13px/1.4 ui-monospace,Consolas,monospace}
-        .editor-modal .modal-card{width:min(1120px,calc(100vw - 28px));padding:22px;max-height:min(94vh,1180px);overflow:hidden;display:grid;grid-template-rows:auto auto minmax(0,1fr)}
-        .editor-shell{display:grid;grid-template-columns:minmax(0,1fr) minmax(270px,320px);gap:18px;overflow:auto;overflow-x:hidden;margin-top:14px;padding:0 12px 14px 0;align-items:start;scrollbar-gutter:stable}
+        .editor-modal .modal-card{width:min(1120px,calc(100vw - 28px));padding:22px;max-height:min(94vh,1180px);overflow:hidden;display:grid;grid-template-rows:auto auto auto minmax(0,1fr) auto}
+        .editor-shell{display:grid;grid-template-columns:minmax(0,2fr) minmax(290px,.82fr);gap:20px;overflow:auto;overflow-x:hidden;margin-top:14px;padding:2px 12px 14px 2px;align-items:start;scrollbar-gutter:stable}
         .editor-shell>*{min-width:0;max-width:100%}
         .avatar-box{width:100%;aspect-ratio:1/1;border-radius:24px;border:1px solid var(--line2);background:rgba(var(--accent-rgb),.08);overflow:hidden}
         .avatar-box img{width:100%;height:100%;display:block;object-fit:cover;object-position:center}
-        .editor-form{display:grid;gap:16px;min-width:0;max-width:100%;overflow:hidden}
+        .editor-form{display:grid;gap:16px;width:100%;min-width:0;max-width:100%;overflow:hidden}
         .editor-grid{display:grid;grid-template-columns:minmax(190px,240px) minmax(0,1fr);gap:16px;align-items:start;min-width:0;max-width:100%}
         .editor-stack{display:grid;gap:14px;min-width:0;max-width:100%}
         .editor-grid.single{grid-template-columns:1fr}
@@ -68,7 +68,7 @@
         .editor-form input:focus,.editor-form textarea:focus,.runtime-head input:focus,.inline-form input:focus{border-color:rgba(var(--accent-rgb),.52);box-shadow:0 0 0 1px rgba(var(--accent-rgb),.24),0 10px 26px rgba(0,0,0,.18);transform:translateY(-1px)}
         .editor-form textarea{min-height:136px;resize:vertical;font-family:ui-monospace,Consolas,monospace}
         .field-note{margin-top:4px;color:#8ca2a3;font-size:12px;line-height:1.6}
-        .editor-submit{display:flex;justify-content:flex-end;position:sticky;bottom:0;padding:14px 0 0;background:linear-gradient(180deg,rgba(10,14,16,0),rgba(10,14,16,.92) 36%,rgba(10,14,16,.99));z-index:5}
+        .editor-submit{display:flex;justify-content:flex-end;padding:14px 0 0;margin-top:2px;border-top:1px solid rgba(var(--accent-rgb),.16);background:rgba(8,12,16,.92);z-index:5}
         .editor-submit button{min-width:240px;font-size:15px;min-height:52px;width:min(100%,260px)}
         .primary-save{background:linear-gradient(135deg,rgba(var(--accent-rgb),.96),rgba(var(--accent-rgb),.76));border-color:rgba(var(--accent-rgb),.72);color:#08110e;font-weight:900;box-shadow:0 22px 40px rgba(var(--accent-rgb),.22),0 14px 24px rgba(0,0,0,.18)}
         .inline-form{display:grid;gap:10px}
@@ -95,6 +95,9 @@
         .choice-card::after{content:"";position:absolute;right:12px;top:50%;width:12px;height:12px;border-radius:999px;border:1px solid rgba(var(--accent-rgb),.35);background:rgba(255,255,255,.04);transform:translateY(-50%)}
         .choice-item input:checked + .choice-card{border-color:rgba(var(--accent-rgb),.48);box-shadow:0 0 0 1px rgba(var(--accent-rgb),.28),0 12px 28px rgba(0,0,0,.22);transform:translateY(-1px)}
         .choice-item input:checked + .choice-card::after{background:rgba(var(--accent-rgb),.86);box-shadow:0 0 0 4px rgba(var(--accent-rgb),.14)}
+        .role-access-note{position:relative;display:grid;gap:7px;margin-top:11px;padding:15px 16px 15px 18px;border:1px solid rgba(var(--accent-rgb),.34);border-radius:16px;background:linear-gradient(135deg,rgba(var(--accent-rgb),.12),rgba(4,8,13,.52));box-shadow:inset 3px 0 0 rgba(var(--accent-rgb),.72),0 16px 34px rgba(0,0,0,.16);overflow:hidden}
+        .role-access-note strong,.role-access-note p,.role-access-note a{position:relative;z-index:1}.role-access-note strong{color:#fff0bd;font-size:14px}.role-access-note p{margin:0;color:var(--muted);font-size:12px;line-height:1.55;max-width:620px}.role-access-note a{justify-self:start;margin-top:2px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 13px;border-radius:11px;border:1px solid rgba(var(--accent-rgb),.36);background:rgba(var(--accent-rgb),.11);color:var(--text);font-size:12px;font-weight:900}
+        .role-chooser:has(input[value="admin"]:checked) + .role-access-note,.role-chooser:has(input[value="developer"]:checked) + .role-access-note{border-color:rgba(var(--accent-rgb),.68);box-shadow:inset 3px 0 0 rgba(var(--accent-rgb),.92),0 18px 38px rgba(var(--accent-rgb),.10)}
         .accent-set{display:grid;gap:9px}
         .accent-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
         .accent-item{position:relative}
@@ -122,12 +125,13 @@
         .access-rail .settings-card,.access-rail .device-item{background:rgba(255,255,255,.02)}
         .access-rail{overflow:hidden}
         .modal-top-note{max-width:760px;color:var(--muted);font-size:13px;line-height:1.6;margin:8px 0 0}
-        .editor-panel,.settings-card,.quote-card,.avatar-box{min-width:0;max-width:100%}
+        .editor-panel,.settings-card,.quote-card,.avatar-box{min-width:0;max-width:100%}.editor-panel{overflow:hidden;isolation:isolate}.access-rail{width:100%;border-color:rgba(var(--accent-rgb),.24);box-shadow:inset 0 0 0 1px rgba(var(--accent-rgb),.04),0 20px 44px rgba(0,0,0,.18)}
         @keyframes rolePulse{0%,100%{transform:translateY(0);box-shadow:0 0 0 1px rgba(255,214,102,.1),0 18px 34px rgba(0,0,0,.12)}50%{transform:translateY(-1px);box-shadow:0 0 0 1px rgba(255,214,102,.18),0 24px 40px rgba(255,214,102,.08)}}@keyframes developerSweep{0%{transform:translateX(-140%) rotate(18deg);opacity:0}10%{opacity:1}55%{opacity:1}100%{transform:translateX(430%) rotate(18deg);opacity:0}}
-        @media (max-width: 1180px){.profile-hero{grid-template-columns:1fr}.hero-actions{justify-content:flex-start}.profile-grid,.editor-shell,.editor-grid{grid-template-columns:1fr}.access-rail{position:static}.editor-submit{bottom:0}.editor-modal .modal-card{width:min(980px,calc(100vw - 22px))}}
+        @media (max-width: 1180px){.profile-hero{grid-template-columns:1fr}.hero-actions{justify-content:flex-start}.profile-grid,.editor-shell,.editor-grid{grid-template-columns:1fr}.editor-shell{grid-template-rows:max-content max-content}.access-rail{position:static}.editor-modal .modal-card{width:min(980px,calc(100vw - 22px))}}
         @media (max-width: 980px){.stat-ribbon{grid-template-columns:repeat(3,minmax(0,1fr))}.meta-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.choice-grid,.accent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.choice-grid.roles{grid-template-columns:repeat(2,minmax(0,1fr))}}
-        @media (max-width: 680px){.hero-avatar{width:96px;height:96px;border-radius:22px}.meta-grid,.settings-grid,.editor-grid,.choice-grid,.choice-grid.two,.accent-grid,.stat-ribbon{grid-template-columns:1fr}}
+        @media (max-width: 680px){.hero-avatar{width:96px;height:96px;border-radius:22px}.meta-grid,.settings-grid,.editor-grid,.choice-grid,.choice-grid.two,.accent-grid,.stat-ribbon{grid-template-columns:1fr}.editor-modal{padding:8px!important}.editor-modal .modal-card{width:calc(100vw - 16px)!important;max-width:calc(100vw - 16px)!important;max-height:calc(100vh - 16px)!important;padding:16px!important;margin:0!important}.editor-modal .modal-close{top:10px!important;right:10px!important;width:42px!important;min-width:42px!important;height:42px!important;min-height:42px!important;padding:0!important;border-radius:12px!important}.editor-modal .modal-top-note{padding-right:42px}.editor-shell{padding-right:7px;gap:14px}.editor-submit{padding-top:10px}.editor-submit button{width:100%!important;min-width:0!important}}
     </style>
+    <link rel="stylesheet" href="/static/engineering.css?v=20260807.3">
 </head>
 <body class="theme-profile" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>
@@ -140,7 +144,7 @@
 </button>
 <aside class="mini-menu" id="drawer">
     <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>{{ tr('profile.page_label') }}</span></div></div>
-    <nav><a href="/">{{ tr('nav.news') }}</a><a class="active" href="/profile">{{ tr('nav.profile') }}</a><a href="/activity">{{ tr('nav.activity') }}</a><a href="/browser">{{ tr('nav.modules') }}</a><a href="/scanner">{{ tr('nav.scanner') }}</a></nav>
+    <nav><a href="/">{{ tr('nav.news') }}</a><a class="active" href="/profile">{{ tr('nav.profile') }}</a><a href="/activity">{{ tr('nav.activity') }}</a><a href="/browser">{{ tr('nav.modules') }}</a><a href="/scanner">{{ tr('nav.scanner') }}</a><a href="/health">{{ tr('nav.health') }}</a></nav>
     <a class="logout" href="/logout">{{ tr('nav.logout') }}</a>
 </aside>
 <div class="overlay" id="drawerBackdrop"></div>
@@ -212,7 +216,7 @@
         <h2 style="margin:0">{{ tr('profile.edit_modal_subtitle') }}</h2>
         <p class="modal-top-note">{{ tr('profile.edit_modal_note') }}</p>
         <div class="editor-shell">
-            <form class="editor-form" action="/profile/save" method="post">
+            <form id="profileSettingsForm" class="editor-form" action="/profile/save" method="post">
                 <section class="editor-panel">
                     <h3>{{ tr('profile.identity_section') }}</h3>
                     <div class="editor-grid">
@@ -233,7 +237,7 @@
                             </label>
                             <div>
                                 <span class="section-note">{{ tr('profile.role') }}</span>
-                                <div class="choice-grid roles" style="margin-top:8px">
+                                <div class="choice-grid roles role-chooser" style="margin-top:8px">
                                     <label class="choice-item">
                                         <input type="radio" name="role" value="user" {% if profile.role == 'user' %}checked{% endif %}>
                                         <span class="choice-card"><span class="choice-copy"><strong>{{ tr('profile.role_user') }}</strong></span></span>
@@ -246,6 +250,15 @@
                                         <input type="radio" name="role" value="developer" {% if profile.role == 'developer' %}checked{% endif %}>
                                         <span class="choice-card"><span class="choice-copy"><strong>{{ tr('profile.role_developer') }}</strong></span></span>
                                     </label>
+                                </div>
+                                <div class="role-access-note">
+                                    {% if is_dtg_owner %}
+                                    <strong>{{ tr('profile.role_owner_verified') }}</strong>
+                                    {% else %}
+                                    <strong>{{ tr('profile.role_access_title') }}</strong>
+                                    <p>{{ tr('profile.role_access_desc') }}</p>
+                                    <a href="https://t.me/{{ community_bot_username }}" target="_blank" rel="noreferrer">{{ tr('profile.open_role_bot') }} · @{{ community_bot_username }}</a>
+                                    {% endif %}
                                 </div>
                             </div>
                             <p class="subtle-help">{{ tr('profile.role_choice_help') }}</p>
@@ -305,7 +318,6 @@
                     </div>
                 </section>
 
-                <div class="editor-submit"><button type="submit" class="primary-save">{{ tr('profile.save_changes') }}</button></div>
             </form>
 
             <section class="editor-panel access-rail">
@@ -361,6 +373,7 @@
                 </div>
             </section>
         </div>
+        <div class="editor-submit"><button type="submit" form="profileSettingsForm" class="primary-save">{{ tr('profile.save_changes') }}</button></div>
     </div>
 </div>
 

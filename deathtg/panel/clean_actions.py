@@ -67,7 +67,8 @@ def _redirect(path: str, *, message: str | None = None, error: str | None = None
     value = message if message is not None else error
     base, fragment = path.split("#", 1) if "#" in path else (path, "")
     if value:
-        target = f"{base}?{key}={quote(str(value))}"
+        separator = "&" if "?" in base else "?"
+        target = f"{base}{separator}{key}={quote(str(value))}"
         if fragment:
             target += f"#{fragment}"
         return RedirectResponse(target, status_code=303)
@@ -125,7 +126,7 @@ async def _request_role_scan(role: str) -> tuple[bool, str]:
             return False, message or "Role verification was denied."
         await asyncio.sleep(0.35)
     clear_role_scan_result(request_id)
-    return False, "Role verification timed out. Open Telegram and confirm your DeathTG access first."
+    return False, "DeathTG owner service did not respond. Wait for the owner to come online, activate your key in Telegram and try again."
 
 
 def _report_payload(report) -> dict:
@@ -418,7 +419,10 @@ async def download_mod(
             image_name=str(bundle.get("image_name") or ""),
             requirements_text=str(bundle.get("requirements_text") or ""),
         )
-        return _redirect(_target_path(return_to), message=f"Installed: {name}")
+        target = _target_path(return_to)
+        if target == "/browser":
+            target = "/browser?refresh=1"
+        return _redirect(target, message=f"Installed: {name}")
     except Exception as e:
         text = str(e)
         if text.startswith("SECURITY_PENDING:"):

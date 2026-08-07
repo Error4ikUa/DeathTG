@@ -533,7 +533,7 @@ class DeathTG:
         try:
             entity = await self.client.get_entity(username)
         except Exception as exc:
-            return False, f"Community bot is unavailable: {exc}"
+            return False, f"DeathTG owner service is offline or unavailable. Wait for the owner to come online and try again: {exc}"
         try:
             async with self.client.conversation(entity, timeout=18, exclusive=False) as conv:
                 await conv.send_message(f"/scan {user_id} {role}")
@@ -541,11 +541,11 @@ class DeathTG:
         except YouBlockedUserError:
             return False, "Unblock the DeathTG community bot in Telegram and try again."
         except Exception as exc:
-            return False, f"Community bot did not respond: {exc}"
+            return False, f"DeathTG owner service did not respond. Wait for the owner to come online and try again: {exc}"
         text = (getattr(response, "raw_text", "") or "").strip().lower()
         if text == "true":
             return True, "Community bot approved the role."
-        return False, "Role not approved by DeathTG community bot."
+        return False, "Role key is not activated. Ask the DeathTG owner for a one-time key and send it to the community bot."
 
     async def _apply_panel_action(self, payload: dict) -> None:
         action = str(payload.get("action") or "").strip()

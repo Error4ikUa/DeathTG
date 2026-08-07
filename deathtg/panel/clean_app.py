@@ -64,6 +64,8 @@ from deathtg.panel_access import (
     touch_device_session,
 )
 from deathtg.i18n import translate
+from deathtg.community_roles import preferred_community_bot_username
+from deathtg.role_gate import OWNER_TG_ID
 from deathtg.registry import PROTECTED_MODULES
 from deathtg.security import is_trusted_module_link, scan_module_source
 from deathtg.server_bootstrap import (
@@ -267,6 +269,10 @@ async def _base_context(request: Request) -> dict:
         "request": request,
         "lang": lang,
         "profile": profile,
+        "is_dtg_owner": str(profile.get("id") or "") == str(OWNER_TG_ID),
+        # Non-owner instances must point at the owner's central authority bot,
+        # not invent a local username from the owner's numeric ID.
+        "community_bot_username": preferred_community_bot_username(),
         "status": st,
         "startup": startup_status(),
         "startup_state": startup_snapshot(),
@@ -370,10 +376,12 @@ async def setup_page(request: Request):
         return RedirectResponse("/", status_code=303)
     if not _setup_allowed(request):
         return HTMLResponse(
-            "<html><body style='background:#050b08;color:#eaffef;font-family:sans-serif;padding:40px'>"
-            "<h1>Setup token required</h1>"
-            "<p>Open the setup link printed in the server console.</p>"
-            "</body></html>",
+            "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<link rel='stylesheet' href='/static/clean.css'><link rel='stylesheet' href='/static/engineering.css?v=20260807.3'>"
+            "</head><body><main class='auth'><section class='card auth-card'>"
+            "<div class='mark big'>DTG</div><h1>Setup token required</h1>"
+            "<p>Open the private setup link printed in the DeathTG console.</p>"
+            "</section></main></body></html>",
             status_code=403,
         )
     return templates.TemplateResponse(
@@ -390,9 +398,10 @@ async def setup_done_page(request: Request):
     remote_ready = panel_remote_access_ready()
     body = (
         "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>DeathTG Ready</title></head>"
-        "<body style='margin:0;min-height:100vh;display:grid;place-items:center;background:#040a07;color:#eaffef;font-family:sans-serif;padding:24px'>"
-        "<div style='max-width:680px;padding:28px;border:1px solid rgba(82,255,139,.24);border-radius:22px;background:rgba(4,18,11,.92)'>"
+        "<title>DeathTG Ready</title><link rel='stylesheet' href='/static/clean.css'>"
+        "<link rel='stylesheet' href='/static/engineering.css?v=20260807.3'></head>"
+        "<body><main class='auth'><section class='card auth-card'>"
+        "<div class='mark big'>DTG</div>"
         "<h1 style='margin-top:0'>Telegram connected</h1>"
         "<p>DeathTG created your session and is preparing secure access.</p>"
         f"<p>Current panel address: <code>{panel_url}</code></p>"
@@ -403,8 +412,8 @@ async def setup_done_page(request: Request):
     if not remote_ready:
         body += "<p>This panel is local-only right now. For phone access from another device, use a LAN/public URL configuration.</p>"
     if local_ready:
-        body += "<p><a href='/' style='color:#52ff8b'>Open panel in this browser</a></p>"
-    body += "</div></body></html>"
+        body += "<p><a class='btn' href='/'>Open panel in this browser</a></p>"
+    body += "</section></main></body></html>"
     return HTMLResponse(body)
 
 
@@ -418,10 +427,12 @@ async def setup_save(
 ):
     if not _setup_allowed(request, setup_token):
         return HTMLResponse(
-            "<html><body style='background:#050b08;color:#eaffef;font-family:sans-serif;padding:40px'>"
-            "<h1>Setup token required</h1>"
-            "<p>Open the setup link printed in the server console.</p>"
-            "</body></html>",
+            "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<link rel='stylesheet' href='/static/clean.css'><link rel='stylesheet' href='/static/engineering.css?v=20260807.3'>"
+            "</head><body><main class='auth'><section class='card auth-card'>"
+            "<div class='mark big'>DTG</div><h1>Setup token required</h1>"
+            "<p>Open the private setup link printed in the DeathTG console.</p>"
+            "</section></main></body></html>",
             status_code=403,
         )
     if _is_rate_limited("setup_save", request):
@@ -726,7 +737,7 @@ async def browser_page(request: Request):
         page = max(1, int(request.query_params.get("page", "1")))
     except Exception:
         page = 1
-    per_page = 5
+    per_page = 8
     total_pages = max(1, (len(repo_modules) + per_page - 1) // per_page)
     page = min(page, total_pages)
     start = (page - 1) * per_page

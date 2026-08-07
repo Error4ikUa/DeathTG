@@ -6,16 +6,15 @@
     <title>DeathTG InstallMod</title>
     <link rel="stylesheet" href="/static/clean.css">
     <link rel="stylesheet" href="/static/clean_patch.css">
-    <link rel="stylesheet" href="/static/accent_fix.css">
-    <link rel="stylesheet" href="/static/theme_cards.css">
-    <link rel="stylesheet" href="/static/modules_center.css">
+    <link rel="stylesheet" href="/static/modules_center.css?v=20260807">
+    <link rel="stylesheet" href="/static/engineering.css?v=20260807.3">
 </head>
 <body class="theme-modules" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>
 <button class="menu-btn" id="menuToggle">{% if profile.avatar %}<img src="{{ profile.avatar }}" alt="avatar">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}</button>
 <aside class="mini-menu" id="drawer">
     <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>InstallMod</span></div></div>
-    <nav><a href="/">News</a><a href="/profile">Profile</a><a href="/activity">Activity</a><a class="active" href="/browser">Modules</a><a href="/scanner">Scanner</a></nav>
+    <nav><a href="/">News</a><a href="/profile">Profile</a><a href="/activity">Activity</a><a class="active" href="/browser">Modules</a><a href="/scanner">Scanner</a><a href="/health">Health</a></nav>
     <a class="logout" href="/logout">Logout</a>
 </aside>
 <div class="overlay" id="drawerBackdrop"></div>
