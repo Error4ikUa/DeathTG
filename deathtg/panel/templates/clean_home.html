@@ -6,24 +6,7 @@
     <title>{{ tr('home.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
     <link rel="stylesheet" href="/static/clean_patch.css">
-    <style>
-        .news-shell{display:grid;gap:16px}
-        .runtime-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-        .runtime-card,.system-card{padding:22px}
-        .status-stack,.update-stack,.news-stack{display:grid;gap:10px}
-        .status-row,.update-box,.news-box{padding:14px 15px;border-radius:16px;background:rgba(255,255,255,.025);border:1px solid rgba(var(--accent-rgb),.14)}
-        .status-row{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
-        .status-row b,.update-box b,.news-box b{display:block;margin-bottom:4px}
-        .status-row p,.update-box p,.news-box p{margin:0;color:var(--muted);font-size:13px;line-height:1.55}
-        .status-badge{display:inline-flex;align-items:center;justify-content:center;padding:7px 11px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
-        .status-badge.ok{background:rgba(82,255,139,.10);border:1px solid rgba(82,255,139,.22);color:#dfffe8}
-        .status-badge.bad{background:rgba(255,79,117,.12);border:1px solid rgba(255,79,117,.34);color:#ffe2e9}
-        .status-badge.warn{background:rgba(255,184,107,.12);border:1px solid rgba(255,184,107,.34);color:#ffebb9}
-        .button-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
-        .quick a{position:relative;overflow:hidden}
-        @media (max-width: 980px){.runtime-grid{grid-template-columns:1fr}}
-    </style>
-    <link rel="stylesheet" href="/static/engineering.css?v=20260807.3">
+    <link rel="stylesheet" href="/static/engineering.css?v=20260807.5">
 </head>
 <body class="theme-main" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>
@@ -45,7 +28,7 @@
         </aside>
 <div class="overlay" id="drawerBackdrop"></div>
 
-<main class="page">
+<main class="page home-page">
     <div class="news-shell">
         <section class="hero card">
             <div>
@@ -127,27 +110,14 @@
                     </div>
                 </div>
             </article>
-        </section>
 
-        <section class="grid2">
-            <article class="card panel">
+            <article class="card panel build-strip">
                 <p class="eyebrow">{{ tr('home.whats_new') }}</p>
                 <h2>{{ tr('home.current_build') }}</h2>
                 <div class="news-stack">
                     <div class="news-box"><b>{{ tr('home.inline_forms') }}</b><p>{{ tr('home.inline_forms_desc') }}</p></div>
                     <div class="news-box"><b>{{ tr('home.module_cards') }}</b><p>{{ tr('home.module_cards_desc') }}</p></div>
                     <div class="news-box"><b>{{ tr('home.account_level') }}</b><p>{{ tr('home.account_level_desc') }}</p></div>
-                </div>
-            </article>
-            <article class="card panel">
-                <p class="eyebrow">{{ tr('home.quick_actions') }}</p>
-                <h2>{{ tr('home.actions') }}</h2>
-                <div class="quick">
-                    <a href="/profile">{{ tr('nav.profile') }}</a>
-                    <a href="/browser">{{ tr('nav.modules') }}</a>
-                    <a href="/activity">{{ tr('nav.activity') }}</a>
-                    <a href="/scanner">{{ tr('nav.scanner') }}</a>
-                    <a href="/health">{{ tr('nav.health') }}</a>
                 </div>
             </article>
         </section>

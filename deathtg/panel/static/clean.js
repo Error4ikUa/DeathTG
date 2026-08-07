@@ -12,26 +12,6 @@ if (toggle) toggle.onclick = () => openMenu(!drawer.classList.contains("open"));
 if (overlay) overlay.onclick = () => openMenu(false);
 document.querySelectorAll(".mini-menu a").forEach((a) => (a.onclick = () => openMenu(false)));
 
-(function injectStyles() {
-  try {
-    const head = document.head || document.getElementsByTagName("head")[0];
-    function css(id, href) {
-      if (head && !document.getElementById(id)) {
-        const link = document.createElement("link");
-        link.rel = "stylesheet";
-        link.href = href;
-        link.id = id;
-        head.appendChild(link);
-      }
-    }
-    css("dtg-theme-css", "/static/theme_cards.css");
-    css("dtg-modern-css", "/static/dtg_modern.css");
-    css("dtg-avatar-crop-css", "/static/avatar_crop_fix.css");
-  } catch (error) {
-    console.error("Failed to inject stylesheet", error);
-  }
-})();
-
 (function warmPageLinks() {
   const seen = new Set();
   const links = [...document.querySelectorAll('a[href^="/"]')];
@@ -490,7 +470,7 @@ drawLineChart();
   const accentInputs = [...document.querySelectorAll('input[name="accent"]')];
   if (!body || !accentInputs.length) return;
 
-  const glyphs = ["✦", "✧", "✶", "✷", "✹", "✺", "⬛", "◆", "+", "*"];
+  const glyphs = ["+", "*", "#", "//", "01", "[]", "::", "<>"];
 
   function emitBurst(source) {
     const rect = (source && source.getBoundingClientRect) ? source.getBoundingClientRect() : {left: window.innerWidth / 2, top: window.innerHeight / 2, width: 0, height: 0};

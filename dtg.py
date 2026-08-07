@@ -28,6 +28,7 @@ from deathtg.panel_access import (
 )
 from deathtg.server_bootstrap import ensure_server_env, update_env_values
 from deathtg.setup_access import setup_link
+from deathtg.tailscale import tailscale_status
 from deathtg.startup_core import print_report, ready_to_start_userbot, run_preflight
 from deathtg.startup_state import (
     PHASE_DEGRADED,
@@ -297,6 +298,9 @@ def main() -> int:
             publish_message = str(wsl_publish.get("message") or "").strip()
             if publish_message:
                 print(f"Panel (phone / PC): {publish_message}")
+        tailnet = tailscale_status(refresh=True)
+        if tailnet.get("connected") and tailnet.get("url"):
+            print(f"Panel (Tailscale): {tailnet['url']}")
     if phase in {PHASE_FIRST_RUN, PHASE_SETUP_WAIT_QR, PHASE_SETUP_WAIT_2FA}:
         print(f"First run setup link: {setup_link()}")
     if phase == PHASE_FIRST_RUN:

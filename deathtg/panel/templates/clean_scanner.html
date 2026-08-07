@@ -20,7 +20,7 @@
         .scan-code{display:block;margin-top:6px;white-space:pre-wrap;word-break:break-word;max-height:150px;overflow:auto}
         .trusted-note{padding:12px 14px;border-radius:14px;background:rgba(82,255,139,.08);border:1px solid rgba(82,255,139,.22);color:#dfffe8}
     </style>
-    <link rel="stylesheet" href="/static/engineering.css?v=20260807.3">
+    <link rel="stylesheet" href="/static/engineering.css?v=20260807.5">
 </head>
 <body class="theme-scanner" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>
@@ -45,14 +45,21 @@
     {% if message %}<div class="toast ok">{{ message }}</div>{% endif %}
     {% if error %}<div class="toast bad">{{ error }}</div>{% endif %}
 
-    <section class="card panel">
-        <form method="post" action="/scanner/check" enctype="multipart/form-data" class="stack">
-            <label>{{ tr('scanner.url') }}</label>
-            <input type="text" name="link" placeholder="{{ tr('scanner.url_placeholder') }}">
-            <label class="file-drop">{{ tr('browser.choose_py') }}<input type="file" name="file" accept=".py"></label>
-            <label>{{ tr('scanner.code') }}</label>
-            <textarea name="source" placeholder="{{ tr('scanner.code_placeholder') }}"></textarea>
-            <button type="submit">{{ tr('scanner.scan') }}</button>
+    <section class="card panel scanner-workbench">
+        <form method="post" action="/scanner/check" enctype="multipart/form-data" class="scanner-form">
+            <div class="scanner-inputs">
+                <p class="eyebrow">{{ tr('scanner.input_lane') }}</p>
+                <label>{{ tr('scanner.url') }}</label>
+                <input type="text" name="link" placeholder="{{ tr('scanner.url_placeholder') }}">
+                <label class="file-drop">{{ tr('browser.choose_py') }}<input type="file" name="file" accept=".py"></label>
+                <p class="helper">{{ tr('scanner.input_hint') }}</p>
+            </div>
+            <div class="scanner-code">
+                <p class="eyebrow">{{ tr('scanner.source_buffer') }}</p>
+                <label>{{ tr('scanner.code') }}</label>
+                <textarea name="source" placeholder="{{ tr('scanner.code_placeholder') }}"></textarea>
+            </div>
+            <div class="scanner-submit"><button type="submit">{{ tr('scanner.scan') }}</button></div>
         </form>
 
         {% if report %}

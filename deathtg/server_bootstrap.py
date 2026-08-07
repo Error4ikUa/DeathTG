@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from deathtg.config import ENV_PATH, ROOT_DIR
 from deathtg.panel_access import local_network_ip, visible_panel_host
+from deathtg.tailscale import tailscale_allowed_hosts
 
 INSECURE_SECRETS = {"", "change_me_long_secret", "change_me_to_random_long_string", "secret"}
 
@@ -117,6 +118,7 @@ def ensure_server_env(*, path: Path = ENV_PATH, panel_host: str = "", panel_port
         "PANEL_ALLOWED_HOSTS": current.get("PANEL_ALLOWED_HOSTS", ""),
         "PANEL_COOKIE_SECURE": current.get("PANEL_COOKIE_SECURE", "auto") or "auto",
         "PANEL_TRUST_PROXY": current.get("PANEL_TRUST_PROXY", "1" if (effective_public_host or effective_public_url) else "0") or "0",
+        "PANEL_TAILSCALE_TRUST": current.get("PANEL_TAILSCALE_TRUST", "1") or "1",
         "PANEL_SHORTCUTS_ON_STARTUP": current.get("PANEL_SHORTCUTS_ON_STARTUP", "1") or "1",
         "PANEL_SHORTCUTS_MIN_INTERVAL": current.get("PANEL_SHORTCUTS_MIN_INTERVAL", "21600") or "21600",
         "BOT_TOKEN": current.get("BOT_TOKEN", ""),
@@ -151,7 +153,7 @@ def _normalized_host(value: str) -> str:
 
 
 def panel_allowed_hosts() -> list[str]:
-    hosts = {"127.0.0.1", "localhost"}
+    hosts = {"127.0.0.1", "localhost", "*.ts.net"}
     with_hostname = _normalized_host(socket.gethostname())
     if with_hostname:
         hosts.add(with_hostname)
@@ -168,6 +170,10 @@ def panel_allowed_hosts() -> list[str]:
         if host:
             hosts.add(host)
     for raw in (visible_panel_host(), local_network_ip()):
+        host = _normalized_host(raw)
+        if host:
+            hosts.add(host)
+    for raw in tailscale_allowed_hosts():
         host = _normalized_host(raw)
         if host:
             hosts.add(host)
