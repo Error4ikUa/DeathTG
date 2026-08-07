@@ -83,6 +83,7 @@ from deathtg.startup_state import (
     sync_startup_state,
 )
 from deathtg.setup_access import current_setup_token, valid_setup_token
+from deathtg.tailscale import tailscale_peer, tailscale_status
 from deathtg.update_manager import apply_update, inspect_update, load_update_state, save_update_state, schedule_restart
 
 
@@ -151,6 +152,10 @@ def _auth_guard(request: Request):
     if not request.session.get("auth") and _is_local_request(request):
         _authorize_local_request(request)
     if not request.session.get("auth"):
+        peer = _tailscale_request_peer(request)
+        if peer:
+            _authorize_tailscale_request(request, peer)
+    if not request.session.get("auth"):
         return RedirectResponse("/login", status_code=303)
     session_id = str(request.session.get("device_session_id") or "")
     if session_id and not active_device(session_id):
@@ -196,6 +201,24 @@ def _authorize_local_request(request: Request) -> None:
         label=friendly_device_name(request.headers.get("user-agent", ""), "This device"),
         auth_method="local",
     )
+
+
+def _authorize_tailscale_request(request: Request, peer: dict) -> None:
+    request.session["auth"] = True
+    session_id = str(request.session.get("device_session_id") or "") or secrets.token_urlsafe(18)
+    request.session["device_session_id"] = session_id
+    label = str(peer.get("hostname") or peer.get("dns_name") or "Tailscale device")
+    remember_device_session(
+        session_id,
+        ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent", ""),
+        label=f"{label} / Tailnet",
+        auth_method="tailscale",
+    )
+
+
+def _tailscale_request_peer(request: Request) -> dict | None:
+    return tailscale_peer(_client_ip(request))
 
 
 def _client_ip(request: Request) -> str:
@@ -281,6 +304,7 @@ async def _base_context(request: Request) -> dict:
         "public_panel_enabled": public_panel_enabled(),
         "panel_remote_access_ready": panel_remote_access_ready(),
         "panel_url": _current_panel_url(request),
+        "tailscale": tailscale_status(),
         "info_preview": _render_info_preview(profile, st, lang),
         "device_link": request.session.pop("fresh_device_link", None),
         "update_info": load_update_state(),
@@ -578,6 +602,10 @@ async def login_page(request: Request):
     if _is_local_request(request):
         _authorize_local_request(request)
         return RedirectResponse("/?message=Local+device+connected", status_code=303)
+    peer = _tailscale_request_peer(request)
+    if peer:
+        _authorize_tailscale_request(request, peer)
+        return RedirectResponse("/?message=Tailnet+device+connected", status_code=303)
     return templates.TemplateResponse(
         "clean_login.html",
         {"request": request, "error": request.query_params.get("error"), "lang": _request_lang(request)},
@@ -620,6 +648,10 @@ async def login(request: Request):
     if _is_local_request(request):
         _authorize_local_request(request)
         return RedirectResponse("/?message=Local+device+connected", status_code=303)
+    peer = _tailscale_request_peer(request)
+    if peer:
+        _authorize_tailscale_request(request, peer)
+        return RedirectResponse("/?message=Tailnet+device+connected", status_code=303)
     return templates.TemplateResponse(
         "clean_login.html",
         {
