@@ -93,3 +93,21 @@ html{scrollbar-width:thin;scrollbar-color:rgba(var(--accent-rgb),.55) rgba(2,10,
 .module-pane.active{animation:modulePaneIn .18s ease both}
 @keyframes modulePaneIn{from{opacity:.6;transform:translateY(5px)}to{opacity:1;transform:none}}
 @media(max-width:860px){.module-cover{border-radius:14px}.module-pagination{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}.module-pagination::-webkit-scrollbar{display:none}.page-chip{flex:0 0 auto}.repo-card,.installed-card{padding:11px!important}}
+
+/* Stable release grid: eight modules per page, four columns on desktop. */
+.modules-page .module-pane{background:rgba(2,10,15,.72)!important;border-color:rgba(var(--accent-rgb),.18)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.025),0 20px 46px rgba(0,0,0,.22)!important}
+.modules-page .module-grid{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:14px!important}
+.modules-page .module-card{border-radius:16px!important;background:rgba(4,13,19,.92)!important;border-color:rgba(var(--accent-rgb),.22)!important;box-shadow:0 12px 28px rgba(0,0,0,.22)!important}
+.modules-page .module-card:nth-child(4n+2){background:rgba(5,15,21,.94)!important}
+.modules-page .module-card:hover{translate:0 -2px!important;border-color:rgba(var(--accent-rgb),.48)!important;box-shadow:0 18px 34px rgba(0,0,0,.30)!important}
+.modules-page .module-cover{display:block!important;border-radius:12px!important;box-shadow:none!important}
+.modules-page .module-head{min-height:44px!important}
+.modules-page .module-head h2{font-size:18px!important;letter-spacing:-.35px!important}
+.modules-page .repo-card.has-bg .module-head{display:block!important;min-height:auto!important;padding-right:0!important}
+.modules-page .repo-card.has-bg .verified-pill{position:absolute!important;top:24px!important;right:24px!important;z-index:5!important;background:rgba(5,18,20,.86)!important;backdrop-filter:blur(8px)!important}
+.modules-page .module-actions .small,.modules-page .module-actions button.small,.modules-page .module-actions a.small,.modules-page .info-link{display:inline-flex!important;align-items:center!important;justify-content:center!important;line-height:1!important;min-height:36px!important;height:36px!important;padding:0 12px!important}
+.modules-page .repo-actions{display:grid!important;grid-template-columns:auto minmax(0,1fr)!important;width:100%!important}
+.modules-page .repo-actions form{width:100%!important}
+.modules-page .repo-actions button{width:100%!important}
+@media(max-width:1080px){.modules-page .module-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+@media(max-width:620px){.modules-page .module-grid{grid-template-columns:1fr!important}.modules-page .repo-actions{grid-template-columns:1fr!important}.modules-page .repo-actions .info-link{width:100%!important}.modules-page .module-tabs{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px!important;overflow:visible!important}.modules-page .module-tabs button,.modules-page .module-tabs a{width:100%!important;min-width:0!important;min-height:42px!important;padding:0 6px!important;font-size:10px!important;text-align:center!important;justify-content:center!important}}

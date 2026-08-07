@@ -6,8 +6,6 @@
     <title>{{ tr('home.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
     <link rel="stylesheet" href="/static/clean_patch.css">
-    <link rel="stylesheet" href="/static/accent_fix.css">
-    <link rel="stylesheet" href="/static/theme_cards.css">
     <style>
         .news-shell{display:grid;gap:16px}
         .runtime-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -25,6 +23,7 @@
         .quick a{position:relative;overflow:hidden}
         @media (max-width: 980px){.runtime-grid{grid-template-columns:1fr}}
     </style>
+    <link rel="stylesheet" href="/static/engineering.css?v=20260807.3">
 </head>
 <body class="theme-main" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>

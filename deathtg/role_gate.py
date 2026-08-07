@@ -34,11 +34,12 @@ def normalize_role(role: str) -> str:
 def can_assign_role(*, current_role: str, requested_role: str) -> tuple[bool, str]:
     current = normalize_role(current_role)
     requested = normalize_role(requested_role)
-    if requested == current:
-        return True, ""
     if requested == "user":
         return True, ""
     owner_id = current_owner_id()
     if owner_id == OWNER_TG_ID:
         return True, ""
+    # Elevated titles are checked every time profile settings are saved. This
+    # makes an owner-side revocation effective instead of trusting stale local
+    # profile data forever.
     return False, "Confirm this role through the DeathTG community bot."

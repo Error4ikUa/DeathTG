@@ -251,14 +251,23 @@ async def _discover_service_bot_peers(client, owner_id: int, current_usernames: 
     seen: set[tuple] = set()
     known_usernames = {str(item).lstrip("@").strip().lower() for item in current_usernames if str(item).strip()}
     known_usernames.update(name.lower() for name in _legacy_bot_usernames(owner_id))
+    generated_prefix = f"dtg{int(owner_id)}_"
+    title_prefixes = tuple(
+        prefix
+        for role in ("inline", "helper", "community")
+        for prefix in _role_title_prefixes(role)
+    )
     async for dialog in client.iter_dialogs(ignore_pinned=False, archived=None):
         entity = getattr(dialog, "entity", None)
         if not entity or not getattr(entity, "bot", False):
             continue
         username = str(getattr(entity, "username", "") or "").strip()
         username_l = username.lower()
+        title = str(getattr(entity, "title", "") or getattr(dialog, "name", "") or "").strip().lower()
         matches_username = bool(username and username_l in known_usernames)
-        if not matches_username:
+        matches_generated = bool(username_l.startswith(generated_prefix) and username_l.endswith("bot"))
+        matches_title = bool(str(owner_id) in title and any(title.startswith(prefix) for prefix in title_prefixes))
+        if not (matches_username or matches_generated or matches_title):
             continue
         try:
             peer = await client.get_input_entity(entity)
@@ -868,13 +877,23 @@ async def _set_bot_profile(bot_token: str, owner_id: int, role: str = "inline") 
     if not bot_token:
         return False, "missing bot token"
     base = f"https://api.telegram.org/bot{bot_token}"
-    role_title = "helper" if role == "helper" else "inline"
-    commands = {
-        "commands": [
+    role_title = role if role in {"helper", "community"} else "inline"
+    if role == "community":
+        command_items = [
+            {"command": "start", "description": "DeathTG role service"},
+            {"command": "redeem", "description": "Activate a one-time role key"},
+            {"command": "userinfo", "description": "Owner: list role holders"},
+            {"command": "aduseradm", "description": "Owner: create Admin key"},
+            {"command": "aduserdev", "description": "Owner: create Developer key"},
+            {"command": "deluseradm", "description": "Owner: revoke Admin by ID"},
+            {"command": "deluserdev", "description": "Owner: revoke Developer by ID"},
+        ]
+    else:
+        command_items = [
             {"command": "start", "description": f"DeathTG {role_title} bot"},
             {"command": "status", "description": "Runtime status"},
         ]
-    }
+    commands = {"commands": command_items}
     description = {"description": f"DeathTG {role_title} bot for owner {owner_id}"}
     short_description = {"short_description": f"DeathTG {role_title} runtime"}
     try:

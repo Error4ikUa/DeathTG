@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import hashlib
@@ -62,6 +63,7 @@ GITHUB_HEADERS = {
 MODULE_REPO_CACHE_PATH = RUNTIME_DIR / "module_repo_cache.json"
 MODULE_BUNDLE_CACHE_DIR = RUNTIME_DIR / "module_bundle_cache"
 MAX_BUNDLE_CACHE_BYTES = 1024 * 1024 * 5
+MODULE_REPO_CACHE_TTL_SECONDS = 5 * 60
 
 
 def _json_load(path: Path, default):
@@ -81,6 +83,17 @@ def _repo_cache_items() -> list[dict]:
     if not isinstance(items, list):
         return []
     return [dict(item) for item in items if isinstance(item, dict)]
+
+
+def _repo_cache_age() -> int | None:
+    data = _json_load(MODULE_REPO_CACHE_PATH, {})
+    if not isinstance(data, dict):
+        return None
+    try:
+        updated_at = int(data.get("updated_at", 0) or 0)
+    except (TypeError, ValueError):
+        return None
+    return max(0, int(time.time()) - updated_at) if updated_at else None
 
 
 def _write_repo_cache(items: list[dict], *, source: str = "remote") -> None:
@@ -769,28 +782,52 @@ def _dedupe_repo_items(items: list[dict]) -> list[dict]:
     unique: dict[str, dict] = {}
     for item in items:
         key = str(item.get("name") or "").strip().lower()
-        if key and key not in unique:
-            unique[key] = item
+        if not key:
+            continue
+        if key not in unique:
+            unique[key] = dict(item)
+            continue
+        # The index is intentionally processed first so its curated metadata
+        # wins. Archive discovery then fills missing assets such as Module.png
+        # without replacing descriptions, authors or explicit install links.
+        current = unique[key]
+        for field, value in item.items():
+            if not current.get(field) and value not in (None, "", [], {}):
+                current[field] = value
+        image = str(current.get("image") or current.get("modul_png") or "")
+        current["image"] = image
+        current["modul_png"] = image
     return sorted(unique.values(), key=lambda item: str(item.get("name") or "").lower())
 
 
 async def fetch_repo_modules(*, refresh: bool = False) -> list[dict]:
-    if not refresh:
-        cached = _repo_cache_items()
-        if cached:
-            return _dedupe_repo_items(cached)
+    cached = _dedupe_repo_items(_repo_cache_items())
+    cache_age = _repo_cache_age()
+    if not refresh and cached and cache_age is not None and cache_age <= MODULE_REPO_CACHE_TTL_SECONDS:
+        return cached
     try:
         async with aiohttp.ClientSession() as session:
-            items = await _from_index(session)
+            index_result, archive_result = await asyncio.gather(
+                _from_index(session),
+                _from_github_zip_archive(session),
+                return_exceptions=True,
+            )
+            index_items = index_result if isinstance(index_result, list) else []
+            archive_items = archive_result if isinstance(archive_result, list) else []
+            items = [*index_items, *archive_items]
             if not items:
                 items = await _from_github_contents(session)
             if not items:
-                items = await _from_github_zip_archive(session)
-            if not items:
                 items = await _from_github_tree_html(session)
     except Exception:
-        return _dedupe_repo_items(_repo_cache_items())
+        return cached
     normalized = _dedupe_repo_items(items)
+    if not normalized:
+        return cached
+    # GitHub may return a partial directory listing while rate limited. Never
+    # replace a known-good catalog with a smaller transient response.
+    if cached and not archive_items and len(normalized) < len(cached):
+        normalized = _dedupe_repo_items([*normalized, *cached])
     _write_repo_cache(normalized)
     return normalized
 
