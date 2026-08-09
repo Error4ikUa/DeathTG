@@ -9,14 +9,7 @@ import os
 from pathlib import Path
 
 from telethon import TelegramClient, events
-from telethon.errors import (
-    AuthKeyInvalidError,
-    AuthKeyUnregisteredError,
-    SessionRevokedError,
-    UnauthorizedError,
-    UserDeactivatedError,
-    YouBlockedUserError,
-)
+from telethon.errors import YouBlockedUserError
 
 from deathtg.assets import system_image
 from deathtg.backup_manager import create_modules_backup
@@ -46,8 +39,8 @@ from deathtg.registry import CommandRegistry, PROTECTED_MODULES
 from deathtg.startup_sync import run_startup_sync
 from deathtg.startup_sync import check_runtime_integrity
 from deathtg.server_bootstrap import update_env_values
-from deathtg.session_guard import session_files
-from deathtg.telethon_policy import client_retry_kwargs, quiet_telethon_network_logs
+from deathtg.session_guard import quarantine_session_files
+from deathtg.telethon_policy import INVALID_SESSION_ERRORS, client_retry_kwargs, quiet_telethon_network_logs
 from deathtg.update_manager import (
     apply_update,
     ignore_update,
@@ -63,13 +56,6 @@ from deathtg.ui import fail
 
 log = logging.getLogger("deathtg")
 CORE_MODULES = ["core", "root", "info", "system", "antivirus", "terminal"]
-INVALID_SESSION_ERRORS = (
-    AuthKeyInvalidError,
-    AuthKeyUnregisteredError,
-    SessionRevokedError,
-    UnauthorizedError,
-    UserDeactivatedError,
-)
 PANEL_ACTIONS_PATH = RUNTIME_DIR / "panel_actions.jsonl"
 MODULE_META_PATH = RUNTIME_DIR / "module_meta.json"
 RUNTIME_LOG_PATH = RUNTIME_DIR / "deathtg.log"
@@ -187,6 +173,8 @@ class DeathTG:
                     await self._backup_task
             await self.community_bot.stop()
             await self.inline.stop()
+            if self.client.is_connected():
+                await self.client.disconnect()
 
     def _handle_invalid_runtime_session(self, exc: BaseException) -> None:
         reason = type(exc).__name__
@@ -203,17 +191,11 @@ class DeathTG:
         log.error("Telegram session became invalid; DeathTG switched back to setup mode: %s", exc)
 
     def _invalidate_broken_session(self) -> None:
-        for path in session_files(self.config.session_name):
-            if not path.exists():
-                continue
-            backup = path.with_suffix(path.suffix + ".invalid")
-            try:
-                if backup.exists():
-                    backup.unlink()
-                path.replace(backup)
-            except Exception:
-                with contextlib.suppress(Exception):
-                    path.unlink()
+        result = quarantine_session_files(self.config.session_name, reason="telegram-auth-revoked")
+        snapshot = result.get("snapshot") if isinstance(result, dict) else {}
+        backup_dir = str(snapshot.get("backup_dir") or "") if isinstance(snapshot, dict) else ""
+        if backup_dir:
+            log.warning("Rejected Telegram session was preserved in %s", backup_dir)
         self._mark_profile_session_invalid()
         update_env_values({"LOGIN_PENDING": "1", "LOGIN_STAGE": "idle"}, path=ENV_PATH)
         os.environ["LOGIN_PENDING"] = "1"
@@ -549,6 +531,10 @@ class DeathTG:
 
     async def _apply_panel_action(self, payload: dict) -> None:
         action = str(payload.get("action") or "").strip()
+        if action == "shutdown":
+            log.info("Graceful userbot shutdown requested by launcher")
+            await self.client.disconnect()
+            return
         if action == "install":
             raw_path = str(payload.get("path") or "")
             path = Path(raw_path)

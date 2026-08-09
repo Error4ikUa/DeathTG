@@ -31,7 +31,7 @@
         .log-link{display:inline-flex;align-items:center;justify-content:center;padding:12px 14px;border-radius:14px;text-decoration:none}
         @media (max-width: 1100px){.health-grid{grid-template-columns:1fr}.health-actions{grid-template-columns:1fr}}
     </style>
-    <link rel="stylesheet" href="/static/engineering.css?v=20260807.5">
+    <link rel="stylesheet" href="/static/engineering.css?v=20260809.1">
 </head>
 <body class="theme-main" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>
@@ -74,10 +74,10 @@
                     <h2>{{ tr('health.actions_title') }}</h2>
                     <div class="health-actions">
                         <form method="post" action="/health/recheck"><button type="submit" class="ghost">{{ tr('health.recheck') }}</button></form>
-                        <form method="post" action="/health/repair"><button type="submit">{{ tr('health.repair') }}</button></form>
-                        <form method="post" action="/health/restart"><button type="submit" class="ghost">{{ tr('health.restart') }}</button></form>
+                        <form method="post" action="/health/repair" data-confirm="{{ tr('confirm.repair') }}"><button type="submit">{{ tr('health.repair') }}</button></form>
+                        <form method="post" action="/health/restart" data-confirm="{{ tr('confirm.restart') }}"><button type="submit" class="ghost">{{ tr('health.restart') }}</button></form>
                         <a class="ghost log-link" href="/health/export-logs">{{ tr('health.export_logs') }}</a>
-                        <form method="post" action="/health/requirements/install"><button type="submit">{{ tr('health.install_requirements') }}</button></form>
+                        <form method="post" action="/health/requirements/install" data-confirm="{{ tr('confirm.install_requirements') }}"><button type="submit">{{ tr('health.install_requirements') }}</button></form>
                         <form method="post" action="/health/modules/scan"><button type="submit" class="ghost">{{ tr('health.scan_modules') }}</button></form>
                     </div>
                 </article>
@@ -128,7 +128,7 @@
                             </div>
                             <span class="health-status {{ 'warn' if safe_mode_enabled else 'ok' }}">{{ tr('health.enabled') if safe_mode_enabled else tr('health.disabled') }}</span>
                         </div>
-                        <form method="post" action="/health/safe-mode" style="margin-top:14px">
+                        <form method="post" action="/health/safe-mode" data-confirm="{{ tr('confirm.safe_mode') }}" style="margin-top:14px">
                             <input type="hidden" name="enabled" value="{{ '0' if safe_mode_enabled else '1' }}">
                             <button type="submit">{{ tr('health.disable_safe_mode') if safe_mode_enabled else tr('health.enable_safe_mode') }}</button>
                         </form>

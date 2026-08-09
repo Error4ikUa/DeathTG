@@ -12,6 +12,7 @@ from deathtg.session_guard import protect_update_session_snapshot, recover_updat
 
 
 UPDATE_STATE_PATH = RUNTIME_DIR / "update_state.json"
+RESTART_REQUEST_PATH = RUNTIME_DIR / "restart.request"
 
 
 def _run_git(*args: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
@@ -229,15 +230,11 @@ def apply_update() -> dict[str, object]:
 def schedule_restart(delay: float = 1.0) -> None:
     def _restart_worker() -> None:
         time.sleep(max(0.2, delay))
-        try:
-            import dtg
-
-            dtg.supervisor_stop.set()
-            dtg.stop_userbot()
-        except Exception:
-            pass
-        os.chdir(ROOT_DIR)
-        os.execv(sys.executable, [sys.executable, str(ROOT_DIR / "dtg.py")])
+        RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        RESTART_REQUEST_PATH.write_text(
+            json.dumps({"requested_at": int(time.time()), "pid": os.getpid()}, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
     thread = threading.Thread(target=_restart_worker, name="deathtg-restart", daemon=True)
     thread.start()

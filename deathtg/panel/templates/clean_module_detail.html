@@ -6,7 +6,7 @@
     <title>{{ module.name }} &middot; {{ tr('module.details') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
     <link rel="stylesheet" href="/static/clean_patch.css">
-    <link rel="stylesheet" href="/static/engineering.css?v=20260807.5">
+    <link rel="stylesheet" href="/static/engineering.css?v=20260809.1">
 </head>
 <body class="theme-modules" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>
@@ -88,7 +88,7 @@
                 <p><b>{{ tr('module.location') }}</b><span>{{ module.path or tr('module.built_in') }}</span></p>
             </div>
             {% if module.requires and not module.repo %}
-            <form class="module-inline-form" method="post" action="/modules/{{ module.name }}/requirements">
+            <form class="module-inline-form" method="post" action="/modules/{{ module.name }}/requirements" data-confirm="{{ tr('confirm.install_requirements') }}">
                 <button class="ghost" type="submit">{{ tr('module.install_requirements') }}</button>
             </form>
             {% endif %}

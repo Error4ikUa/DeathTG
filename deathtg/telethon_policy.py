@@ -3,6 +3,21 @@ from __future__ import annotations
 import logging
 import os
 
+from telethon.errors import (
+    AuthKeyInvalidError,
+    AuthKeyUnregisteredError,
+    SessionRevokedError,
+    UserDeactivatedError,
+)
+
+
+INVALID_SESSION_ERRORS = (
+    AuthKeyInvalidError,
+    AuthKeyUnregisteredError,
+    SessionRevokedError,
+    UserDeactivatedError,
+)
+
 
 def _env_int(name: str, default: int) -> int:
     try:
@@ -28,4 +43,3 @@ def quiet_telethon_network_logs() -> None:
         "telethon.network.mtprotosender",
     ):
         logging.getLogger(name).setLevel(logging.ERROR)
-

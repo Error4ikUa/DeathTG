@@ -359,6 +359,43 @@ function setupAvatarCrop() {
 
 setupAvatarCrop();
 
+(function guardPostForms() {
+  document.querySelectorAll('form[method="post"], form[method="POST"]').forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      if (event.defaultPrevented) return;
+      const prompt = String(form.dataset.confirm || "").trim();
+      if (prompt && !window.confirm(prompt)) {
+        event.preventDefault();
+        return;
+      }
+      if (form.dataset.submitting === "1") {
+        event.preventDefault();
+        return;
+      }
+      form.dataset.submitting = "1";
+      form.setAttribute("aria-busy", "true");
+      window.requestAnimationFrame(() => {
+        form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach((control) => {
+          control.disabled = true;
+        });
+      });
+    });
+  });
+})();
+
+(function installModuleImageFallbacks() {
+  document.querySelectorAll(".module-cover img[data-fallback]").forEach((image) => {
+    image.addEventListener("error", () => {
+      const fallback = String(image.dataset.fallback || "").trim();
+      if (fallback && image.getAttribute("src") !== fallback) {
+        image.setAttribute("src", fallback);
+        return;
+      }
+      image.hidden = true;
+    });
+  });
+})();
+
 function shortDay(day) {
   if (!day) return "";
   const parts = String(day).split("-");

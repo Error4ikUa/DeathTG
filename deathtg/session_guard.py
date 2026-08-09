@@ -158,6 +158,41 @@ def backup_session_files(session_name: str, reason: str = "session") -> dict[str
     return {"ok": True, "backup_dir": str(backup_dir), "count": len(files), "session_name": session_name}
 
 
+def quarantine_session_files(session_name: str, reason: str = "invalid-session") -> dict[str, Any]:
+    """Preserve and disable a session that Telegram explicitly rejected.
+
+    Normal process shutdown never calls this function. It is reserved for
+    concrete Telegram authorization failures, so transient network errors do
+    not force a new QR login. Portable module backups live in another folder
+    and are intentionally left untouched.
+    """
+    files = session_files(session_name)
+    snapshot = backup_session_files(session_name, reason=reason)
+    quarantined: list[str] = []
+    removed: list[str] = []
+    for path in files:
+        target = path.with_suffix(path.suffix + ".invalid")
+        try:
+            if target.exists():
+                target.unlink()
+            path.replace(target)
+            _chmod_private(target)
+            quarantined.append(str(target))
+        except Exception:
+            try:
+                path.unlink()
+                removed.append(str(path))
+            except Exception:
+                pass
+    return {
+        "ok": not any(path.exists() for path in files),
+        "session_name": session_name,
+        "snapshot": snapshot,
+        "quarantined": quarantined,
+        "removed": removed,
+    }
+
+
 def _load_manifest(backup_dir: Path) -> dict[str, Any] | None:
     manifest_path = backup_dir / "manifest.json"
     if not manifest_path.exists():
