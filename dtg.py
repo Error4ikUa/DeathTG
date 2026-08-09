@@ -48,12 +48,15 @@ ROOT_DIR = Path(__file__).resolve().parent
 ENV_PATH = ROOT_DIR / ".env"
 RUNTIME_DIR = ROOT_DIR / "runtime"
 INSTANCE_LOCK_PATH = RUNTIME_DIR / "dtg.lock"
+PANEL_ACTIONS_PATH = RUNTIME_DIR / "panel_actions.jsonl"
+RESTART_REQUEST_PATH = RUNTIME_DIR / "restart.request"
 
 if ENV_PATH.exists():
     load_dotenv(ENV_PATH, override=True)
 
 userbot_process = None
 supervisor_stop = threading.Event()
+restart_in_progress = threading.Event()
 last_start_attempt = 0.0
 MIN_RESTART_INTERVAL = 5.0
 
@@ -133,6 +136,18 @@ def stop_userbot(timeout: float = 8.0) -> None:
         userbot_process = None
         return
     try:
+        RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        with PANEL_ACTIONS_PATH.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps({"action": "shutdown", "ts": int(time.time())}, ensure_ascii=False) + "\n")
+        deadline = time.time() + max(1.0, timeout - 2.0)
+        while time.time() < deadline and process.poll() is None:
+            time.sleep(0.1)
+        if process.poll() is not None:
+            userbot_process = None
+            return
+    except Exception:
+        pass
+    try:
         process.terminate()
         process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -178,6 +193,26 @@ def supervisor_loop() -> None:
         except Exception as exc:
             print(f"Userbot supervisor warning: {type(exc).__name__}: {exc}")
         supervisor_stop.wait(2.0)
+
+
+def restart_monitor_loop() -> None:
+    while not supervisor_stop.is_set():
+        if not RESTART_REQUEST_PATH.exists():
+            supervisor_stop.wait(0.5)
+            continue
+        try:
+            RESTART_REQUEST_PATH.unlink()
+        except Exception:
+            supervisor_stop.wait(0.5)
+            continue
+        if restart_in_progress.is_set():
+            return
+        restart_in_progress.set()
+        supervisor_stop.set()
+        stop_userbot()
+        release_instance_lock()
+        os.chdir(ROOT_DIR)
+        os.execv(sys.executable, [sys.executable, str(ROOT_DIR / "dtg.py")])
 
 
 def cleanup(signum=None, frame=None):
@@ -253,6 +288,12 @@ def main() -> int:
         return 1
     if not acquire_instance_lock():
         return 1
+    try:
+        RESTART_REQUEST_PATH.unlink()
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
     atexit.register(release_instance_lock)
 
     ensure_server_env()
@@ -328,6 +369,8 @@ def main() -> int:
     print("Git updates are not auto-applied. DeathTG will notify you in Telegram when a new update appears.")
 
     supervisor_thread = None
+    restart_thread = threading.Thread(target=restart_monitor_loop, name="dtg-restart-monitor", daemon=True)
+    restart_thread.start()
     if not safe_runtime:
         supervisor_thread = threading.Thread(target=supervisor_loop, name="dtg-userbot-supervisor", daemon=True)
         supervisor_thread.start()
@@ -342,6 +385,7 @@ def main() -> int:
         supervisor_stop.set()
         if supervisor_thread:
             supervisor_thread.join(timeout=2.0)
+        restart_thread.join(timeout=1.0)
         stop_userbot()
         release_instance_lock()
     return 0

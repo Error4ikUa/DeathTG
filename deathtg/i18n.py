@@ -827,6 +827,16 @@ TEXTS["en"].update({
     "health.scan_summary": "Scanner summary",
     "health.scan_numbers": "Clean: {clean} · Warn: {warning} · Danger: {danger}",
     "health.no_scan_yet": "No module scan has been saved yet.",
+    "confirm.cancel_install": "Cancel this pending module installation?",
+    "confirm.security_override": "Install this module despite the scanner warning?",
+    "confirm.unload_module": "Unload this module from the running userbot?",
+    "confirm.delete_module": "Delete this module and its local files?",
+    "confirm.revoke_device": "Revoke panel access for this device?",
+    "confirm.install_requirements": "Install the detected Python requirements now?",
+    "confirm.repair": "Start the automatic DeathTG repair flow?",
+    "confirm.restart": "Restart DeathTG now? The existing Telegram session will be reused.",
+    "confirm.safe_mode": "Change safe mode? A restart is required before the new mode applies.",
+    "confirm.apply_update": "Create a private snapshot and apply the available DeathTG update?",
 })
 
 TEXTS["ru"].update({
@@ -901,4 +911,14 @@ TEXTS["ru"].update({
     "health.scan_summary": "Итог сканирования",
     "health.scan_numbers": "Чисто: {clean} · Предупреждения: {warning} · Опасно: {danger}",
     "health.no_scan_yet": "Сканирование модулей ещё не запускалось.",
+    "confirm.cancel_install": "Отменить установку этого модуля?",
+    "confirm.security_override": "Установить модуль несмотря на предупреждение сканера?",
+    "confirm.unload_module": "Выгрузить этот модуль из запущенного юзербота?",
+    "confirm.delete_module": "Удалить модуль и его локальные файлы?",
+    "confirm.revoke_device": "Отозвать доступ к панели для этого устройства?",
+    "confirm.install_requirements": "Установить найденные Python-зависимости сейчас?",
+    "confirm.repair": "Запустить автоматическое восстановление DeathTG?",
+    "confirm.restart": "Перезапустить DeathTG сейчас? Существующая Telegram-сессия будет использована повторно.",
+    "confirm.safe_mode": "Изменить safe mode? Новый режим применится после перезапуска.",
+    "confirm.apply_update": "Создать приватный снимок и применить доступное обновление DeathTG?",
 })

@@ -6,7 +6,7 @@
     <title>{{ tr('home.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
     <link rel="stylesheet" href="/static/clean_patch.css">
-    <link rel="stylesheet" href="/static/engineering.css?v=20260807.5">
+    <link rel="stylesheet" href="/static/engineering.css?v=20260809.1">
 </head>
 <body class="theme-main" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>
@@ -76,8 +76,8 @@
                 </div>
                 <div class="button-row">
                     <form method="post" action="/system/update/check"><input type="hidden" name="return_to" value="news"><button type="submit" class="ghost">{{ tr('home.check_update') }}</button></form>
-                    <form method="post" action="/system/update/apply"><input type="hidden" name="return_to" value="news"><button type="submit">{{ tr('home.apply_update') }}</button></form>
-                    <form method="post" action="/system/restart"><input type="hidden" name="return_to" value="news"><button type="submit" class="ghost">{{ tr('home.restart') }}</button></form>
+                    <form method="post" action="/system/update/apply" data-confirm="{{ tr('confirm.apply_update') }}"><input type="hidden" name="return_to" value="news"><button type="submit">{{ tr('home.apply_update') }}</button></form>
+                    <form method="post" action="/system/restart" data-confirm="{{ tr('confirm.restart') }}"><input type="hidden" name="return_to" value="news"><button type="submit" class="ghost">{{ tr('home.restart') }}</button></form>
                 </div>
             </article>
 

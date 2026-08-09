@@ -38,7 +38,6 @@ from deathtg.panel.clean_core import (
     templates,
     top_modules,
 )
-from deathtg.panel.re_auth import router as reconnect_router
 from deathtg.health_tools import (
     collect_requirement_state,
     export_logs_bundle,
@@ -70,6 +69,7 @@ from deathtg.registry import PROTECTED_MODULES
 from deathtg.security import is_trusted_module_link, scan_module_source
 from deathtg.server_bootstrap import (
     ensure_server_env,
+    parse_env_file,
     panel_allowed_hosts,
     panel_cookie_secure,
     panel_trust_proxy,
@@ -112,7 +112,6 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=panel_allowed_hosts())
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/images", StaticFiles(directory=IMAGES_DIR), name="images")
 app.include_router(actions_router)
-app.include_router(reconnect_router)
 
 
 def _request_lang(request: Request) -> str:
@@ -140,7 +139,7 @@ async def harden_responses(request: Request, call_next):
     response = await call_next(request)
     for key, value in SECURITY_HEADERS.items():
         response.headers.setdefault(key, value)
-    if request.url.path.startswith(("/login", "/setup", "/grant", "/reconnect")):
+    if request.url.path.startswith(("/login", "/setup", "/grant")):
         response.headers.setdefault("Cache-Control", "no-store")
     return response
 
@@ -466,7 +465,7 @@ async def setup_save(
             status_code=429,
         )
     try:
-        secret_value = secure_panel_secret("")
+        secret_value = secure_panel_secret(parse_env_file().get("PANEL_SECRET", ""))
         write_env(api_id, api_hash, session_name, "", "", secret_value, "")
         ensure_server_env(public_url=_request_origin_url(request))
         os.environ["PANEL_SECRET"] = secret_value
