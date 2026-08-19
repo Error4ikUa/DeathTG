@@ -91,5 +91,25 @@ class PanelSecurityTests(unittest.TestCase):
         self.assertTrue(panel._same_origin_request(request))
 
 
+class PanelSecurityMiddlewareTests(unittest.IsolatedAsyncioTestCase):
+    async def test_blocked_response_keeps_security_headers(self) -> None:
+        request = request_for(
+            "127.0.0.1",
+            method="POST",
+            path="/system/update/check",
+            host="127.0.0.1:8080",
+            origin="https://attacker.example",
+        )
+
+        async def unreachable(_request):
+            self.fail("Blocked request reached the application")
+
+        response = await panel.harden_responses(request, unreachable)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+
+
 if __name__ == "__main__":
     unittest.main()
