@@ -8,6 +8,7 @@ import re
 import secrets
 import socket
 import subprocess
+import threading
 import time
 import base64
 from pathlib import Path
@@ -21,6 +22,7 @@ GRANTS_PATH = RUNTIME_DIR / "panel_device_grants.json"
 DEVICES_PATH = RUNTIME_DIR / "panel_devices.json"
 WSL_PUBLISH_STATE_PATH = RUNTIME_DIR / "wsl_publish_state.json"
 DEFAULT_GRANT_TTL = 60 * 60 * 24 * 7
+PANEL_STATE_LOCK = threading.RLock()
 
 
 def _env(name: str, default: str = "") -> str:
@@ -415,7 +417,7 @@ def public_panel_enabled() -> bool:
 def _serializer() -> URLSafeTimedSerializer:
     secret = _env("PANEL_SECRET")
     if not secret:
-        secret = secrets.token_urlsafe(32)
+        raise RuntimeError("PANEL_SECRET is not configured")
     return URLSafeTimedSerializer(secret_key=secret, salt="deathtg-panel-device")
 
 
@@ -434,8 +436,16 @@ def _read_json(path: Path) -> dict:
 
 
 def _write_json(path: Path, payload: dict) -> None:
-    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(temporary, path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _cleanup_grants(data: dict) -> dict:
@@ -482,8 +492,9 @@ def friendly_device_name(user_agent: str = "", fallback: str = "Browser") -> str
 
 
 def list_devices() -> list[dict]:
-    data = _cleanup_devices(_read_json(DEVICES_PATH))
-    _write_json(DEVICES_PATH, data)
+    with PANEL_STATE_LOCK:
+        data = _cleanup_devices(_read_json(DEVICES_PATH))
+        _write_json(DEVICES_PATH, data)
     return sorted(
         [dict(item, session_id=session_id) for session_id, item in data.items()],
         key=lambda item: int(item.get("last_seen_at", 0) or item.get("created_at", 0) or 0),
@@ -498,23 +509,25 @@ def issue_device_grant(
     created_by: str = "panel",
     owner_id: int | None = None,
 ) -> str:
+    serializer = _serializer()
     grant_id = secrets.token_urlsafe(12)
     grant_secret = secrets.token_urlsafe(24)
     now = int(time.time())
-    grants = _cleanup_grants(_read_json(GRANTS_PATH))
-    grants[grant_id] = {
-        "device_name": (device_name or "New device").strip()[:80],
-        "grant_id": grant_id,
-        "secret_hash": _hash(grant_secret),
-        "created_at": now,
-        "expires_at": now + max(300, int(ttl_seconds)),
-        "created_by": created_by,
-        "used": False,
-        "used_at": 0,
-        "revoked": False,
-    }
-    _write_json(GRANTS_PATH, grants)
-    token = _serializer().dumps({"gid": grant_id, "sec": grant_secret})
+    with PANEL_STATE_LOCK:
+        grants = _cleanup_grants(_read_json(GRANTS_PATH))
+        grants[grant_id] = {
+            "device_name": (device_name or "New device").strip()[:80],
+            "grant_id": grant_id,
+            "secret_hash": _hash(grant_secret),
+            "created_at": now,
+            "expires_at": now + max(300, int(ttl_seconds)),
+            "created_by": created_by,
+            "used": False,
+            "used_at": 0,
+            "revoked": False,
+        }
+        _write_json(GRANTS_PATH, grants)
+    token = serializer.dumps({"gid": grant_id, "sec": grant_secret})
     return panel_private_url(owner_id=owner_id, token=token)
 
 
@@ -531,93 +544,100 @@ def consume_device_grant(token: str, *, ip: str = "", user_agent: str = "") -> d
     if not grant_id or not grant_secret:
         raise RuntimeError("Grant link payload is incomplete")
 
-    now = int(time.time())
-    grants = _cleanup_grants(_read_json(GRANTS_PATH))
-    grant = grants.get(grant_id)
-    if not isinstance(grant, dict):
-        raise RuntimeError("Grant link not found")
-    if grant.get("revoked"):
-        raise RuntimeError("Grant link revoked")
-    if grant.get("used"):
-        raise RuntimeError("Grant link already used")
-    if _hash(grant_secret) != str(grant.get("secret_hash") or ""):
-        raise RuntimeError("Grant link verification failed")
-    expires_at = int(grant.get("expires_at", 0) or 0)
-    if expires_at and expires_at < now:
-        raise RuntimeError("Grant link expired")
+    with PANEL_STATE_LOCK:
+        now = int(time.time())
+        grants = _cleanup_grants(_read_json(GRANTS_PATH))
+        grant = grants.get(grant_id)
+        if not isinstance(grant, dict):
+            raise RuntimeError("Grant link not found")
+        if grant.get("revoked"):
+            raise RuntimeError("Grant link revoked")
+        if grant.get("used"):
+            raise RuntimeError("Grant link already used")
+        if _hash(grant_secret) != str(grant.get("secret_hash") or ""):
+            raise RuntimeError("Grant link verification failed")
+        expires_at = int(grant.get("expires_at", 0) or 0)
+        if expires_at and expires_at < now:
+            raise RuntimeError("Grant link expired")
 
-    session_id = secrets.token_urlsafe(18)
-    devices = _cleanup_devices(_read_json(DEVICES_PATH))
-    devices[session_id] = {
-        "label": grant.get("device_name") or friendly_device_name(user_agent, "Browser"),
-        "created_at": now,
-        "last_seen_at": now,
-        "last_ip": ip,
-        "user_agent": user_agent[:240],
-        "auth_method": "grant",
-        "grant_id": grant_id,
-        "revoked": False,
-    }
-    grant["used"] = True
-    grant["used_at"] = now
-    grants[grant_id] = grant
-    _write_json(DEVICES_PATH, devices)
-    _write_json(GRANTS_PATH, grants)
-    return {"session_id": session_id, "device": dict(devices[session_id])}
-
-
-def remember_device_session(session_id: str, *, ip: str = "", user_agent: str = "", label: str = "", auth_method: str = "trusted") -> dict:
-    now = int(time.time())
-    devices = _cleanup_devices(_read_json(DEVICES_PATH))
-    item = devices.get(session_id, {})
-    if not isinstance(item, dict):
-        item = {}
-    item.update(
-        {
-            "label": label.strip()[:80] or item.get("label") or friendly_device_name(user_agent, "Browser"),
-            "created_at": int(item.get("created_at", now) or now),
+        session_id = secrets.token_urlsafe(18)
+        devices = _cleanup_devices(_read_json(DEVICES_PATH))
+        devices[session_id] = {
+            "label": grant.get("device_name") or friendly_device_name(user_agent, "Browser"),
+            "created_at": now,
             "last_seen_at": now,
             "last_ip": ip,
             "user_agent": user_agent[:240],
-            "auth_method": auth_method,
+            "auth_method": "grant",
+            "grant_id": grant_id,
             "revoked": False,
         }
-    )
-    devices[session_id] = item
-    _write_json(DEVICES_PATH, devices)
-    return dict(item, session_id=session_id)
+        grant["used"] = True
+        grant["used_at"] = now
+        grants[grant_id] = grant
+        # Consume the grant before publishing its device session. A crash may
+        # invalidate a link, but it can never make the one-time token reusable.
+        _write_json(GRANTS_PATH, grants)
+        _write_json(DEVICES_PATH, devices)
+        return {"session_id": session_id, "device": dict(devices[session_id])}
+
+
+def remember_device_session(session_id: str, *, ip: str = "", user_agent: str = "", label: str = "", auth_method: str = "trusted") -> dict:
+    with PANEL_STATE_LOCK:
+        now = int(time.time())
+        devices = _cleanup_devices(_read_json(DEVICES_PATH))
+        item = devices.get(session_id, {})
+        if not isinstance(item, dict):
+            item = {}
+        item.update(
+            {
+                "label": label.strip()[:80] or item.get("label") or friendly_device_name(user_agent, "Browser"),
+                "created_at": int(item.get("created_at", now) or now),
+                "last_seen_at": now,
+                "last_ip": ip,
+                "user_agent": user_agent[:240],
+                "auth_method": auth_method,
+                "revoked": False,
+            }
+        )
+        devices[session_id] = item
+        _write_json(DEVICES_PATH, devices)
+        return dict(item, session_id=session_id)
 
 
 def touch_device_session(session_id: str, *, ip: str = "", user_agent: str = "") -> dict | None:
     if not session_id:
         return None
-    devices = _cleanup_devices(_read_json(DEVICES_PATH))
-    item = devices.get(session_id)
-    if not isinstance(item, dict):
-        return None
-    item["last_seen_at"] = int(time.time())
-    if ip:
-        item["last_ip"] = ip
-    if user_agent:
-        item["user_agent"] = user_agent[:240]
-    devices[session_id] = item
-    _write_json(DEVICES_PATH, devices)
-    return dict(item, session_id=session_id)
+    with PANEL_STATE_LOCK:
+        devices = _cleanup_devices(_read_json(DEVICES_PATH))
+        item = devices.get(session_id)
+        if not isinstance(item, dict):
+            return None
+        item["last_seen_at"] = int(time.time())
+        if ip:
+            item["last_ip"] = ip
+        if user_agent:
+            item["user_agent"] = user_agent[:240]
+        devices[session_id] = item
+        _write_json(DEVICES_PATH, devices)
+        return dict(item, session_id=session_id)
 
 
 def revoke_device_session(session_id: str) -> None:
-    devices = _read_json(DEVICES_PATH)
-    item = devices.get(session_id)
-    if isinstance(item, dict):
-        item["revoked"] = True
-        item["revoked_at"] = int(time.time())
-        devices[session_id] = item
-        _write_json(DEVICES_PATH, devices)
+    with PANEL_STATE_LOCK:
+        devices = _read_json(DEVICES_PATH)
+        item = devices.get(session_id)
+        if isinstance(item, dict):
+            item["revoked"] = True
+            item["revoked_at"] = int(time.time())
+            devices[session_id] = item
+            _write_json(DEVICES_PATH, devices)
 
 
 def active_device(session_id: str) -> dict | None:
-    devices = _cleanup_devices(_read_json(DEVICES_PATH))
-    item = devices.get(session_id)
-    if not isinstance(item, dict):
-        return None
-    return dict(item, session_id=session_id)
+    with PANEL_STATE_LOCK:
+        devices = _cleanup_devices(_read_json(DEVICES_PATH))
+        item = devices.get(session_id)
+        if not isinstance(item, dict):
+            return None
+        return dict(item, session_id=session_id)
