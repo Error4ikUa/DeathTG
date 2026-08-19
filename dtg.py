@@ -61,6 +61,16 @@ last_start_attempt = 0.0
 MIN_RESTART_INTERVAL = 5.0
 
 
+def configure_console_encoding() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
 def _pid_is_running(pid: int) -> bool:
     if pid <= 0 or pid == os.getpid():
         return False
@@ -281,6 +291,7 @@ def run_panel(debug: bool = False) -> None:
 
 
 def main() -> int:
+    configure_console_encoding()
     args = parse_args()
     if running_in_termux():
         print("DeathTG does not support Termux.")
