@@ -13,6 +13,16 @@ VENV_DIR = ROOT_DIR / ".venv"
 WINDOWS = os.name == "nt"
 
 
+def configure_console_encoding() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
 def in_termux() -> bool:
     prefix = os.getenv("PREFIX", "")
     return "com.termux" in prefix.lower() or bool(os.getenv("TERMUX_VERSION"))
@@ -33,6 +43,7 @@ def clear_console() -> None:
 
 
 def main() -> None:
+    configure_console_encoding()
     if in_termux():
         print("DeathTG does not support Termux or Android terminal environments.")
         print("Use Ubuntu/Debian VPS, Linux server, Windows PowerShell/CMD, or desktop Python.")
