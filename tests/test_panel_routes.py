@@ -88,6 +88,14 @@ class PanelRouteContractTests(unittest.TestCase):
             self.assertIn('data-fallback="/images/modules/Module.png"', text, name)
         self.assertTrue((ROOT / "images" / "modules" / "Module.png").is_file())
 
+    def test_browser_uses_eight_items_per_page_and_installed_state(self) -> None:
+        app_source = (PANEL / "clean_app.py").read_text(encoding="utf-8")
+        template = (TEMPLATES / "clean_browser.html").read_text(encoding="utf-8")
+        self.assertIn("per_page = 8", app_source)
+        self.assertIn("annotate_repo_install_state", app_source)
+        self.assertIn("{% if mod.installed %}", template)
+        self.assertIn("browser.open_installed", template)
+
     def test_legacy_route_layers_are_removed(self) -> None:
         for name in ("pages.py", "state_pages.py", "installmod_route.py", "re_auth.py"):
             self.assertFalse((PANEL / name).exists(), name)

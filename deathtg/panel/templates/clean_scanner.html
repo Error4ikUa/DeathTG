@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ tr('scanner.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
-    <link rel="stylesheet" href="/static/clean_patch.css">
     <style>
         .scan-result{display:grid;gap:10px;margin-top:16px}
         .scan-chip{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.7px;text-transform:uppercase}
@@ -20,7 +19,7 @@
         .scan-code{display:block;margin-top:6px;white-space:pre-wrap;word-break:break-word;max-height:150px;overflow:auto}
         .trusted-note{padding:12px 14px;border-radius:14px;background:rgba(82,255,139,.08);border:1px solid rgba(82,255,139,.22);color:#dfffe8}
     </style>
-    <link rel="stylesheet" href="/static/engineering.css?v=20260809.1">
+    <link rel="stylesheet" href="/static/engineering.css?v=20260819.3">
 </head>
 <body class="theme-scanner" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>
@@ -94,6 +93,6 @@
 </main>
 
 <script src="/static/matrix.js"></script>
-<script src="/static/clean.js"></script>
+<script src="/static/clean.js?v=20260819.1"></script>
 </body>
 </html>

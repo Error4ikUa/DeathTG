@@ -72,6 +72,32 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertEqual(captured["LOGIN_PENDING"], "1")
         self.assertEqual(existing["BACKUP_ENABLED"], "1")
 
+    def test_update_snapshot_restores_session_if_update_removed_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runtime = root / "runtime"
+            backup_root = runtime / "session_backups"
+            marker = backup_root / "latest_update.json"
+            session_path = root / "deathtg.session"
+            session_path.write_bytes(b"authorized telegram session")
+
+            with (
+                patch.object(session_guard, "ROOT_DIR", root),
+                patch.object(session_guard, "RUNTIME_DIR", runtime),
+                patch.object(session_guard, "ENV_PATH", root / ".env"),
+                patch.object(session_guard, "SESSION_BACKUP_DIR", backup_root),
+                patch.object(session_guard, "UPDATE_MARKER_PATH", marker),
+                patch.object(session_guard, "current_session_name", return_value="deathtg"),
+            ):
+                snapshot = session_guard.protect_update_session_snapshot()
+                session_path.unlink()
+                restored = session_guard.recover_update_session_snapshot(clear=True)
+
+            self.assertEqual(snapshot["count"], 1)
+            self.assertEqual(restored["restored"], 1)
+            self.assertEqual(session_path.read_bytes(), b"authorized telegram session")
+            self.assertFalse(marker.exists())
+
 
 class QRSessionProtectionTests(unittest.IsolatedAsyncioTestCase):
     async def test_network_failure_does_not_replace_existing_session(self) -> None:
@@ -129,6 +155,41 @@ class RestartLifecycleTests(unittest.TestCase):
                 while time.time() < deadline and not marker.exists():
                     time.sleep(0.05)
             self.assertTrue(marker.exists())
+
+    def test_update_stashes_and_restores_dirty_worktree(self) -> None:
+        calls: list[tuple[str, ...]] = []
+
+        def fake_git(*args: str, timeout: int = 120):
+            calls.append(args)
+            if args[:2] == ("status", "--porcelain"):
+                return update_manager.subprocess.CompletedProcess(args, 0, "?? modules/Test.py\n", "")
+            return update_manager.subprocess.CompletedProcess(args, 0, "Saved working directory\n", "")
+
+        with patch.object(update_manager, "_run_git", side_effect=fake_git):
+            stash = update_manager._stash_worktree()
+            restore = update_manager._restore_worktree(stash)
+
+        self.assertTrue(stash["created"])
+        self.assertTrue(restore["restored"])
+        self.assertTrue(any(call[:2] == ("stash", "push") for call in calls))
+        self.assertTrue(any(call[:2] == ("stash", "pop") for call in calls))
+
+    def test_update_aborts_when_session_snapshot_fails(self) -> None:
+        with (
+            patch.object(
+                update_manager,
+                "_protect_sessions",
+                return_value={"ok": False, "message": "snapshot unavailable"},
+            ),
+            patch.object(update_manager, "_stash_worktree") as stash,
+            patch.object(update_manager, "save_update_state", side_effect=lambda value: value),
+        ):
+            result = update_manager.apply_update()
+
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["updated"])
+        self.assertIn("snapshot unavailable", result["message"])
+        stash.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -11,6 +11,17 @@ from typing import Iterable
 from deathtg.state_db import connect, ensure_state_db, set_health, upsert
 
 PACKAGE_NAME_RE = re.compile(r"^\s*([A-Za-z0-9_.-]+)")
+SAFE_REQUIREMENT_RE = re.compile(
+    r"^[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]+\])?"
+    r"(?:\s*(?:==|~=|>=|<=|!=|>|<)\s*[A-Za-z0-9_.!+*-]+"
+    r"(?:\s*,\s*(?:==|~=|>=|<=|!=|>|<)\s*[A-Za-z0-9_.!+*-]+)*)?$"
+)
+INTERNAL_PACKAGES = {
+    "deathtg",
+    "death-tg",
+    "hikka",
+    "hikariatama",
+}
 
 
 @dataclass(slots=True)
@@ -27,6 +38,35 @@ def package_name(requirement: str) -> str:
     text = requirement.strip()
     match = PACKAGE_NAME_RE.match(text)
     return match.group(1).replace("_", "-").lower() if match else text.lower()
+
+
+def safe_requirements(requirements: Iterable[str]) -> tuple[list[str], list[str]]:
+    """Return installable PyPI requirements and ignored internal entries.
+
+    Third-party modules often import DeathTG/Hikka compatibility namespaces.
+    An ImportError for one of those namespaces must never become
+    ``pip install deathtg``: it is an application compatibility problem, not a
+    missing package from PyPI.
+    """
+
+    safe: list[str] = []
+    skipped: list[str] = []
+    seen: set[str] = set()
+    for raw in requirements:
+        requirement = str(raw or "").split("#", 1)[0].strip()
+        if not requirement:
+            continue
+        project = package_name(requirement)
+        internal = project in INTERNAL_PACKAGES
+        if internal or not SAFE_REQUIREMENT_RE.fullmatch(requirement):
+            if requirement not in skipped:
+                skipped.append(requirement)
+            continue
+        key = requirement.lower()
+        if key not in seen:
+            safe.append(requirement)
+            seen.add(key)
+    return safe, skipped
 
 
 def is_requirement_installed(requirement: str) -> tuple[bool, str, str]:
@@ -108,15 +148,21 @@ def check_requirements(module_key: str | None = None) -> list[RequirementStatus]
 
 
 def install_requirements(requirements: Iterable[str]) -> dict[str, object]:
-    reqs = [req.strip() for req in requirements if str(req).strip()]
+    reqs, skipped = safe_requirements(requirements)
     if not reqs:
-        return {"ok": True, "installed": [], "message": "Nothing to install"}
+        return {
+            "ok": True,
+            "installed": [],
+            "skipped": skipped,
+            "message": "Nothing to install",
+        }
     cmd = [sys.executable, "-m", "pip", "install", *reqs]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     ok = proc.returncode == 0
     return {
         "ok": ok,
         "installed": reqs if ok else [],
+        "skipped": skipped,
         "returncode": proc.returncode,
         "stdout": proc.stdout[-5000:],
         "stderr": proc.stderr[-5000:],

@@ -467,6 +467,47 @@ async def module_repo(*, refresh: bool = False) -> list[dict]:
     return normalized
 
 
+def _module_identity(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def annotate_repo_install_state(items: list[dict], grouped: dict[str, list] | None = None) -> list[dict]:
+    """Attach downloaded/loaded state to repository cards.
+
+    The repository and runtime registry are independent data sources.  Keeping
+    the merge here gives every UI the same answer and avoids showing an
+    ``Install`` button for a module that is already present on disk.
+    """
+
+    grouped = grouped or registry.by_module()
+    loaded_by_key = {_module_identity(name): name for name in grouped}
+    local_by_key: dict[str, str] = {}
+    if MODULES_DIR.exists():
+        for path in MODULES_DIR.iterdir():
+            if path.name.startswith("_"):
+                continue
+            if path.is_file() and path.suffix.lower() != ".py":
+                continue
+            module_name = path.stem if path.is_file() else path.name
+            if resolve_module_entry(path, module_name):
+                local_by_key[_module_identity(module_name)] = module_name
+    for module_name in load_module_meta():
+        local_by_key.setdefault(_module_identity(module_name), module_name)
+
+    annotated: list[dict] = []
+    for item in items:
+        prepared = dict(item)
+        key = _module_identity(str(prepared.get("name") or ""))
+        loaded_name = loaded_by_key.get(key, "")
+        local_name = local_by_key.get(key, "")
+        prepared["loaded"] = bool(loaded_name)
+        prepared["downloaded"] = bool(local_name or loaded_name)
+        prepared["installed"] = bool(local_name or loaded_name)
+        prepared["installed_name"] = loaded_name or local_name
+        annotated.append(prepared)
+    return annotated
+
+
 async def activity_points() -> list[dict]:
     """Aggregate usage by day for the last 30 days.
 
