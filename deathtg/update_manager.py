@@ -49,6 +49,52 @@ def load_update_state() -> dict[str, object] | None:
     return data if isinstance(data, dict) else None
 
 
+def reconcile_local_update_state() -> dict[str, object] | None:
+    """Refresh cached git refs without performing a network fetch.
+
+    Deploys can replace the working tree while leaving runtime/update_state.json
+    intact. Reconcile that cache during panel startup so the dashboard never
+    advertises the commit that was running before the deploy.
+    """
+    state = load_update_state() or {}
+    branch_result = _run_git("branch", "--show-current", timeout=20)
+    branch = (branch_result.stdout or "").strip() or str(state.get("branch") or "main")
+    local_result = _run_git("rev-parse", "HEAD", timeout=20)
+    if local_result.returncode != 0:
+        return state or None
+
+    current = (local_result.stdout or "").strip()
+    remote_result = _run_git("rev-parse", f"origin/{branch}", timeout=20)
+    upcoming = (remote_result.stdout or "").strip() if remote_result.returncode == 0 else ""
+    payload: dict[str, object] = {
+        "branch": branch,
+        "current": current,
+        "local_refreshed_at": int(time.time()),
+    }
+    if upcoming:
+        behind_result = _run_git("rev-list", "--count", f"HEAD..origin/{branch}", timeout=20)
+        ahead_result = _run_git("rev-list", "--count", f"origin/{branch}..HEAD", timeout=20)
+        behind = int((behind_result.stdout or "0").strip() or 0) if behind_result.returncode == 0 else 0
+        ahead = int((ahead_result.stdout or "0").strip() or 0) if ahead_result.returncode == 0 else 0
+        update_available = bool(behind > 0 and current != upcoming)
+        payload.update(
+            {
+                "upcoming": upcoming,
+                "behind": behind,
+                "ahead": ahead,
+                "update_available": update_available,
+            }
+        )
+        if not state or state.get("ok"):
+            payload.update(
+                {
+                    "ok": True,
+                    "message": "Update available" if update_available else "Already up to date",
+                }
+            )
+    return save_update_state(payload)
+
+
 def update_notify_enabled() -> bool:
     raw = (os.getenv("UPDATE_NOTIFY", "1") or "1").strip().lower()
     return raw in {"1", "true", "yes", "on"}

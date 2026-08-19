@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_DIR = ROOT / "deathtg" / "panel" / "templates"
+STATIC_DIR = ROOT / "deathtg" / "panel" / "static"
 
 
 class PanelTemplateTests(unittest.TestCase):
@@ -30,6 +31,11 @@ class PanelTemplateTests(unittest.TestCase):
             with self.subTest(template=path.name):
                 self.assertIn('aria-controls="drawer"', source)
                 self.assertIn('aria-expanded="false"', source)
+
+    def test_mobile_profile_editor_uses_non_overlapping_grid_rows(self) -> None:
+        source = (STATIC_DIR / "engineering.css").read_text(encoding="utf-8")
+        self.assertIn("grid-template-rows:max-content max-content !important", source)
+        self.assertIn(".editor-form { overflow:visible !important; }", source)
 
 
 if __name__ == "__main__":

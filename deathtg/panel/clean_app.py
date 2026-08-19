@@ -87,7 +87,14 @@ from deathtg.startup_state import (
 )
 from deathtg.setup_access import consume_setup_token, rotate_setup_token
 from deathtg.tailscale import tailscale_peer, tailscale_status
-from deathtg.update_manager import apply_update, inspect_update, load_update_state, save_update_state, schedule_restart
+from deathtg.update_manager import (
+    apply_update,
+    inspect_update,
+    load_update_state,
+    reconcile_local_update_state,
+    save_update_state,
+    schedule_restart,
+)
 
 
 env_load()
@@ -185,6 +192,7 @@ class RequestBodyLimitMiddleware:
 async def panel_lifespan(_app: FastAPI):
     await init_metrics()
     await refresh_modules()
+    reconcile_local_update_state()
     yield
 
 
