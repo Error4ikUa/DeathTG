@@ -2,12 +2,28 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import os
+import stat
 from pathlib import Path
 
 from telethon import TelegramClient
 
 from deathtg.config import RUNTIME_DIR
 from deathtg.telethon_policy import client_retry_kwargs
+
+
+def _protect_session_storage(base_dir: Path, session_base: Path) -> None:
+    try:
+        os.chmod(base_dir, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+    except OSError:
+        pass
+    for path in base_dir.glob(f"{session_base.name}.session*"):
+        if not path.is_file():
+            continue
+        try:
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+        except OSError:
+            pass
 
 
 def _token_fingerprint(token: str) -> str:
@@ -23,7 +39,9 @@ def bot_session_base(role: str, token: str) -> Path:
     safe_role = "".join(ch for ch in str(role or "bot").lower() if ch.isalnum() or ch == "_") or "bot"
     base_dir = RUNTIME_DIR / "bot_sessions"
     base_dir.mkdir(parents=True, exist_ok=True)
-    return base_dir / f"{safe_role}_{_token_fingerprint(token)}"
+    session_base = base_dir / f"{safe_role}_{_token_fingerprint(token)}"
+    _protect_session_storage(base_dir, session_base)
+    return session_base
 
 
 def drop_session_files(session_base: Path) -> None:
@@ -50,6 +68,7 @@ async def start_bot_client(
             me = await client.get_me()
             if not getattr(me, "bot", False):
                 raise RuntimeError(f"{role} session is bound to a user, not a bot")
+            _protect_session_storage(session_base.parent, session_base)
             return client, me, session_base
         except Exception as exc:
             last_error = exc

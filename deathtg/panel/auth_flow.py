@@ -6,14 +6,14 @@ import contextlib
 import os
 import stat
 from io import BytesIO
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from telethon import TelegramClient
 from telethon.errors import PasswordHashInvalidError, SessionPasswordNeededError
 
 from deathtg.config import ROOT_DIR
 from deathtg.server_bootstrap import parse_env_file, secure_panel_secret, update_env_values
-from deathtg.session_guard import backup_session_files, session_files
+from deathtg.session_guard import backup_session_files, normalize_session_name, session_files
 from deathtg.startup_state import (
     PHASE_FIRST_RUN,
     PHASE_POST_SETUP_SYNC,
@@ -37,15 +37,18 @@ class PendingLogin:
     qr_state: str = "idle"
     qr_error: str = ""
     qr_wait_task: asyncio.Task | None = None
+    operation_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 PENDING: dict[str, PendingLogin] = {}
 QR_FLOW_INDEX: dict[tuple[int, str, str], str] = {}
 QR_FLOW_LOCKS: dict[tuple[int, str, str], asyncio.Lock] = {}
+COMPLETED_LOGINS: dict[str, tuple[float, dict[str, str]]] = {}
+COMPLETED_LOGIN_TTL = 5 * 60
 
 
 def _flow_key(api_id: int, api_hash: str, session_name: str) -> tuple[int, str, str]:
-    return (int(api_id), api_hash.strip(), (session_name.strip() or "deathtg"))
+    return (int(api_id), api_hash.strip(), normalize_session_name(session_name))
 
 
 def _qr_status_with_flow(flow_id: str) -> dict[str, object]:
@@ -54,16 +57,26 @@ def _qr_status_with_flow(flow_id: str) -> dict[str, object]:
     return info
 
 
+def _completed_login(flow_id: str) -> dict[str, str] | None:
+    now = asyncio.get_running_loop().time()
+    for item_id, (finished_at, _result) in list(COMPLETED_LOGINS.items()):
+        if now - finished_at > COMPLETED_LOGIN_TTL:
+            COMPLETED_LOGINS.pop(item_id, None)
+    item = COMPLETED_LOGINS.get(flow_id)
+    return dict(item[1]) if item else None
+
+
 async def _drop_pending_flow(flow_id: str) -> None:
     pending = PENDING.pop(flow_id, None)
     if not pending:
         return
-    if pending.qr_wait_task:
-        pending.qr_wait_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await pending.qr_wait_task
-    with contextlib.suppress(Exception):
-        await pending.client.disconnect()
+    async with pending.operation_lock:
+        if pending.qr_wait_task:
+            pending.qr_wait_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await pending.qr_wait_task
+        with contextlib.suppress(Exception):
+            await pending.client.disconnect()
 
 
 def _set_login_pending(value: bool) -> None:
@@ -106,16 +119,17 @@ def _cleanup_session_files(session_name: str, reason: str = "login-replace") -> 
 
 
 def _new_client(session_name: str, api_id: int, api_hash: str) -> TelegramClient:
-    session_path = str(ROOT_DIR / session_name)
+    session_path = str(ROOT_DIR / normalize_session_name(session_name))
     return TelegramClient(session_path, api_id, api_hash, **client_retry_kwargs())
 
 
 def write_env(api_id: int, api_hash: str, session_name: str, phone: str = "", panel_key: str = "", panel_secret: str = "", bot_token: str = "") -> None:
     current = parse_env_file()
+    safe_session_name = normalize_session_name(session_name)
     updates = {
         "API_ID": str(api_id),
         "API_HASH": api_hash.strip(),
-        "SESSION_NAME": session_name.strip() or "deathtg",
+        "SESSION_NAME": safe_session_name,
         "COMMAND_PREFIX": current.get("COMMAND_PREFIX", ".") or ".",
         "LOGIN_PENDING": "1",
         "LOGIN_STAGE": "starting",
@@ -233,27 +247,29 @@ def qr_status(flow_id: str) -> dict[str, object]:
 
 
 async def refresh_qr_login(flow_id: str) -> dict[str, object]:
-    pending = PENDING[flow_id]
-    if pending.qr_wait_task:
-        pending.qr_wait_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await pending.qr_wait_task
-    if pending.qr_login is None:
-        raise RuntimeError("QR login is not active")
-    await pending.qr_login.recreate()
-    pending.qr_url = pending.qr_login.url
-    pending.qr_data_url = _render_qr_data_url(pending.qr_url)
-    pending.qr_state = "waiting_qr"
-    pending.qr_error = ""
-    pending.qr_wait_task = asyncio.create_task(_watch_qr_login(flow_id))
-    _set_login_stage("waiting_qr")
-    _auth_log("refreshed QR login and is waiting for a new scan")
-    return qr_status(flow_id)
+    pending = PENDING.get(flow_id)
+    if not pending:
+        raise RuntimeError("QR login is no longer active")
+    async with pending.operation_lock:
+        if pending.qr_wait_task:
+            pending.qr_wait_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await pending.qr_wait_task
+        if pending.qr_login is None:
+            raise RuntimeError("QR login is not active")
+        await pending.qr_login.recreate()
+        pending.qr_url = pending.qr_login.url
+        pending.qr_data_url = _render_qr_data_url(pending.qr_url)
+        pending.qr_state = "waiting_qr"
+        pending.qr_error = ""
+        pending.qr_wait_task = asyncio.create_task(_watch_qr_login(flow_id))
+        _set_login_stage("waiting_qr")
+        _auth_log("refreshed QR login and is waiting for a new scan")
+        return qr_status(flow_id)
 
 
 def friendly_login_error(exc: Exception) -> str:
     name = type(exc).__name__
-    text = str(exc)
     if name == "SendCodeUnavailableError":
         return (
             "Telegram did not allow another code request right now. "
@@ -268,56 +284,88 @@ def friendly_login_error(exc: Exception) -> str:
         return "The Telegram code is invalid. Paste only the new code from the Telegram service chat, exactly as shown."
     if name == "PasswordHashInvalidError":
         return "The Telegram 2FA password is incorrect. Enter the exact two-step verification password from Telegram."
-    return f"{name}: {text}"
+    return f"Telegram login failed ({name}). Check the DeathTG console for details."
 
 
 async def confirm_2fa(flow_id: str, password: str) -> None:
-    pending = PENDING[flow_id]
+    pending = PENDING.get(flow_id)
+    if not pending:
+        if _completed_login(flow_id) is not None:
+            return
+        raise RuntimeError("Login flow is no longer active")
     normalized_password = password.strip()
     _auth_log("received 2FA password from the website and is finishing Telegram login")
-    try:
-        await pending.client.sign_in(password=normalized_password)
-        _set_login_stage("2fa_confirmed")
-        _auth_log("two-step verification password accepted")
-    except PasswordHashInvalidError:
-        raise
+    async with pending.operation_lock:
+        if pending.qr_state == "done":
+            return
+        try:
+            await pending.client.sign_in(password=normalized_password)
+            pending.qr_state = "done"
+            _set_login_stage("2fa_confirmed")
+            _auth_log("two-step verification password accepted")
+        except PasswordHashInvalidError:
+            raise
 
 
 async def finish_login(flow_id: str) -> dict[str, str]:
-    pending = PENDING.pop(flow_id)
-    QR_FLOW_INDEX.pop(_flow_key(pending.api_id, pending.api_hash, pending.session_name), None)
-    if pending.qr_wait_task:
-        pending.qr_wait_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await pending.qr_wait_task
-    me = await pending.client.get_me()
-    await pending.client.disconnect()
-    _set_login_pending(False)
-    _set_login_stage("ready")
-    write_startup_state(PHASE_POST_SETUP_SYNC, "Telegram session is ready. DeathTG is finishing startup sync.")
-    for path in ROOT_DIR.glob(f"{pending.session_name}.session*"):
-        try:
-            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
-        except Exception:
-            pass
-    _auth_log("Telegram session is ready and DeathTG can start the userbot")
-    return {
-        "id": str(me.id),
-        "first_name": me.first_name or "",
-        "last_name": me.last_name or "",
-        "username": me.username or "",
-    }
+    completed = _completed_login(flow_id)
+    if completed is not None:
+        return completed
+    pending = PENDING.get(flow_id)
+    if not pending:
+        raise RuntimeError("Login flow is no longer active")
+    async with pending.operation_lock:
+        completed = _completed_login(flow_id)
+        if completed is not None:
+            return completed
+        if PENDING.get(flow_id) is not pending:
+            completed = _completed_login(flow_id)
+            if completed is not None:
+                return completed
+            raise RuntimeError("Login flow is no longer active")
+        if pending.qr_wait_task:
+            pending.qr_wait_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await pending.qr_wait_task
+        me = await pending.client.get_me()
+        with contextlib.suppress(Exception):
+            await pending.client.disconnect()
+        _set_login_pending(False)
+        _set_login_stage("ready")
+        write_startup_state(PHASE_POST_SETUP_SYNC, "Telegram session is ready. DeathTG is finishing startup sync.")
+        for path in ROOT_DIR.glob(f"{pending.session_name}.session*"):
+            try:
+                os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+            except Exception:
+                pass
+        result = {
+            "id": str(me.id),
+            "first_name": me.first_name or "",
+            "last_name": me.last_name or "",
+            "username": me.username or "",
+        }
+        key = _flow_key(pending.api_id, pending.api_hash, pending.session_name)
+        PENDING.pop(flow_id, None)
+        if QR_FLOW_INDEX.get(key) == flow_id:
+            QR_FLOW_INDEX.pop(key, None)
+        QR_FLOW_LOCKS.pop(key, None)
+        COMPLETED_LOGINS[flow_id] = (asyncio.get_running_loop().time(), result)
+        _auth_log("Telegram session is ready and DeathTG can start the userbot")
+        return dict(result)
 
 
 async def cancel_login(flow_id: str) -> None:
     pending = PENDING.pop(flow_id, None)
     if pending:
-        QR_FLOW_INDEX.pop(_flow_key(pending.api_id, pending.api_hash, pending.session_name), None)
-        if pending.qr_wait_task:
-            pending.qr_wait_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await pending.qr_wait_task
-        await pending.client.disconnect()
+        key = _flow_key(pending.api_id, pending.api_hash, pending.session_name)
+        QR_FLOW_INDEX.pop(key, None)
+        QR_FLOW_LOCKS.pop(key, None)
+        async with pending.operation_lock:
+            if pending.qr_wait_task:
+                pending.qr_wait_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await pending.qr_wait_task
+            await pending.client.disconnect()
     if not PENDING:
         _set_login_pending(False)
         _set_login_stage("idle")

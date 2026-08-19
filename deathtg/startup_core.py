@@ -5,7 +5,6 @@ import json
 import os
 import sys
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import Iterable
 
 from deathtg.bot_health import sync_bot_checks

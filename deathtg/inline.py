@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import inspect
+import logging
 import os
 import secrets
 import time
@@ -24,6 +25,7 @@ from deathtg.profile_store import profile_settings, save_profile_settings
 
 
 CallbackFunc = Callable[..., Awaitable[Any]]
+LOGGER = logging.getLogger("deathtg.inline")
 
 
 @dataclass(slots=True)
@@ -333,7 +335,7 @@ class InlineManager:
         )
         try:
             sent = await self._insert_inline_form(self.forms[form_id], chat, message=message, **kwargs)
-        except Exception as exc:
+        except Exception:
             self.forms.pop(form_id, None)
             return await self._fallback_edit(message, text, **kwargs)
         if message is not None:
@@ -517,15 +519,17 @@ class InlineManager:
             return
         call = InlineCall(self, event, form=form)
         try:
-            params = inspect.signature(entry.func).parameters
-            if len(params) <= 1:
+            try:
+                param_count = len(inspect.signature(entry.func).parameters)
+            except (TypeError, ValueError):
+                param_count = 2
+            if param_count <= 1:
                 await entry.func(call)
             else:
                 await entry.func(call, *entry.args)
-        except TypeError:
-            await entry.func(call, *entry.args)
-        except Exception as exc:
-            await event.answer(f"{type(exc).__name__}: {exc}", alert=True)
+        except Exception:
+            LOGGER.exception("Inline callback failed")
+            await event.answer("DeathTG could not complete this action.", alert=True)
 
     def _can_press(self, event, form: FormEntry | None, entry: CallbackEntry) -> bool:
         if entry.public:
@@ -556,6 +560,16 @@ class InlineManager:
                 parse_mode="html",
             )
             await event.answer([result], cache_time=0, private=True)
+            return
+        sender_id = int(getattr(event, "sender_id", 0) or 0)
+        allowed = {
+            int(user_id)
+            for user_id in (self.owner_id, form.initiator_user_id)
+            if user_id
+        }
+        if sender_id not in allowed:
+            # Return no results rather than revealing that a private form exists.
+            await event.answer([], cache_time=0, private=True)
             return
         result = event.builder.article(
             "DeathTG",
@@ -793,7 +807,6 @@ class InlineManager:
             return
         text = (
             emoji_line("pirate", self._t("bot.ready", lang), self.owner_premium) + "\n\n"
-            + f"{self._owner_line()}\n"
             + f"Bot: @{self.bot_username or 'unknown'}\n\n"
             + f"{emoji_line('search', self._t('bot.commands', lang), self.owner_premium)}:\n"
             + emoji_line("mail", self._t("bot.start_help", lang), self.owner_premium) + "\n"
@@ -805,6 +818,16 @@ class InlineManager:
     async def _on_status(self, event) -> None:
         lang = self._current_language()
         ready = self._t("bot.runtime_ready", lang) if self.ready else self._t("bot.runtime_missing", lang)
+        sender_id = int(getattr(event, "sender_id", 0) or 0)
+        if not self.owner_id or sender_id != int(self.owner_id):
+            await event.respond(
+                emoji_line("check", self._t("bot.status", lang), self.owner_premium)
+                + f"\n{ready}",
+                buttons=self._help_buttons_native(),
+                parse_mode="html",
+                link_preview=False,
+            )
+            return
         text = (
             emoji_line("check", self._t("bot.status", lang), self.owner_premium) + "\n"
             + f"{emoji_line('check', 'ready', self.owner_premium)}: {ready}\n"
@@ -815,7 +838,16 @@ class InlineManager:
 
     async def _on_lang(self, event) -> None:
         settings = profile_settings()
-        if self.owner_id and int(getattr(event, "sender_id", 0) or 0) == self.owner_id and settings.get("onboarding_done") != "1":
+        sender_id = int(getattr(event, "sender_id", 0) or 0)
+        if not self.owner_id or sender_id != int(self.owner_id):
+            await event.respond(
+                emoji_line("key", self._t("bot.private", settings.get("language", "en")), self.owner_premium),
+                buttons=self._help_buttons_native(),
+                parse_mode="html",
+                link_preview=False,
+            )
+            return
+        if settings.get("onboarding_done") != "1":
             await self._send_language_picker(event.chat_id, onboarding=True)
             return
         await self._send_language_picker(event.chat_id, onboarding=False)

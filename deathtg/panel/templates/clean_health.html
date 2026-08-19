@@ -5,36 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ tr('health.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
-    <style>
-        .health-shell{display:grid;gap:18px}
-        .health-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px;align-items:start}
-        .health-stack,.health-actions,.health-list,.health-logics{display:grid;gap:12px}
-        .health-card{padding:22px}
-        .health-row{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:14px 15px;border-radius:16px;background:rgba(255,255,255,.025);border:1px solid rgba(var(--accent-rgb),.14)}
-        .health-row b,.health-box b{display:block;margin-bottom:4px}
-        .health-row p,.health-box p,.health-list li{margin:0;color:var(--muted);font-size:13px;line-height:1.55}
-        .health-box{padding:16px;border-radius:18px;background:rgba(255,255,255,.024);border:1px solid rgba(var(--accent-rgb),.15)}
-        .health-box pre{margin:10px 0 0;white-space:pre-wrap;word-break:break-word;font-size:12px;color:#dbe6ff}
-        .health-status{display:inline-flex;align-items:center;justify-content:center;padding:7px 11px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
-        .health-status.ok{background:rgba(82,255,139,.10);border:1px solid rgba(82,255,139,.22);color:#dfffe8}
-        .health-status.bad{background:rgba(255,79,117,.12);border:1px solid rgba(255,79,117,.34);color:#ffe2e9}
-        .health-status.warn{background:rgba(255,184,107,.12);border:1px solid rgba(255,184,107,.34);color:#ffebb9}
-        .health-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
-        .health-actions form,.health-actions a{display:block}
-        .health-actions button,.health-actions a{width:100%}
-        .toggle-box{display:flex;justify-content:space-between;gap:12px;align-items:center}
-        .pill{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid rgba(var(--accent-rgb),.2);background:rgba(255,255,255,.03);font-size:12px;font-weight:700}
-        .health-list{list-style:none;padding:0;margin:0}
-        .health-list li{padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.02);border:1px solid rgba(var(--accent-rgb),.12)}
-        .tiny{font-size:12px;color:var(--muted)}
-        .log-link{display:inline-flex;align-items:center;justify-content:center;padding:12px 14px;border-radius:14px;text-decoration:none}
-        @media (max-width: 1100px){.health-grid{grid-template-columns:1fr}.health-actions{grid-template-columns:1fr}}
-    </style>
-    <link rel="stylesheet" href="/static/engineering.css?v=20260819.3">
+    <link rel="stylesheet" href="/static/engineering.css?v=20260819.6">
 </head>
 <body class="theme-main" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>
-<button class="menu-btn" id="menuToggle">
+<button class="menu-btn" id="menuToggle" type="button" aria-label="{{ tr('nav.menu') }}" aria-controls="drawer" aria-expanded="false">
     {% if profile.avatar %}<img src="{{ profile.avatar }}" alt="avatar">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}
 </button>
 
@@ -48,7 +23,7 @@
         <a href="/scanner">{{ tr('nav.scanner') }}</a>
         <a class="active" href="/health">{{ tr('nav.health') }}</a>
     </nav>
-    <a class="logout" href="/logout">{{ tr('nav.logout') }}</a>
+    <form class="logout-form" method="post" action="/logout"><button class="logout" type="submit">{{ tr('nav.logout') }}</button></form>
 </aside>
 <div class="overlay" id="drawerBackdrop"></div>
 
@@ -75,7 +50,7 @@
                         <form method="post" action="/health/recheck"><button type="submit" class="ghost">{{ tr('health.recheck') }}</button></form>
                         <form method="post" action="/health/repair" data-confirm="{{ tr('confirm.repair') }}"><button type="submit">{{ tr('health.repair') }}</button></form>
                         <form method="post" action="/health/restart" data-confirm="{{ tr('confirm.restart') }}"><button type="submit" class="ghost">{{ tr('health.restart') }}</button></form>
-                        <a class="ghost log-link" href="/health/export-logs">{{ tr('health.export_logs') }}</a>
+                        <form method="post" action="/health/export-logs"><button type="submit" class="ghost log-link">{{ tr('health.export_logs') }}</button></form>
                         <form method="post" action="/health/requirements/install" data-confirm="{{ tr('confirm.install_requirements') }}"><button type="submit">{{ tr('health.install_requirements') }}</button></form>
                         <form method="post" action="/health/modules/scan"><button type="submit" class="ghost">{{ tr('health.scan_modules') }}</button></form>
                     </div>
@@ -127,7 +102,7 @@
                             </div>
                             <span class="health-status {{ 'warn' if safe_mode_enabled else 'ok' }}">{{ tr('health.enabled') if safe_mode_enabled else tr('health.disabled') }}</span>
                         </div>
-                        <form method="post" action="/health/safe-mode" data-confirm="{{ tr('confirm.safe_mode') }}" style="margin-top:14px">
+                        <form class="health-safe-action" method="post" action="/health/safe-mode" data-confirm="{{ tr('confirm.safe_mode') }}">
                             <input type="hidden" name="enabled" value="{{ '0' if safe_mode_enabled else '1' }}">
                             <button type="submit">{{ tr('health.disable_safe_mode') if safe_mode_enabled else tr('health.enable_safe_mode') }}</button>
                         </form>
@@ -174,6 +149,6 @@
     </div>
 </main>
 <script src="/static/matrix.js"></script>
-<script src="/static/clean.js?v=20260819.1"></script>
+<script src="/static/clean.js?v=20260819.3"></script>
 </body>
 </html>

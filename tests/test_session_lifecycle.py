@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
+from unittest.mock import AsyncMock
 from unittest.mock import patch
 
 from telethon.errors import UnauthorizedError
@@ -131,6 +134,48 @@ class QRSessionProtectionTests(unittest.IsolatedAsyncioTestCase):
                 await auth_flow.begin_qr_login("flow", 12345, "hash", "deathtg")
         cleanup.assert_not_called()
         self.assertTrue(client.disconnected)
+
+    async def test_concurrent_finish_login_is_idempotent(self) -> None:
+        client = SimpleNamespace(
+            get_me=AsyncMock(
+                return_value=SimpleNamespace(
+                    id=123,
+                    first_name="Death",
+                    last_name="TG",
+                    username="dtg",
+                )
+            ),
+            disconnect=AsyncMock(),
+        )
+        pending = auth_flow.PendingLogin(
+            client=client,
+            api_id=12345,
+            api_hash="hash",
+            session_name="deathtg",
+            qr_state="done",
+        )
+        auth_flow.PENDING.clear()
+        auth_flow.QR_FLOW_INDEX.clear()
+        auth_flow.QR_FLOW_LOCKS.clear()
+        auth_flow.COMPLETED_LOGINS.clear()
+        auth_flow.PENDING["flow"] = pending
+        auth_flow.QR_FLOW_INDEX[(12345, "hash", "deathtg")] = "flow"
+        with (
+            patch.object(auth_flow, "_set_login_pending"),
+            patch.object(auth_flow, "_set_login_stage"),
+            patch.object(auth_flow, "write_startup_state"),
+        ):
+            first, second = await asyncio.gather(
+                auth_flow.finish_login("flow"),
+                auth_flow.finish_login("flow"),
+            )
+
+        self.assertEqual(first, second)
+        self.assertEqual(first["id"], "123")
+        client.get_me.assert_awaited_once()
+        client.disconnect.assert_awaited_once()
+        self.assertNotIn("flow", auth_flow.PENDING)
+        self.assertNotIn((12345, "hash", "deathtg"), auth_flow.QR_FLOW_LOCKS)
 
     async def test_launcher_shutdown_action_disconnects_telethon_cleanly(self) -> None:
         class Client:

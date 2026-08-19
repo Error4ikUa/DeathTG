@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ tr('browser.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
-    <link rel="stylesheet" href="/static/engineering.css?v=20260819.3">
+    <link rel="stylesheet" href="/static/engineering.css?v=20260819.6">
 </head>
 <body class="theme-modules" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>
-<button class="menu-btn" id="menuToggle">
+<button class="menu-btn" id="menuToggle" type="button" aria-label="{{ tr('nav.menu') }}" aria-controls="drawer" aria-expanded="false">
     {% if profile.avatar %}<img src="{{ profile.avatar }}" alt="avatar">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}
 </button>
 <aside class="mini-menu" id="drawer">
@@ -22,7 +22,7 @@
         <a href="/scanner">{{ tr('nav.scanner') }}</a>
         <a href="/health">{{ tr('nav.health') }}</a>
     </nav>
-    <a class="logout" href="/logout">{{ tr('nav.logout') }}</a>
+    <form class="logout-form" method="post" action="/logout"><button class="logout" type="submit">{{ tr('nav.logout') }}</button></form>
 </aside>
 <div class="overlay" id="drawerBackdrop"></div>
 
@@ -78,7 +78,7 @@
         <div class="module-grid">
             {% for mod in browser_modules %}
             {% set image = mod.image or mod.modul_png or '' %}
-            <article class="module-card repo-card {% if image %}has-bg{% endif %}" data-name="{{ mod.name }} {{ mod.description }}" {% if image %}style="--module-bg:url('{{ image }}')"{% endif %}>
+            <article class="module-card repo-card {% if image %}has-bg{% endif %}" data-name="{{ mod.name }} {{ mod.description }}">
                 <div class="module-card-glow"></div>
                 <div class="module-cover" aria-hidden="true">
                     {% if image %}<img src="{{ image }}" data-fallback="/images/modules/Module.png" alt="" loading="lazy" decoding="async">{% endif %}
@@ -152,7 +152,7 @@
             {% set meta = module_meta.get(module, {}) %}
             {% set card = module_cards.get(module, {}) %}
             {% set image = card.get('image') or '' %}
-            <article class="module-card installed-card {% if image %}has-bg{% endif %}" data-name="{{ module }} {{ meta.get('description', '') }}" {% if image %}style="--module-bg:url('{{ image }}')"{% endif %}>
+            <article class="module-card installed-card {% if image %}has-bg{% endif %}" data-name="{{ module }} {{ meta.get('description', '') }}">
                 <a class="module-card-link" href="/modules/{{ module }}" aria-label="Open {{ module }} details"></a>
                 <div class="module-card-glow"></div>
                 <div class="module-cover" aria-hidden="true">
@@ -203,7 +203,7 @@
                 <button type="submit">{{ tr('browser.upload_module') }}</button>
             </form>
         </div>
-        <article class="card panel" style="margin-top:16px">
+        <article class="card panel install-contract">
             <p class="eyebrow">{{ tr('browser.contract') }}</p>
             <h2>{{ tr('browser.folder_supported') }}</h2>
             <p class="module-note">{{ tr('browser.folder_desc_1') }}</p>
@@ -213,6 +213,6 @@
 </main>
 
 <script src="/static/matrix.js"></script>
-<script src="/static/clean.js?v=20260819.1"></script>
+<script src="/static/clean.js?v=20260819.3"></script>
 </body>
 </html>

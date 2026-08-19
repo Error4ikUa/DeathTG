@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
 import time
@@ -23,10 +25,22 @@ DEFAULT_COMMUNITY_BOT_USERNAME = "dtg2054091032_cpnf9hq_bot"
 ROLE_CODE_TTL_SECONDS = 15 * 60
 ROLE_TITLES = {"admin": "Администратор", "developer": "Разработчик"}
 ROLE_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+ROLE_SCAN_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9_-]{12,64}$")
+
+
+def _harden_database_files() -> None:
+    for path in (
+        COMMUNITY_ROLES_DB_PATH,
+        COMMUNITY_ROLES_DB_PATH.with_name(f"{COMMUNITY_ROLES_DB_PATH.name}-wal"),
+        COMMUNITY_ROLES_DB_PATH.with_name(f"{COMMUNITY_ROLES_DB_PATH.name}-shm"),
+    ):
+        if path.exists():
+            with contextlib.suppress(OSError):
+                path.chmod(0o600)
 
 
 def _connect() -> sqlite3.Connection:
-    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    COMMUNITY_ROLES_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(COMMUNITY_ROLES_DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -61,6 +75,7 @@ def _connect() -> sqlite3.Connection:
         """
     )
     _migrate_legacy_registry(conn)
+    _harden_database_files()
     return conn
 
 
@@ -255,7 +270,7 @@ def grant_role(
     user_id: int,
     role: str,
     *,
-    actor_id: int | None = None,
+    actor_id: int,
     actor_name: str = "",
     username: str = "",
     display_name: str = "",
@@ -263,7 +278,7 @@ def grant_role(
     normalized = normalize_role(role)
     if normalized == "user":
         return load_role_registry()
-    if actor_id and int(actor_id) != OWNER_TG_ID:
+    if int(actor_id) != OWNER_TG_ID:
         raise PermissionError("Only the DeathTG owner can grant roles")
     now = int(time.time())
     with _database() as conn:
@@ -287,14 +302,14 @@ def grant_role(
                 str(display_name or "").strip(),
                 ROLE_TITLES[normalized],
                 now,
-                int(actor_id or OWNER_TG_ID),
+                int(actor_id),
             ),
         )
     return load_role_registry()
 
 
-def revoke_role(user_id: int, role: str, *, actor_id: int | None = None) -> dict[str, dict]:
-    if actor_id and int(actor_id) != OWNER_TG_ID:
+def revoke_role(user_id: int, role: str, *, actor_id: int) -> dict[str, dict]:
+    if int(actor_id) != OWNER_TG_ID:
         raise PermissionError("Only the DeathTG owner can revoke roles")
     normalized = normalize_role(role)
     with _database() as conn:
@@ -355,36 +370,6 @@ def load_role_registry() -> dict[str, dict]:
     return result
 
 
-def save_role_registry(data: dict[str, dict]) -> dict[str, dict]:
-    with _database() as conn:
-        conn.execute("DELETE FROM role_grants")
-        now = int(time.time())
-        for raw_user_id, item in data.items():
-            if not str(raw_user_id).isdigit() or not isinstance(item, dict):
-                continue
-            for role in item.get("roles", []):
-                normalized = normalize_role(str(role))
-                if normalized == "user":
-                    continue
-                conn.execute(
-                    """
-                    INSERT INTO role_grants
-                        (user_id, role, username, display_name, title, granted_at, granted_by, revoked_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
-                    """,
-                    (
-                        int(raw_user_id),
-                        normalized,
-                        str(item.get("username") or "").lstrip("@"),
-                        str(item.get("display_name") or ""),
-                        str(item.get("title") or ROLE_TITLES[normalized]),
-                        int(item.get("updated_at", 0) or now),
-                        int(item.get("updated_by", 0) or 0),
-                    ),
-                )
-    return load_role_registry()
-
-
 def allowed_role(user_id: int, role: str) -> bool:
     normalized = normalize_role(role)
     if normalized == "user" or int(user_id) == OWNER_TG_ID:
@@ -398,25 +383,30 @@ def allowed_role(user_id: int, role: str) -> bool:
 
 
 def role_scan_result_path(request_id: str) -> Path:
-    safe = "".join(ch for ch in str(request_id) if ch.isalnum() or ch in {"_", "-"})
-    return ROLE_SCAN_RESULTS_DIR / f"{safe}.json"
+    value = str(request_id or "").strip()
+    if not ROLE_SCAN_REQUEST_ID_RE.fullmatch(value):
+        raise ValueError("Invalid role scan request ID")
+    return ROLE_SCAN_RESULTS_DIR / f"{value}.json"
 
 
 def write_role_scan_result(request_id: str, *, ok: bool, message: str = "", role: str = "") -> None:
     ROLE_SCAN_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    role_scan_result_path(request_id).write_text(
-        json.dumps(
-            {
-                "ok": bool(ok),
-                "message": str(message or ""),
-                "role": normalize_role(role),
-                "ts": int(time.time()),
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
+    path = role_scan_result_path(request_id)
+    payload = json.dumps(
+        {
+            "ok": bool(ok),
+            "message": str(message or ""),
+            "role": normalize_role(role),
+            "ts": int(time.time()),
+        },
+        ensure_ascii=False,
+        indent=2,
     )
+    temp_path = path.with_suffix(".tmp")
+    temp_path.write_text(payload, encoding="utf-8")
+    with contextlib.suppress(OSError):
+        temp_path.chmod(0o600)
+    os.replace(temp_path, path)
 
 
 def read_role_scan_result(request_id: str) -> dict[str, object] | None:

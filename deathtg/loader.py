@@ -38,13 +38,13 @@ import traceback
 import types
 from pathlib import Path
 from types import ModuleType
+from urllib.parse import urlparse
 
-import aiohttp
 from deathtg.assets import resolve_module_entry
 from deathtg.command import Command, command
 from deathtg.module_config import ConfigValue, ModuleConfig, ValidationError, validators
 from deathtg.module_db import ModuleDatabase
-from deathtg.module_repo import fetch_module_bundle
+from deathtg.module_repo import MAX_REMOTE_IMAGE_BYTES, fetch_module_bundle, fetch_public_binary
 from deathtg.premium_emoji import premium_emoji
 from deathtg.registry import CommandRegistry
 from deathtg.requirements_manager import install_requirements, safe_requirements
@@ -412,7 +412,7 @@ class ModuleLoader:
                     module = importlib.import_module(import_name)
                 self.registry.remove_module(name, force=True)
                 await self._register_module(module, name)
-            except Exception as exc:
+            except Exception:
                 self.registry.remove_module(name, force=True)
                 self.loaded.pop(name, None)
                 # Catch exceptions to prevent a single bad module from stopping the panel
@@ -638,10 +638,12 @@ class ModuleLoader:
             image_url = str(bundle.get("image_url") or "")
             if image_url:
                 try:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(image_url, timeout=20) as response:
-                            if response.status == 200:
-                                (target / "Module.png").write_bytes(await response.read())
+                    image_data = await fetch_public_binary(
+                        image_url,
+                        max_bytes=MAX_REMOTE_IMAGE_BYTES,
+                        label="Module image",
+                    )
+                    (target / "Module.png").write_bytes(image_data)
                 except Exception:
                     pass
             requirements_text = str(bundle.get("requirements_text") or "")

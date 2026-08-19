@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import getpass
 import html
+import platform
 import shlex
-import subprocess
+import shutil
+import time
+from datetime import datetime
+
+import psutil
 
 from deathtg.command import command
 from deathtg.config import ROOT_DIR
@@ -21,28 +27,6 @@ SAFE_COMMANDS = {
     "uptime",
     "df",
     "free",
-    "python",
-    "python3",
-}
-
-BLOCKED_PARTS = {
-    "rm",
-    "del",
-    "format",
-    "mkfs",
-    "shutdown",
-    "reboot",
-    "poweroff",
-    "dd",
-    "curl",
-    "wget",
-    "nc",
-    "netcat",
-    "chmod",
-    "chown",
-    "sudo",
-    "su",
-    "git",
 }
 
 
@@ -297,26 +281,43 @@ class RootMod(Module):
         base = parts[0].lower()
         if base not in SAFE_COMMANDS:
             return False, f"Command '{base}' is not allowed."
-        for part in parts:
-            if part.lower() in BLOCKED_PARTS:
-                return False, f"Token '{part}' is blocked."
+        if len(parts) != 1:
+            return False, "Diagnostic commands do not accept arguments."
         return True, ""
 
     async def _run_shell_command(self, raw: str) -> str:
         def _runner() -> str:
             try:
-                result = subprocess.run(
-                    raw,
-                    cwd=ROOT_DIR,
-                    shell=True,
-                    text=True,
-                    capture_output=True,
-                    timeout=30,
-                )
-                output = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
-                if not output:
-                    output = "Command finished with no output."
-                return output[-3500:]
+                command_name = shlex.split(raw)[0].lower()
+                if command_name == "pwd":
+                    return str(ROOT_DIR)
+                if command_name in {"ls", "dir"}:
+                    entries = sorted(ROOT_DIR.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
+                    return "\n".join(f"{'d' if item.is_dir() else '-'} {item.name}" for item in entries[:200])
+                if command_name == "whoami":
+                    return getpass.getuser()
+                if command_name == "uname":
+                    return platform.platform()
+                if command_name == "date":
+                    return datetime.now().astimezone().isoformat(timespec="seconds")
+                if command_name == "uptime":
+                    seconds = max(0, int(time.time() - psutil.boot_time()))
+                    days, seconds = divmod(seconds, 86400)
+                    hours, seconds = divmod(seconds, 3600)
+                    minutes, seconds = divmod(seconds, 60)
+                    return f"{days}d {hours:02d}:{minutes:02d}:{seconds:02d}"
+                if command_name == "df":
+                    total, used, free = shutil.disk_usage(ROOT_DIR)
+                    gib = 1024**3
+                    return f"total={total / gib:.2f} GiB used={used / gib:.2f} GiB free={free / gib:.2f} GiB"
+                if command_name == "free":
+                    memory = psutil.virtual_memory()
+                    gib = 1024**3
+                    return (
+                        f"total={memory.total / gib:.2f} GiB used={memory.used / gib:.2f} GiB "
+                        f"available={memory.available / gib:.2f} GiB ({memory.percent:.1f}%)"
+                    )
+                return "Unsupported diagnostic command."
             except Exception as exc:
                 return f"{type(exc).__name__}: {exc}"
 

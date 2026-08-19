@@ -6,7 +6,7 @@ import re
 
 from deathtg.command import command
 from deathtg.backup_manager import create_modules_backup, restore_modules_backup
-from deathtg.config import MODULES_DIR, ROOT_DIR, RUNTIME_DIR
+from deathtg.config import MODULES_DIR, RUNTIME_DIR
 from deathtg.loader import Module
 from deathtg.module_repo import fetch_repo_modules, find_repo_module, is_url, normalize_github_raw_url, trusted_repo_link
 from deathtg.panel_access import issue_device_grant

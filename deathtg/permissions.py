@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import re
+import stat
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -64,18 +68,18 @@ class SecurityManager:
     def list_sudo_users(self) -> list[int]:
         data = self._read()
         values = data.get("sudo_users", [])
-        return sorted({int(value) for value in values if str(value).strip()})
+        return sorted(self._integer_values(values))
 
     def add_sudo_user(self, user_id: int) -> None:
         data = self._read()
-        users = {int(value) for value in data.get("sudo_users", []) if str(value).strip()}
+        users = self._integer_values(data.get("sudo_users", []))
         users.add(int(user_id))
         data["sudo_users"] = sorted(users)
         self._write(data)
 
     def remove_sudo_user(self, user_id: int) -> None:
         data = self._read()
-        users = {int(value) for value in data.get("sudo_users", []) if str(value).strip()}
+        users = self._integer_values(data.get("sudo_users", []))
         users.discard(int(user_id))
         data["sudo_users"] = sorted(users)
         self._write(data)
@@ -154,11 +158,17 @@ class SecurityManager:
             return set()
         values = set()
         for key in ("*", command_key):
-            for item in section.get(key, []) or []:
-                text = str(item).strip()
-                if text:
-                    values.add(int(text))
+            values.update(SecurityManager._integer_values(section.get(key, []) or []))
         return values
+
+    @staticmethod
+    def _integer_values(values) -> set[int]:
+        result: set[int] = set()
+        for value in values or []:
+            text = str(value).strip()
+            if text.isdigit():
+                result.add(int(text))
+        return result
 
     def _read(self) -> dict[str, Any]:
         if not self.path.exists():
@@ -171,6 +181,14 @@ class SecurityManager:
 
     def _write(self, data: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.path)
+        tmp = self.path.with_name(f".{self.path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        try:
+            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            with contextlib.suppress(OSError):
+                tmp.chmod(stat.S_IRUSR | stat.S_IWUSR)
+            os.replace(tmp, self.path)
+            with contextlib.suppress(OSError):
+                self.path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        finally:
+            with contextlib.suppress(FileNotFoundError):
+                tmp.unlink()

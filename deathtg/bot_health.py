@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import os
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 
-from deathtg.config import ENV_PATH, ROOT_DIR, RUNTIME_DIR
+from deathtg.config import ENV_PATH, ROOT_DIR
 from deathtg.server_bootstrap import parse_env_file
 from deathtg.session_guard import session_main_file
-from deathtg.state_db import set_health, upsert, event
+from deathtg.state_db import set_health, upsert
 
 
 @dataclass(slots=True)

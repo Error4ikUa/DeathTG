@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 
 from deathtg.config import ROOT_DIR, RUNTIME_DIR
 
@@ -60,17 +59,17 @@ def update_env_value(key: str, value: str) -> None:
     lines = env.read_text(encoding="utf-8").splitlines() if env.exists() else []
     out: list[str] = []
     found = False
-    
+
     for line in lines:
         if line.startswith(f"{key}="):
             out.append(f"{key}={value}")
             found = True
         else:
             out.append(line)
-            
+
     if not found:
         out.append(f"{key}={value}")
-        
+
     content = "\n".join(out).rstrip() + "\n"
     temp_path = env.with_suffix(".tmp")
     temp_path.write_text(content, encoding="utf-8")

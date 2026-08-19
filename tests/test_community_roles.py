@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -68,6 +69,35 @@ class CommunityRoleStoreTests(unittest.TestCase):
             roles.revoke_role(800001, "admin", actor_id=123456)
         roles.revoke_role(800001, "admin", actor_id=roles.OWNER_TG_ID)
         self.assertFalse(roles.allowed_role(800001, "admin"))
+
+    def test_internal_grant_helpers_require_explicit_owner_actor(self) -> None:
+        with self.assertRaises(TypeError):
+            roles.grant_role(800001, "admin")
+        with self.assertRaises(TypeError):
+            roles.revoke_role(800001, "admin")
+
+    def test_concurrent_redemption_has_exactly_one_winner(self) -> None:
+        invite = roles.issue_role_invite("developer", actor_id=roles.OWNER_TG_ID)
+        barrier = threading.Barrier(2)
+        results: list[dict[str, object]] = []
+
+        def redeem(user_id: int) -> None:
+            barrier.wait()
+            results.append(roles.redeem_role_invite(str(invite["code"]), user_id=user_id))
+
+        threads = [threading.Thread(target=redeem, args=(user_id,)) for user_id in (810001, 810002)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(sum(bool(item["ok"]) for item in results), 1)
+        self.assertEqual(sum(roles.allowed_role(user_id, "developer") for user_id in (810001, 810002)), 1)
+
+    def test_role_scan_result_rejects_unsafe_or_empty_request_ids(self) -> None:
+        for value in ("", "../escape", "short", "with.dot"):
+            with self.assertRaises(ValueError):
+                roles.role_scan_result_path(value)
 
     def test_non_owner_uses_central_role_bot_not_local_generated_bot(self) -> None:
         with patch.dict(

@@ -1,22 +1,24 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import html
 import ipaddress
 import os
 import secrets
 import time
 import re
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
-import aiohttp
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.background import BackgroundTask
 
 from deathtg.assets import IMAGES_DIR, module_image_path
 from deathtg.metrics import init_metrics
+from deathtg.module_repo import MAX_MODULE_SOURCE_BYTES, fetch_public_binary
 from deathtg.panel.auth_flow import begin_qr_login, confirm_2fa, finish_login, friendly_login_error, qr_status, refresh_qr_login, write_env
 from deathtg.panel.clean_actions import _queue_userbot_action, load_pending_install, router as actions_router
 from deathtg.panel.clean_core import (
@@ -55,7 +57,6 @@ from deathtg.panel_access import (
     friendly_device_name,
     issue_device_grant,
     list_devices,
-    local_network_ip,
     panel_base_url,
     panel_remote_access_ready,
     panel_site_id,
@@ -84,7 +85,7 @@ from deathtg.startup_state import (
     startup_snapshot,
     sync_startup_state,
 )
-from deathtg.setup_access import current_setup_token, valid_setup_token
+from deathtg.setup_access import consume_setup_token, rotate_setup_token
 from deathtg.tailscale import tailscale_peer, tailscale_status
 from deathtg.update_manager import apply_update, inspect_update, load_update_state, save_update_state, schedule_restart
 
@@ -93,19 +94,101 @@ env_load()
 ensure_server_env()
 PANEL_GRANT_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.-]{16,512}$")
 AUTH_WINDOW_SECONDS = 10 * 60
+SETUP_SESSION_TTL = 2 * 60 * 60
 AUTH_ATTEMPT_LIMITS = {"login": 8, "setup_save": 6, "setup_pin": 10, "setup_secret": 8}
 AUTH_ATTEMPTS: dict[tuple[str, str], list[float]] = {}
+
+
+def _bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        value = int(str(os.getenv(name, default)).strip())
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
 SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-    "Content-Security-Policy": "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https://raw.githubusercontent.com; connect-src 'self'; "
+        "font-src 'self'; media-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
+        "form-action 'self'; object-src 'none'"
+    ),
 }
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 PUBLIC_UNSAFE_PATHS = {"/login", "/setup/save", "/setup/qr-refresh", "/setup/secret"}
+MAX_REQUEST_BODY_BYTES = _bounded_env_int(
+    "PANEL_MAX_BODY_BYTES",
+    10 * 1024 * 1024,
+    1024 * 1024,
+    64 * 1024 * 1024,
+)
 
-app = FastAPI(title="DeathTG Panel")
+
+class RequestBodyTooLarge(Exception):
+    pass
+
+
+class RequestBodyLimitMiddleware:
+    def __init__(self, app, *, max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = max(1, int(max_bytes))
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope.get("type") != "http" or str(scope.get("method") or "GET").upper() not in UNSAFE_METHODS:
+            await self.app(scope, receive, send)
+            return
+        headers = {key.lower(): value for key, value in scope.get("headers") or []}
+        raw_length = headers.get(b"content-length", b"").decode("ascii", errors="ignore")
+        if raw_length.isdigit() and int(raw_length) > self.max_bytes:
+            await self._reject(scope, receive, send)
+            return
+        received = 0
+        response_started = False
+
+        async def limited_receive():
+            nonlocal received
+            message = await receive()
+            if message.get("type") == "http.request":
+                received += len(message.get("body") or b"")
+                if received > self.max_bytes:
+                    raise RequestBodyTooLarge
+            return message
+
+        async def tracked_send(message):
+            nonlocal response_started
+            if message.get("type") == "http.response.start":
+                response_started = True
+            await send(message)
+
+        try:
+            await self.app(scope, limited_receive, tracked_send)
+        except RequestBodyTooLarge:
+            if response_started:
+                raise
+            await self._reject(scope, receive, send)
+
+    @staticmethod
+    async def _reject(scope, receive, send) -> None:
+        response = JSONResponse({"error": "Request body is too large"}, status_code=413)
+        for key, value in SECURITY_HEADERS.items():
+            response.headers.setdefault(key, value)
+        response.headers.setdefault("Cache-Control", "no-store")
+        await response(scope, receive, send)
+
+
+@asynccontextmanager
+async def panel_lifespan(_app: FastAPI):
+    await init_metrics()
+    await refresh_modules()
+    yield
+
+
+app = FastAPI(title="DeathTG Panel", lifespan=panel_lifespan)
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("PANEL_SECRET", secrets.token_hex(32)),
@@ -114,6 +197,7 @@ app.add_middleware(
     max_age=60 * 60 * 24 * 90,
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=panel_allowed_hosts())
+app.add_middleware(RequestBodyLimitMiddleware, max_bytes=MAX_REQUEST_BODY_BYTES)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/images", StaticFiles(directory=IMAGES_DIR), name="images")
 app.include_router(actions_router)
@@ -129,10 +213,17 @@ def _request_lang(request: Request) -> str:
     return "en"
 
 
-@app.on_event("startup")
-async def startup_event() -> None:
-    await init_metrics()
-    await refresh_modules()
+def _template_response(
+    name: str,
+    context: dict,
+    *,
+    status_code: int = 200,
+):
+    """Render through Starlette's request-first API from one audited boundary."""
+    request = context.get("request")
+    if not isinstance(request, Request):
+        raise RuntimeError(f"Template {name!r} is missing its request context")
+    return templates.TemplateResponse(request, name, context, status_code=status_code)
 
 
 @app.middleware("http")
@@ -148,7 +239,11 @@ async def harden_responses(request: Request, call_next):
                 not _network_access_allowed(request)
                 or not session_data.get("auth")
                 or not session_id
-                or not active_device(session_id)
+                or not active_device(
+                    session_id,
+                    ip=_client_ip(request),
+                    user_agent=request.headers.get("user-agent", ""),
+                )
             ):
                 request.session.clear()
                 response = JSONResponse({"error": "Authentication required"}, status_code=401)
@@ -160,15 +255,21 @@ async def harden_responses(request: Request, call_next):
         response = await call_next(request)
     for key, value in SECURITY_HEADERS.items():
         response.headers.setdefault(key, value)
-    if request.url.path.startswith(("/login", "/setup", "/grant")):
+    if not request.url.path.startswith(("/static/", "/images/")):
         response.headers.setdefault("Cache-Control", "no-store")
+    forwarded_proto = ""
+    direct_ip = getattr(getattr(request, "client", None), "host", None) or ""
+    if panel_trust_proxy() and _trusted_proxy_ip(direct_ip):
+        forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[-1].strip().lower()
+    if request.url.scheme == "https" or forwarded_proto == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
 
 
 def _auth_guard(request: Request):
     snapshot = startup_snapshot()
     if snapshot.get("setup_required") and not request.session.get("auth"):
-        return RedirectResponse(_setup_path_with_token(), status_code=303)
+        return RedirectResponse("/setup", status_code=303)
     local_request = _is_local_request(request)
     peer = _tailscale_request_peer(request)
     if not local_request and not peer and not public_panel_enabled():
@@ -181,7 +282,11 @@ def _auth_guard(request: Request):
     if not request.session.get("auth"):
         return RedirectResponse("/login", status_code=303)
     session_id = str(request.session.get("device_session_id") or "")
-    if not session_id or not active_device(session_id):
+    if not session_id or not active_device(
+        session_id,
+        ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent", ""),
+    ):
         request.session.clear()
         return RedirectResponse("/login?error=Device+session+revoked", status_code=303)
     return None
@@ -253,7 +358,19 @@ def _client_ip(request: Request) -> str:
     if panel_trust_proxy() and _trusted_proxy_ip(direct_ip):
         forwarded = request.headers.get("x-forwarded-for", "")
         if forwarded:
-            return forwarded.split(",", 1)[0].strip()
+            # Trusted proxies append the real peer to the right. Taking the
+            # first value lets a client inject 127.0.0.1 and gain local auth.
+            candidates = [item.strip() for item in forwarded.split(",") if item.strip()]
+            for candidate in reversed(candidates):
+                try:
+                    return str(ipaddress.ip_address(candidate.split("%", 1)[0]))
+                except ValueError:
+                    continue
+        real_ip = (request.headers.get("x-real-ip") or "").strip()
+        try:
+            return str(ipaddress.ip_address(real_ip.split("%", 1)[0]))
+        except ValueError:
+            pass
     return direct_ip
 
 
@@ -321,17 +438,46 @@ def _clear_auth_failures(bucket: str, request: Request) -> None:
     AUTH_ATTEMPTS.pop((bucket, _client_ip(request)), None)
 
 
+def _setup_session_allowed(request: Request) -> bool:
+    try:
+        granted_at = int(request.session.get("setup_granted_at") or 0)
+    except (TypeError, ValueError):
+        return False
+    return bool(granted_at and time.time() - granted_at <= SETUP_SESSION_TTL)
+
+
 def _setup_allowed(request: Request, setup_token: str = "") -> bool:
     if _is_local_request(request):
+        request.session["setup_granted_at"] = int(time.time())
         return True
-    return valid_setup_token(setup_token or request.query_params.get("setup_token", ""))
+    if _setup_session_allowed(request):
+        return True
+    candidate = setup_token or request.query_params.get("setup_token", "")
+    if consume_setup_token(candidate):
+        request.session["setup_granted_at"] = int(time.time())
+        return True
+    return False
 
 
-def _setup_path_with_token() -> str:
-    token = current_setup_token()
-    if token:
-        return f"/setup?setup_token={token}"
-    return "/setup"
+def _setup_mutation_allowed(request: Request, setup_token: str = "") -> bool:
+    return bool(startup_snapshot().get("setup_required") and _setup_allowed(request, setup_token))
+
+
+def _authorize_setup_device(request: Request) -> None:
+    request.session.pop("setup_flow_id", None)
+    request.session.pop("setup_granted_at", None)
+    request.session["auth"] = True
+    session_id = secrets.token_urlsafe(18)
+    request.session["device_session_id"] = session_id
+    remember_device_session(
+        session_id,
+        ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent", ""),
+        label=friendly_device_name(request.headers.get("user-agent", ""), "Setup device"),
+        auth_method="setup",
+    )
+    # Invalidate every setup URL that may remain in console or browser history.
+    rotate_setup_token()
 
 
 async def _base_context(request: Request) -> dict:
@@ -351,7 +497,11 @@ async def _base_context(request: Request) -> dict:
         "startup": startup_status(),
         "startup_state": startup_snapshot(),
         "devices": list_devices(),
-        "current_device": active_device(session_id) if session_id else None,
+        "current_device": active_device(
+            session_id,
+            ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent", ""),
+        ) if session_id else None,
         "public_panel_enabled": public_panel_enabled(),
         "panel_remote_access_ready": panel_remote_access_ready(),
         "panel_url": _current_panel_url(request),
@@ -405,7 +555,7 @@ def _setup_context(request: Request, step: str, *, error: str | None = None, mes
         "step": step,
         "error": error,
         "message": message,
-        "setup_token": current_setup_token(),
+        "setup_token": "",
         "panel_url": _current_panel_url(request),
         "panel_remote_access_ready": panel_remote_access_ready(),
         **extra,
@@ -452,14 +602,14 @@ async def setup_page(request: Request):
     if not _setup_allowed(request):
         return HTMLResponse(
             "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-            "<link rel='stylesheet' href='/static/clean.css'><link rel='stylesheet' href='/static/engineering.css?v=20260819.3'>"
+            "<link rel='stylesheet' href='/static/clean.css'><link rel='stylesheet' href='/static/engineering.css?v=20260819.6'>"
             "</head><body><main class='auth'><section class='card auth-card'>"
             "<div class='mark big'>DTG</div><h1>Setup token required</h1>"
             "<p>Open the private setup link printed in the DeathTG console.</p>"
             "</section></main></body></html>",
             status_code=403,
         )
-    return templates.TemplateResponse(
+    return _template_response(
         "setup.html",
         _setup_context(request, "start"),
     )
@@ -474,12 +624,12 @@ async def setup_done_page(request: Request):
     body = (
         "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>"
         "<title>DeathTG Ready</title><link rel='stylesheet' href='/static/clean.css'>"
-        "<link rel='stylesheet' href='/static/engineering.css?v=20260819.3'></head>"
+        "<link rel='stylesheet' href='/static/engineering.css?v=20260819.6'></head>"
         "<body><main class='auth'><section class='card auth-card'>"
         "<div class='mark big'>DTG</div>"
-        "<h1 style='margin-top:0'>Telegram connected</h1>"
+        "<h1>Telegram connected</h1>"
         "<p>DeathTG created your session and is preparing secure access.</p>"
-        f"<p>Current panel address: <code>{panel_url}</code></p>"
+        f"<p>Current panel address: <code>{html.escape(panel_url)}</code></p>"
         "<p>Check Telegram. Your personal secure panel links will arrive from the DeathTG bot.</p>"
         "<p>Do not share those links with anyone.</p>"
         "<p>If the bot message does not appear yet, wait a little and refresh later.</p>"
@@ -500,10 +650,10 @@ async def setup_save(
     session_name: str = Form("deathtg"),
     setup_token: str = Form(""),
 ):
-    if not _setup_allowed(request, setup_token):
+    if not _setup_mutation_allowed(request, setup_token):
         return HTMLResponse(
             "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-            "<link rel='stylesheet' href='/static/clean.css'><link rel='stylesheet' href='/static/engineering.css?v=20260819.3'>"
+            "<link rel='stylesheet' href='/static/clean.css'><link rel='stylesheet' href='/static/engineering.css?v=20260819.6'>"
             "</head><body><main class='auth'><section class='card auth-card'>"
             "<div class='mark big'>DTG</div><h1>Setup token required</h1>"
             "<p>Open the private setup link printed in the DeathTG console.</p>"
@@ -511,7 +661,7 @@ async def setup_save(
             status_code=403,
         )
     if _is_rate_limited("setup_save", request):
-        return templates.TemplateResponse(
+        return _template_response(
             "setup.html",
             _setup_context(request, "start", error="Too many setup attempts. Wait a few minutes and try again."),
             status_code=429,
@@ -527,27 +677,17 @@ async def setup_save(
         request.session["setup_flow_id"] = flow_id
         if qr_info.get("qr_state") == "done":
             await finish_login(flow_id)
-            request.session.pop("setup_flow_id", None)
-            request.session["auth"] = True
-            session_id = secrets.token_urlsafe(18)
-            request.session["device_session_id"] = session_id
-            remember_device_session(
-                session_id,
-                ip=_client_ip(request),
-                user_agent=request.headers.get("user-agent", ""),
-                label=friendly_device_name(request.headers.get("user-agent", ""), "Setup device"),
-                auth_method="setup",
-            )
+            _authorize_setup_device(request)
             _clear_auth_failures("setup_save", request)
             return RedirectResponse("/setup/done", status_code=303)
         _clear_auth_failures("setup_save", request)
-        return templates.TemplateResponse(
+        return _template_response(
             "setup.html",
             _setup_context(request, "qr", **qr_info),
         )
     except Exception as exc:
         _mark_auth_failure("setup_save", request)
-        return templates.TemplateResponse(
+        return _template_response(
             "setup.html",
             _setup_context(request, "start", error=friendly_login_error(exc)),
         )
@@ -555,6 +695,8 @@ async def setup_save(
 
 @app.get("/setup/qr-status")
 async def setup_qr_status(request: Request):
+    if not _setup_mutation_allowed(request):
+        return JSONResponse({"qr_state": "forbidden", "redirect": "/setup"}, status_code=403)
     flow_id = request.session.get("setup_flow_id")
     if not flow_id:
         return JSONResponse({"qr_state": "missing", "redirect": "/setup"}, status_code=404)
@@ -562,17 +704,7 @@ async def setup_qr_status(request: Request):
     state = info.get("qr_state")
     if state == "done":
         await finish_login(flow_id)
-        request.session.pop("setup_flow_id", None)
-        request.session["auth"] = True
-        session_id = secrets.token_urlsafe(18)
-        request.session["device_session_id"] = session_id
-        remember_device_session(
-            session_id,
-            ip=_client_ip(request),
-            user_agent=request.headers.get("user-agent", ""),
-            label=friendly_device_name(request.headers.get("user-agent", ""), "Setup device"),
-            auth_method="setup",
-        )
+        _authorize_setup_device(request)
         return JSONResponse({"qr_state": "done", "redirect": "/setup/done"})
     if state == "2fa":
         return JSONResponse({"qr_state": "2fa", "redirect": "/setup/2fa"})
@@ -581,10 +713,12 @@ async def setup_qr_status(request: Request):
 
 @app.get("/setup/2fa", response_class=HTMLResponse)
 async def setup_2fa_page(request: Request):
+    if not _setup_mutation_allowed(request):
+        return RedirectResponse("/setup", status_code=303)
     flow_id = request.session.get("setup_flow_id")
     if not flow_id:
-        return RedirectResponse(_setup_path_with_token(), status_code=303)
-    return templates.TemplateResponse(
+        return RedirectResponse("/setup", status_code=303)
+    return _template_response(
         "setup.html",
         _setup_context(request, "secret"),
     )
@@ -592,11 +726,13 @@ async def setup_2fa_page(request: Request):
 
 @app.post("/setup/secret")
 async def setup_secret(request: Request, secret_value: str = Form(...)):
+    if not _setup_mutation_allowed(request):
+        return RedirectResponse("/setup", status_code=303)
     flow_id = request.session.get("setup_flow_id")
     if not flow_id:
-        return RedirectResponse(_setup_path_with_token(), status_code=303)
+        return RedirectResponse("/setup", status_code=303)
     if _is_rate_limited("setup_secret", request):
-        return templates.TemplateResponse(
+        return _template_response(
             "setup.html",
             _setup_context(request, "secret", error="Too many 2FA attempts. Wait a few minutes and try again."),
             status_code=429,
@@ -604,22 +740,12 @@ async def setup_secret(request: Request, secret_value: str = Form(...)):
     try:
         await confirm_2fa(flow_id, secret_value)
         await finish_login(flow_id)
-        request.session.pop("setup_flow_id", None)
-        request.session["auth"] = True
-        session_id = secrets.token_urlsafe(18)
-        request.session["device_session_id"] = session_id
-        remember_device_session(
-            session_id,
-            ip=_client_ip(request),
-            user_agent=request.headers.get("user-agent", ""),
-            label=friendly_device_name(request.headers.get("user-agent", ""), "Setup device"),
-            auth_method="setup",
-        )
+        _authorize_setup_device(request)
         _clear_auth_failures("setup_secret", request)
         return RedirectResponse("/setup/done", status_code=303)
     except Exception as exc:
         _mark_auth_failure("setup_secret", request)
-        return templates.TemplateResponse(
+        return _template_response(
             "setup.html",
             _setup_context(request, "secret", error=friendly_login_error(exc)),
         )
@@ -627,17 +753,19 @@ async def setup_secret(request: Request, secret_value: str = Form(...)):
 
 @app.post("/setup/qr-refresh")
 async def setup_qr_refresh(request: Request):
+    if not _setup_mutation_allowed(request):
+        return RedirectResponse("/setup", status_code=303)
     flow_id = request.session.get("setup_flow_id")
     if not flow_id:
-        return RedirectResponse(_setup_path_with_token(), status_code=303)
+        return RedirectResponse("/setup", status_code=303)
     try:
         info = await refresh_qr_login(flow_id)
-        return templates.TemplateResponse(
+        return _template_response(
             "setup.html",
             _setup_context(request, "qr", **info),
         )
     except Exception as exc:
-        return templates.TemplateResponse(
+        return _template_response(
             "setup.html",
             _setup_context(request, "qr", error=friendly_login_error(exc), **qr_status(flow_id)),
         )
@@ -647,14 +775,14 @@ async def setup_qr_refresh(request: Request):
 async def login_page(request: Request):
     snapshot = startup_snapshot()
     if snapshot.get("phase") in {PHASE_FIRST_RUN, PHASE_SETUP_WAIT_QR, PHASE_SETUP_WAIT_2FA}:
-        return RedirectResponse(_setup_path_with_token(), status_code=303)
+        return RedirectResponse("/setup", status_code=303)
     local_request = _is_local_request(request)
     peer = _tailscale_request_peer(request)
     network_allowed = bool(local_request or peer or public_panel_enabled())
     if request.session.get("auth") and network_allowed:
         return RedirectResponse("/", status_code=303)
     if request.session.get("auth") and not network_allowed:
-        return templates.TemplateResponse(
+        return _template_response(
             "clean_login.html",
             {
                 "request": request,
@@ -669,7 +797,7 @@ async def login_page(request: Request):
     if peer:
         _authorize_tailscale_request(request, peer)
         return RedirectResponse("/?message=Tailnet+device+connected", status_code=303)
-    return templates.TemplateResponse(
+    return _template_response(
         "clean_login.html",
         {"request": request, "error": request.query_params.get("error"), "lang": _request_lang(request)},
     )
@@ -678,7 +806,7 @@ async def login_page(request: Request):
 @app.get("/grant/{token}")
 async def grant_login(request: Request, token: str):
     if not has_env():
-        return RedirectResponse(_setup_path_with_token(), status_code=303)
+        return RedirectResponse("/setup", status_code=303)
     if not PANEL_GRANT_TOKEN_RE.fullmatch(token or ""):
         return RedirectResponse("/login?error=Invalid+grant+token", status_code=303)
     if not _network_access_allowed(request):
@@ -688,9 +816,12 @@ async def grant_login(request: Request, token: str):
             token,
             ip=_client_ip(request),
             user_agent=request.headers.get("user-agent", ""),
+            # A one-device link must not become a transferable bearer cookie.
+            # If the device changes networks, the owner can issue a fresh link.
+            bind_ip=True,
         )
-    except Exception as exc:
-        return RedirectResponse(f"/login?error={type(exc).__name__}: {exc}", status_code=303)
+    except Exception:
+        return RedirectResponse("/login?error=Secure+link+is+invalid+or+expired", status_code=303)
     request.session["auth"] = True
     request.session["device_session_id"] = payload["session_id"]
     return RedirectResponse("/?message=Connected+from+secure+device+link", status_code=303)
@@ -709,7 +840,7 @@ async def private_site_grant_login(request: Request, site_id: str, owner_slug: s
 async def login(request: Request):
     snapshot = startup_snapshot()
     if snapshot.get("setup_required"):
-        return RedirectResponse(_setup_path_with_token(), status_code=303)
+        return RedirectResponse("/setup", status_code=303)
     if _is_local_request(request):
         _authorize_local_request(request)
         return RedirectResponse("/?message=Local+device+connected", status_code=303)
@@ -717,7 +848,7 @@ async def login(request: Request):
     if peer:
         _authorize_tailscale_request(request, peer)
         return RedirectResponse("/?message=Tailnet+device+connected", status_code=303)
-    return templates.TemplateResponse(
+    return _template_response(
         "clean_login.html",
         {
             "request": request,
@@ -739,7 +870,7 @@ async def health_page(request: Request):
     if blocked:
         return blocked
     ctx = await _health_context(request)
-    return templates.TemplateResponse("clean_health.html", ctx)
+    return _template_response("clean_health.html", ctx)
 
 
 @app.get("/module-media/{name}")
@@ -751,6 +882,8 @@ async def module_media(request: Request, name: str):
     blocked = _auth_guard(request)
     if blocked:
         return blocked
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", name or "") or ".." in name:
+        return JSONResponse({"error": "invalid module name"}, status_code=400)
     path = module_image_path(name)
     if not path or not path.exists():
         return JSONResponse({"error": "module image not found"}, status_code=404)
@@ -785,7 +918,7 @@ async def revoke_device(request: Request, session_id: str):
     return RedirectResponse("/profile?message=Device+revoked", status_code=303)
 
 
-@app.get("/logout")
+@app.post("/logout")
 async def logout(request: Request):
     session_id = str(request.session.get("device_session_id") or "")
     if session_id:
@@ -801,7 +934,7 @@ async def home(request: Request):
         return blocked
     ctx = await _base_context(request)
     ctx["page"] = "home"
-    return templates.TemplateResponse("clean_home.html", ctx)
+    return _template_response("clean_home.html", ctx)
 
 
 @app.get("/profile", response_class=HTMLResponse)
@@ -811,7 +944,7 @@ async def profile_page(request: Request):
         return blocked
     ctx = await _base_context(request)
     ctx["top_modules"] = await top_modules()
-    return templates.TemplateResponse("clean_profile.html", ctx)
+    return _template_response("clean_profile.html", ctx)
 
 
 @app.get("/activity", response_class=HTMLResponse)
@@ -826,7 +959,7 @@ async def activity_page(request: Request):
             "top_modules": await top_modules(),
         }
     )
-    return templates.TemplateResponse("clean_activity.html", ctx)
+    return _template_response("clean_activity.html", ctx)
 
 
 @app.get("/browser", response_class=HTMLResponse)
@@ -859,7 +992,7 @@ async def browser_page(request: Request):
             "protected": PROTECTED_MODULES,
         }
     )
-    return templates.TemplateResponse("clean_browser.html", ctx)
+    return _template_response("clean_browser.html", ctx)
 
 
 @app.get("/installed", response_class=HTMLResponse)
@@ -871,7 +1004,7 @@ async def installed_page(request: Request):
     ctx = await _base_context(request)
     grouped = registry.by_module()
     ctx.update({"grouped": grouped, "module_cards": installed_module_cards(grouped), "protected": PROTECTED_MODULES})
-    return templates.TemplateResponse("clean_installed.html", ctx)
+    return _template_response("clean_installed.html", ctx)
 
 
 @app.get("/repo-modules/{name}", response_class=HTMLResponse)
@@ -881,7 +1014,7 @@ async def repo_module_detail_page(request: Request, name: str):
         return blocked
     ctx = await _base_context(request)
     ctx.update({"module": await repo_module_detail(name), "protected": PROTECTED_MODULES})
-    return templates.TemplateResponse("clean_module_detail.html", ctx)
+    return _template_response("clean_module_detail.html", ctx)
 
 
 @app.get("/modules/{name}", response_class=HTMLResponse)
@@ -892,7 +1025,7 @@ async def module_detail_page(request: Request, name: str):
     await refresh_modules()
     ctx = await _base_context(request)
     ctx.update({"module": await module_detail(name), "protected": PROTECTED_MODULES})
-    return templates.TemplateResponse("clean_module_detail.html", ctx)
+    return _template_response("clean_module_detail.html", ctx)
 
 
 @app.get("/scanner", response_class=HTMLResponse)
@@ -902,7 +1035,7 @@ async def scanner_page(request: Request):
         return blocked
     ctx = await _base_context(request)
     ctx.update({"report": None, "verdict": None})
-    return templates.TemplateResponse("clean_scanner.html", ctx)
+    return _template_response("clean_scanner.html", ctx)
 
 
 @app.post("/scanner/check", response_class=HTMLResponse)
@@ -918,16 +1051,22 @@ async def scanner_check(
     try:
         text = source or ""
         if file and file.filename:
-            text = (await file.read()).decode("utf-8", errors="replace")
+            payload = await file.read(MAX_MODULE_SOURCE_BYTES + 1)
+            if len(payload) > MAX_MODULE_SOURCE_BYTES:
+                raise RuntimeError("Module source is too large")
+            text = payload.decode("utf-8", errors="replace")
         if link and not text.strip():
             url = loader._normalize_github_url(link)
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=20) as response:
-                    if response.status != 200:
-                        raise RuntimeError(f"Download failed, HTTP {response.status}")
-                    text = await response.text()
+            payload = await fetch_public_binary(
+                url,
+                max_bytes=MAX_MODULE_SOURCE_BYTES,
+                label="Module source",
+            )
+            text = payload.decode("utf-8", errors="replace")
             if loader._looks_like_html(text):
                 raise RuntimeError("URL returned HTML, not Python code. Use raw/blob .py link.")
+        if len(text.encode("utf-8", errors="ignore")) > MAX_MODULE_SOURCE_BYTES:
+            raise RuntimeError("Module source is too large")
         if not text.strip():
             raise RuntimeError("Nothing to scan. Paste code, upload a file, or provide a module link.")
         trusted = is_trusted_module_link(link) if link else False
@@ -935,9 +1074,10 @@ async def scanner_check(
         verdict = report.verdict
         ctx = await _base_context(request)
         ctx.update({"report": report, "verdict": verdict})
-        return templates.TemplateResponse("clean_scanner.html", ctx)
+        return _template_response("clean_scanner.html", ctx)
     except Exception as exc:
-        return RedirectResponse(f"/scanner?error={type(exc).__name__}: {exc}", status_code=303)
+        error = quote(f"{type(exc).__name__}: {exc}")
+        return RedirectResponse(f"/scanner?error={error}", status_code=303)
 
 
 @app.post("/health/recheck")
@@ -965,10 +1105,12 @@ async def health_restart(request: Request):
         return blocked
     schedule_restart()
     return HTMLResponse(
-        "<html><head><meta http-equiv='refresh' content='8;url=/health'></head>"
-        "<body style='background:#050b08;color:#eaffef;font-family:sans-serif;padding:40px'>"
-        "<h1>DeathTG is restarting...</h1><p>Wait a few seconds. This page will reopen the health center automatically.</p>"
-        "</body></html>"
+        "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<meta http-equiv='refresh' content='8;url=/health'><link rel='stylesheet' href='/static/clean.css'>"
+        "<link rel='stylesheet' href='/static/engineering.css?v=20260819.6'></head>"
+        "<body><main class='auth'><section class='card auth-card'><div class='mark big'>DTG</div>"
+        "<h1>DeathTG is restarting...</h1><p>Wait a few seconds. The health center will reopen automatically.</p>"
+        "</section></main></body></html>"
     )
 
 
@@ -1007,13 +1149,18 @@ async def health_scan_modules(request: Request):
     return RedirectResponse(f"/health?message={message}", status_code=303)
 
 
-@app.get("/health/export-logs")
+@app.post("/health/export-logs")
 async def health_export_logs(request: Request):
     blocked = _auth_guard(request)
     if blocked:
         return blocked
     path = export_logs_bundle()
-    return FileResponse(path, filename=path.name)
+    return FileResponse(
+        path,
+        filename=path.name,
+        headers={"Cache-Control": "no-store"},
+        background=BackgroundTask(path.unlink, missing_ok=True),
+    )
 
 
 @app.post("/system/update/check")
@@ -1059,9 +1206,12 @@ async def restart_project(request: Request):
         return blocked
     target = await _system_return_target(request, "/")
     schedule_restart()
+    safe_target = html.escape(target, quote=True)
     return HTMLResponse(
-        f"<html><head><meta http-equiv='refresh' content='8;url={target}'></head>"
-        "<body style='background:#050b08;color:#eaffef;font-family:sans-serif;padding:40px'>"
-        "<h1>DeathTG is restarting...</h1><p>Wait a few seconds, then this page will try to reopen the panel.</p>"
-        "</body></html>"
+        "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+        f"<meta http-equiv='refresh' content='8;url={safe_target}'><link rel='stylesheet' href='/static/clean.css'>"
+        "<link rel='stylesheet' href='/static/engineering.css?v=20260819.6'></head>"
+        "<body><main class='auth'><section class='card auth-card'><div class='mark big'>DTG</div>"
+        "<h1>DeathTG is restarting...</h1><p>Wait a few seconds. The panel will reopen automatically.</p>"
+        "</section></main></body></html>"
     )

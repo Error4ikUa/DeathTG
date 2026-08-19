@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 
 from deathtg.config import RUNTIME_DIR
 
@@ -32,7 +31,6 @@ def normalize_role(role: str) -> str:
 
 
 def can_assign_role(*, current_role: str, requested_role: str) -> tuple[bool, str]:
-    current = normalize_role(current_role)
     requested = normalize_role(requested_role)
     if requested == "user":
         return True, ""

@@ -9,7 +9,7 @@ from typing import Any
 from deathtg.antivirus_manager import classify_report, scan_source
 from deathtg.assets import resolve_module_entry
 from deathtg.config import MODULES_DIR, RUNTIME_DIR
-from deathtg.state_db import set_health, upsert
+from deathtg.state_db import set_health, sync_module_requirements, upsert
 
 MODULE_META_PATH = RUNTIME_DIR / "module_meta.json"
 
@@ -181,15 +181,7 @@ def sync_module_state(module: ModuleState) -> None:
         preserve_existing=True,
         event_type="module.source.sync",
     )
-    for req in module.requirements or []:
-        upsert(
-            "module_requirements",
-            "module_key",
-            module.module_key,
-            {"requirement": req, "installed": 0, "error": ""},
-            preserve_existing=True,
-            event_type="module.requirement.sync",
-        )
+    sync_module_requirements(module.module_key, module.requirements or [])
 
 
 def sync_installed_modules() -> list[ModuleState]:

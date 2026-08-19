@@ -19,7 +19,6 @@ Database schema:
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from pathlib import Path
 
 import aiosqlite
 
