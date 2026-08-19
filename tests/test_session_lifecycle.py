@@ -240,6 +240,30 @@ class RestartLifecycleTests(unittest.TestCase):
         self.assertIn("snapshot unavailable", result["message"])
         stash.assert_not_called()
 
+    def test_reconcile_update_state_replaces_pre_deploy_commit(self) -> None:
+        responses = {
+            ("branch", "--show-current"): "main\n",
+            ("rev-parse", "HEAD"): "new-commit\n",
+            ("rev-parse", "origin/main"): "new-commit\n",
+            ("rev-list", "--count", "HEAD..origin/main"): "0\n",
+            ("rev-list", "--count", "origin/main..HEAD"): "0\n",
+        }
+
+        def fake_git(*args: str, timeout: int = 120):
+            return update_manager.subprocess.CompletedProcess(args, 0, responses[args], "")
+
+        with (
+            patch.object(update_manager, "load_update_state", return_value={"ok": True, "current": "old-commit"}),
+            patch.object(update_manager, "save_update_state", side_effect=lambda value: value),
+            patch.object(update_manager, "_run_git", side_effect=fake_git),
+        ):
+            result = update_manager.reconcile_local_update_state()
+
+        self.assertEqual(result["current"], "new-commit")
+        self.assertEqual(result["upcoming"], "new-commit")
+        self.assertFalse(result["update_available"])
+        self.assertEqual(result["message"], "Already up to date")
+
 
 if __name__ == "__main__":
     unittest.main()

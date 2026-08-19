@@ -538,7 +538,11 @@ label,.section-note { color:#c5cdd4 !important; font-size:12px; }
 }
 
 @media (max-width:1200px) {
-  .editor-shell { grid-template-columns:1fr !important; }
+  .editor-shell {
+    grid-template-columns:1fr !important;
+    grid-template-rows:max-content max-content !important;
+  }
+  .editor-form { overflow:visible !important; }
   .access-rail { position:static !important; }
 }
 
