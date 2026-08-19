@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from telethon import Button
 
 from deathtg.command import command
-from deathtg.config import RUNTIME_DIR, load_config
+from deathtg.config import load_config
 from deathtg.info_card import render_info_card
 from deathtg.metrics import installed_days, level_info, top_modules, usage_by_day, usage_total
 from deathtg.premium_emoji import emoji_line

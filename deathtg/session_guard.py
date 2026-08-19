@@ -15,6 +15,7 @@ from deathtg.server_bootstrap import parse_env_file, update_env_values
 SESSION_BACKUP_DIR = RUNTIME_DIR / "session_backups"
 UPDATE_MARKER_PATH = SESSION_BACKUP_DIR / "latest_update.json"
 UPDATE_MARKER_TTL = 24 * 60 * 60
+SESSION_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 def _safe_reason(reason: str) -> str:
@@ -25,14 +26,17 @@ def _snapshot_dir(reason: str) -> Path:
     return SESSION_BACKUP_DIR / f"{time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 1_000_000:06d}_{_safe_reason(reason)}"
 
 
-def _session_base(session_name: str) -> Path:
+def normalize_session_name(session_name: str) -> str:
     raw = (session_name or "deathtg").strip() or "deathtg"
     if raw.endswith(".session"):
         raw = raw[: -len(".session")]
-    path = Path(raw)
-    if not path.is_absolute():
-        path = ROOT_DIR / path
-    return path
+    if not SESSION_NAME_RE.fullmatch(raw):
+        raise ValueError("Session name may contain only letters, numbers, underscore and dash")
+    return raw
+
+
+def _session_base(session_name: str) -> Path:
+    return ROOT_DIR / normalize_session_name(session_name)
 
 
 def session_main_file(session_name: str) -> Path:
@@ -52,7 +56,11 @@ def session_files(session_name: str) -> list[Path]:
 
 def current_session_name() -> str:
     env = parse_env_file(ENV_PATH)
-    return (env.get("SESSION_NAME") or os.getenv("SESSION_NAME") or "deathtg").strip() or "deathtg"
+    raw = (env.get("SESSION_NAME") or os.getenv("SESSION_NAME") or "deathtg").strip() or "deathtg"
+    try:
+        return normalize_session_name(raw)
+    except ValueError:
+        return "deathtg"
 
 
 def _relative(path: Path) -> str:
@@ -69,15 +77,30 @@ def _chmod_private(path: Path) -> None:
         pass
 
 
+def _chmod_private_dir(path: Path) -> None:
+    try:
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+    except Exception:
+        pass
+
+
 def _bot_session_files() -> list[Path]:
     if not RUNTIME_DIR.exists():
         return []
-    return sorted(
+    candidates = {
         path
         for pattern in ("*_bot.session*", "inline_bot.session*", "helper_bot.session*", "community_bot.session*")
         for path in RUNTIME_DIR.glob(pattern)
-        if path.is_file() and SESSION_BACKUP_DIR not in path.parents
-    )
+        if path.is_file() and not path.is_symlink() and SESSION_BACKUP_DIR not in path.parents
+    }
+    bot_sessions_dir = RUNTIME_DIR / "bot_sessions"
+    if bot_sessions_dir.is_dir() and not bot_sessions_dir.is_symlink():
+        candidates.update(
+            path
+            for path in bot_sessions_dir.glob("*.session*")
+            if path.is_file() and not path.is_symlink()
+        )
+    return sorted(candidates)
 
 
 def private_runtime_files(session_name: str | None = None) -> list[Path]:
@@ -97,6 +120,21 @@ def private_runtime_files(session_name: str | None = None) -> list[Path]:
     return list(dedup.values())
 
 
+def harden_private_runtime_permissions(session_name: str | None = None) -> dict[str, int]:
+    """Restrict Telegram sessions and local credentials to the service account."""
+    files = private_runtime_files(session_name)
+    changed = 0
+    for path in files:
+        _chmod_private(path)
+        changed += 1
+    private_dirs = {SESSION_BACKUP_DIR, RUNTIME_DIR / "bot_sessions"}
+    private_dirs.update(path.parent for path in files if RUNTIME_DIR in path.parents)
+    for path in private_dirs:
+        if path.exists() and path.is_dir() and not path.is_symlink():
+            _chmod_private_dir(path)
+    return {"files": changed, "directories": len(private_dirs)}
+
+
 def create_private_snapshot(reason: str = "snapshot", *, mark_update: bool = False) -> dict[str, Any]:
     session_name = current_session_name()
     files = private_runtime_files(session_name)
@@ -111,6 +149,7 @@ def create_private_snapshot(reason: str = "snapshot", *, mark_update: bool = Fal
     }
     if files:
         backup_dir.mkdir(parents=True, exist_ok=True)
+        _chmod_private_dir(backup_dir)
     for source in files:
         relative = _relative(source)
         target = backup_dir / relative
@@ -145,6 +184,7 @@ def backup_session_files(session_name: str, reason: str = "session") -> dict[str
     SESSION_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     backup_dir = _snapshot_dir(reason)
     backup_dir.mkdir(parents=True, exist_ok=True)
+    _chmod_private_dir(backup_dir)
     manifest = {"created_at": int(time.time()), "reason": reason, "session_name": session_name, "files": []}
     for source in files:
         relative = _relative(source)
@@ -205,7 +245,11 @@ def _load_manifest(backup_dir: Path) -> dict[str, Any] | None:
 
 
 def restore_private_snapshot(backup_dir: str | Path, *, overwrite: bool = False) -> dict[str, Any]:
-    base = Path(backup_dir)
+    try:
+        base = Path(backup_dir).resolve()
+        base.relative_to(SESSION_BACKUP_DIR.resolve())
+    except (OSError, ValueError):
+        return {"ok": False, "restored": 0, "message": "session snapshot path is outside the backup directory"}
     manifest = _load_manifest(base)
     if not manifest:
         return {"ok": False, "restored": 0, "message": "session snapshot manifest is missing"}
@@ -218,9 +262,18 @@ def restore_private_snapshot(backup_dir: str | Path, *, overwrite: bool = False)
         backup_rel = str(item.get("backup") or source_rel).strip()
         if not source_rel or not backup_rel:
             continue
-        source = base / backup_rel
-        target = ROOT_DIR / source_rel
+        try:
+            source = (base / backup_rel).resolve()
+            source.relative_to(base)
+            target = (ROOT_DIR / source_rel).resolve()
+            target.relative_to(ROOT_DIR.resolve())
+        except (OSError, ValueError):
+            skipped += 1
+            continue
         if not source.exists() or not source.is_file():
+            skipped += 1
+            continue
+        if source.is_symlink():
             skipped += 1
             continue
         if target.exists() and not overwrite:
@@ -273,7 +326,10 @@ def recover_update_session_snapshot(*, clear: bool = True) -> dict[str, Any]:
 
 
 def migrate_legacy_session_if_needed(session_name: str | None = None) -> dict[str, Any]:
-    desired = (session_name or current_session_name()).strip() or "deathtg"
+    try:
+        desired = normalize_session_name(session_name or current_session_name())
+    except ValueError as exc:
+        return {"ok": False, "changed": False, "message": str(exc)}
     expected = session_main_file(desired)
     if expected.exists():
         return {"ok": True, "changed": False, "message": "session is present"}

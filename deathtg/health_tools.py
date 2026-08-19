@@ -4,16 +4,16 @@ import importlib.metadata
 import json
 import os
 import re
-import subprocess
-import sys
+import stat
 import time
 import zipfile
 from pathlib import Path
 
 from deathtg.assets import resolve_module_entry
-from deathtg.config import MODULES_DIR, ROOT_DIR, RUNTIME_DIR
+from deathtg.config import MODULES_DIR, RUNTIME_DIR
 from deathtg.module_repo import parse_requirements_text
 from deathtg.profile_store import update_env_value
+from deathtg.requirements_manager import install_requirements, safe_requirements
 from deathtg.security import is_trusted_module_link, scan_module_source
 
 
@@ -21,7 +21,19 @@ HEALTH_STATE_PATH = RUNTIME_DIR / "health_state.json"
 HEALTH_EXPORTS_DIR = RUNTIME_DIR / "health_exports"
 MODULE_META_PATH = RUNTIME_DIR / "module_meta.json"
 SAFE_MODE_ENV_KEY = "DTG_SAFE_MODE"
-REQUIREMENT_NAME_RE = re.compile(r"^\s*([A-Za-z0-9_.-]+)")
+REQUIREMENT_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9_.-]*)")
+MAX_EXPORTED_LOG_BYTES = 5 * 1024 * 1024
+SECRET_PATTERNS = (
+    (re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b"), "[REDACTED_BOT_TOKEN]"),
+    (re.compile(r"(?i)(setup_token=)[^&\s\"']+"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)/site/[^/\s]+/u\d+/[^?\s\"']+"), "/site/[REDACTED]"),
+    (
+        re.compile(
+            r'(?i)([\"\'](?:api_hash|panel_secret|panel_key|bot_token(?:_helper|_community)?|setup_token)[\"\']\s*[:=]\s*[\"\'])[^\"\']*'
+        ),
+        r"\1[REDACTED]",
+    ),
+)
 
 
 def load_health_state() -> dict[str, object]:
@@ -103,7 +115,8 @@ def _requirements_from_entry(entry: Path) -> list[str]:
             requirements.extend(parse_requirements_text(requirements_file.read_text(encoding="utf-8", errors="replace")))
         except Exception:
             pass
-    return sorted({item.strip() for item in requirements if item and item.strip()})
+    safe, _skipped = safe_requirements(requirements)
+    return sorted(set(safe))
 
 
 def _distribution_name(requirement: str) -> str:
@@ -161,19 +174,8 @@ def install_missing_requirements() -> dict[str, object]:
         result = {"ok": True, "installed": [], "message": "No missing requirements found."}
         save_health_state(last_requirements=result, requirements_state=state)
         return result
-    process = subprocess.run(
-        [sys.executable, "-m", "pip", "install", *missing],
-        cwd=ROOT_DIR,
-        text=True,
-        capture_output=True,
-        timeout=600,
-    )
-    output = ((process.stdout or "") + "\n" + (process.stderr or "")).strip()[-4000:]
-    result = {
-        "ok": process.returncode == 0,
-        "installed": missing if process.returncode == 0 else [],
-        "message": output or ("Requirements installed." if process.returncode == 0 else "pip failed"),
-    }
+    result = install_requirements(missing)
+    result["message"] = str(result.get("output") or ("Requirements installed." if result.get("ok") else "pip failed"))[-4000:]
     save_health_state(last_requirements=result, requirements_state=collect_requirement_state())
     return result
 
@@ -245,6 +247,19 @@ def export_logs_bundle() -> Path:
     with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in include_files:
             if path.exists() and path.is_file():
-                archive.write(path, arcname=path.name)
-    save_health_state(last_export=str(target))
+                raw = path.read_bytes()
+                truncated = len(raw) > MAX_EXPORTED_LOG_BYTES
+                if truncated:
+                    raw = raw[-MAX_EXPORTED_LOG_BYTES:]
+                text = raw.decode("utf-8", errors="replace")
+                for pattern, replacement in SECRET_PATTERNS:
+                    text = pattern.sub(replacement, text)
+                if truncated:
+                    text = "[DeathTG: earlier content omitted from export]\n" + text
+                archive.writestr(path.name, text)
+    try:
+        os.chmod(target, stat.S_IRUSR | stat.S_IWUSR)
+    except OSError:
+        pass
+    save_health_state(last_export_at=int(time.time()), last_export_name=target.name, last_export="")
     return target

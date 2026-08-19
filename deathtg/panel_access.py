@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import ipaddress
 import json
 import os
@@ -10,7 +11,9 @@ import socket
 import subprocess
 import threading
 import time
+import urllib.request
 import base64
+import stat
 from pathlib import Path
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -22,6 +25,8 @@ GRANTS_PATH = RUNTIME_DIR / "panel_device_grants.json"
 DEVICES_PATH = RUNTIME_DIR / "panel_devices.json"
 WSL_PUBLISH_STATE_PATH = RUNTIME_DIR / "wsl_publish_state.json"
 DEFAULT_GRANT_TTL = 60 * 60 * 24 * 7
+DEFAULT_DEVICE_IDLE_TTL = 60 * 60 * 24 * 30
+DEFAULT_DEVICE_ABSOLUTE_TTL = 60 * 60 * 24 * 90
 PANEL_STATE_LOCK = threading.RLock()
 
 
@@ -296,8 +301,22 @@ def ensure_wsl_public_access(*, request_elevation: bool = True) -> dict[str, str
 
 
 def _probe_url_ok(url: str, timeout: float = 2.0) -> bool:
+    parsed = urlparse(url)
+    if (
+        parsed.scheme != "http"
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.path != "/healthz"
+    ):
+        return False
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:
+        ipaddress.ip_address((parsed.hostname or "").split("%", 1)[0])
+    except ValueError:
+        return False
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:  # nosec B310
             return int(getattr(response, "status", 0) or 0) == 200
     except Exception:
         return False
@@ -425,6 +444,40 @@ def _hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _bounded_ttl(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    try:
+        value = int(_env(name, str(default)) or default)
+    except ValueError:
+        value = default
+    return max(minimum, min(value, maximum))
+
+
+def _device_fingerprint(user_agent: str) -> str:
+    """Bind a browser session to stable platform/browser traits, not versions."""
+    ua = (user_agent or "").strip().lower()
+    if not ua:
+        return ""
+    platforms = [
+        marker
+        for marker in ("windows nt", "android", "iphone", "ipad", "macintosh", "linux")
+        if marker in ua
+    ]
+    browsers = [
+        marker
+        for marker in ("edg/", "opr/", "firefox/", "chrome/", "safari/")
+        if marker in ua
+    ]
+    identity = "|".join(platforms[:1] + browsers[:1]) or ua[:120]
+    return _hash(identity)
+
+
+def _chmod_private(path: Path) -> None:
+    try:
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    except Exception:
+        pass
+
+
 def _read_json(path: Path) -> dict:
     if not path.exists():
         return {}
@@ -440,7 +493,9 @@ def _write_json(path: Path, payload: dict) -> None:
     temporary = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     try:
         temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        _chmod_private(temporary)
         os.replace(temporary, path)
+        _chmod_private(path)
     finally:
         try:
             temporary.unlink()
@@ -456,7 +511,10 @@ def _cleanup_grants(data: dict) -> dict:
             continue
         if item.get("revoked"):
             continue
-        expires_at = int(item.get("expires_at", 0) or 0)
+        try:
+            expires_at = int(item.get("expires_at", 0) or 0)
+        except (TypeError, ValueError):
+            continue
         if expires_at and expires_at < now:
             continue
         cleaned[str(grant_id)] = item
@@ -464,11 +522,33 @@ def _cleanup_grants(data: dict) -> dict:
 
 
 def _cleanup_devices(data: dict) -> dict:
+    now = int(time.time())
+    idle_ttl = _bounded_ttl(
+        "PANEL_DEVICE_IDLE_TTL",
+        DEFAULT_DEVICE_IDLE_TTL,
+        minimum=60 * 60,
+        maximum=60 * 60 * 24 * 365,
+    )
+    absolute_ttl = _bounded_ttl(
+        "PANEL_DEVICE_ABSOLUTE_TTL",
+        DEFAULT_DEVICE_ABSOLUTE_TTL,
+        minimum=60 * 60 * 24,
+        maximum=60 * 60 * 24 * 730,
+    )
     cleaned: dict[str, dict] = {}
     for session_id, item in data.items():
         if not isinstance(item, dict):
             continue
         if item.get("revoked"):
+            continue
+        try:
+            created_at = int(item.get("created_at", 0) or 0)
+            last_seen_at = int(item.get("last_seen_at", 0) or created_at)
+        except (TypeError, ValueError):
+            continue
+        if created_at and now - created_at > absolute_ttl:
+            continue
+        if last_seen_at and now - last_seen_at > idle_ttl:
             continue
         cleaned[str(session_id)] = item
     return cleaned
@@ -531,7 +611,13 @@ def issue_device_grant(
     return panel_private_url(owner_id=owner_id, token=token)
 
 
-def consume_device_grant(token: str, *, ip: str = "", user_agent: str = "") -> dict:
+def consume_device_grant(
+    token: str,
+    *,
+    ip: str = "",
+    user_agent: str = "",
+    bind_ip: bool = False,
+) -> dict:
     try:
         payload = _serializer().loads(token)
     except SignatureExpired as exc:
@@ -554,7 +640,7 @@ def consume_device_grant(token: str, *, ip: str = "", user_agent: str = "") -> d
             raise RuntimeError("Grant link revoked")
         if grant.get("used"):
             raise RuntimeError("Grant link already used")
-        if _hash(grant_secret) != str(grant.get("secret_hash") or ""):
+        if not hmac.compare_digest(_hash(grant_secret), str(grant.get("secret_hash") or "")):
             raise RuntimeError("Grant link verification failed")
         expires_at = int(grant.get("expires_at", 0) or 0)
         if expires_at and expires_at < now:
@@ -568,7 +654,9 @@ def consume_device_grant(token: str, *, ip: str = "", user_agent: str = "") -> d
             "last_seen_at": now,
             "last_ip": ip,
             "user_agent": user_agent[:240],
+            "fingerprint_hash": _device_fingerprint(user_agent),
             "auth_method": "grant",
+            "ip_bound": bool(bind_ip and ip),
             "grant_id": grant_id,
             "revoked": False,
         }
@@ -596,7 +684,12 @@ def remember_device_session(session_id: str, *, ip: str = "", user_agent: str = 
                 "last_seen_at": now,
                 "last_ip": ip,
                 "user_agent": user_agent[:240],
+                "fingerprint_hash": _device_fingerprint(user_agent) or item.get("fingerprint_hash", ""),
                 "auth_method": auth_method,
+                "ip_bound": bool(
+                    item.get("ip_bound")
+                    or (ip and auth_method in {"local", "setup", "tailscale"})
+                ),
                 "revoked": False,
             }
         )
@@ -613,11 +706,18 @@ def touch_device_session(session_id: str, *, ip: str = "", user_agent: str = "")
         item = devices.get(session_id)
         if not isinstance(item, dict):
             return None
+        fingerprint = _device_fingerprint(user_agent)
+        expected_fingerprint = str(item.get("fingerprint_hash") or "")
+        if expected_fingerprint and not hmac.compare_digest(expected_fingerprint, fingerprint):
+            return None
+        if item.get("ip_bound") and item.get("last_ip") and ip != item.get("last_ip"):
+            return None
         item["last_seen_at"] = int(time.time())
         if ip:
             item["last_ip"] = ip
         if user_agent:
             item["user_agent"] = user_agent[:240]
+            item["fingerprint_hash"] = fingerprint or expected_fingerprint
         devices[session_id] = item
         _write_json(DEVICES_PATH, devices)
         return dict(item, session_id=session_id)
@@ -634,10 +734,16 @@ def revoke_device_session(session_id: str) -> None:
             _write_json(DEVICES_PATH, devices)
 
 
-def active_device(session_id: str) -> dict | None:
+def active_device(session_id: str, *, ip: str = "", user_agent: str = "") -> dict | None:
     with PANEL_STATE_LOCK:
         devices = _cleanup_devices(_read_json(DEVICES_PATH))
         item = devices.get(session_id)
         if not isinstance(item, dict):
+            return None
+        fingerprint = _device_fingerprint(user_agent)
+        expected_fingerprint = str(item.get("fingerprint_hash") or "")
+        if expected_fingerprint and not hmac.compare_digest(expected_fingerprint, fingerprint):
+            return None
+        if item.get("ip_bound") and item.get("last_ip") and ip != item.get("last_ip"):
             return None
         return dict(item, session_id=session_id)

@@ -23,11 +23,13 @@ asynchronous metrics API.  Always remember to ``await`` these functions
 when calling them from FastAPI route handlers.
 """
 
+import asyncio
 import json
 import os
 import re
 import ast
 from pathlib import Path
+from urllib.parse import urlparse
 
 import aiohttp
 from dotenv import load_dotenv
@@ -35,17 +37,15 @@ from fastapi.templating import Jinja2Templates
 
 from deathtg.assets import (
     IMAGES_DIR,
-    MODULE_IMAGES_DIR,
     default_avatar_path,
     local_module_image_path,
-    module_image_path,
     resolve_module_entry,
     shared_module_image_path,
 )
 from deathtg.config import MODULES_DIR, ROOT_DIR, RUNTIME_DIR, load_config
 from deathtg.i18n import jinja_translate
 from deathtg.loader import ModuleLoader
-from deathtg.metrics import installed_days, level_info, top_modules, usage_by_day, usage_total
+from deathtg.metrics import installed_days, level_info, top_modules, usage_by_day, usage_total  # noqa: F401
 from deathtg.module_repo import fetch_module_bundle, fetch_repo_modules, parse_requirements_text
 from deathtg.profile_store import profile_settings
 from deathtg.registry import CommandRegistry
@@ -74,6 +74,7 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 templates.env.globals["tr"] = jinja_translate
 registry = CommandRegistry()
 loader = ModuleLoader(registry, MODULES_DIR)
+MODULE_REFRESH_LOCK = asyncio.Lock()
 
 
 def env_load() -> None:
@@ -130,27 +131,28 @@ def avatar_url() -> str:
 
 
 async def refresh_modules() -> None:
-    """Clear and reload all built‑in and local modules."""
-    registry._commands.clear()
-    registry._aliases.clear()
-    loader.loaded.clear()
-    loader.import_names.clear()
-    loader.source_paths.clear()
-    loader.instances.clear()
-    loader.watchers.clear()
-    loader.raw_handlers.clear()
-    loader.inline_handlers.clear()
-    loader.callback_handlers.clear()
-    await loader.load_builtin(
-        "deathtg.modules", ["core", "root", "info", "system", "antivirus", "terminal"]
-    )
-    meta = load_module_meta()
-    verified = {
-        name
-        for name, item in meta.items()
-        if isinstance(item, dict) and (item.get("verified") or item.get("security_override"))
-    }
-    await loader.load_all_local(force_modules=verified)
+    """Reload the panel registry without allowing concurrent clears."""
+    async with MODULE_REFRESH_LOCK:
+        registry._commands.clear()
+        registry._aliases.clear()
+        loader.loaded.clear()
+        loader.import_names.clear()
+        loader.source_paths.clear()
+        loader.instances.clear()
+        loader.watchers.clear()
+        loader.raw_handlers.clear()
+        loader.inline_handlers.clear()
+        loader.callback_handlers.clear()
+        await loader.load_builtin(
+            "deathtg.modules", ["core", "root", "info", "system", "antivirus", "terminal"]
+        )
+        meta = load_module_meta()
+        verified = {
+            name
+            for name, item in meta.items()
+            if isinstance(item, dict) and (item.get("verified") or item.get("security_override"))
+        }
+        await loader.load_all_local(force_modules=verified)
 
 
 def startup_status() -> dict:
@@ -523,9 +525,31 @@ async def activity_points() -> list[dict]:
     ]
 
 
+def _safe_module_image_url(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith(("/images/", "/module-media/")) and ".." not in raw and "\\" not in raw:
+        return raw
+    try:
+        parsed = urlparse(raw)
+    except ValueError:
+        return ""
+    if (
+        parsed.scheme == "https"
+        and parsed.hostname == "raw.githubusercontent.com"
+        and not parsed.username
+        and not parsed.password
+        and not parsed.fragment
+    ):
+        return raw
+    return ""
+
+
 def module_image_url(module_name: str, meta_image: str = "") -> str:
-    if meta_image:
-        return meta_image
+    safe_meta_image = _safe_module_image_url(meta_image)
+    if safe_meta_image:
+        return safe_meta_image
     local = local_module_image_path(module_name)
     if local and local.exists():
         try:
@@ -545,8 +569,9 @@ def module_image_url(module_name: str, meta_image: str = "") -> str:
 
 
 def repo_module_image_url(module_name: str, remote_image: str = "") -> str:
-    if remote_image:
-        return remote_image
+    safe_remote_image = _safe_module_image_url(remote_image)
+    if safe_remote_image:
+        return safe_remote_image
     shared = shared_module_image_path(module_name)
     if shared and shared.exists() and IMAGES_DIR in shared.parents:
         try:

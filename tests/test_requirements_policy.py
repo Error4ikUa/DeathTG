@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
+from deathtg.health_tools import _requirements_from_entry
 from deathtg.requirements_manager import install_requirements, safe_requirements
 
 
@@ -28,11 +31,19 @@ class RequirementPolicyTests(unittest.TestCase):
 
     def test_unsafe_or_internal_only_list_does_not_launch_pip(self) -> None:
         with patch("deathtg.requirements_manager.subprocess.run") as run:
-            result = install_requirements(["deathtg", "package; rm -rf /"])
+            result = install_requirements(
+                ["deathtg", "package; rm -rf /", "--index-url", "-e", "--extra-index-url=https://evil.example"]
+            )
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["installed"], [])
         run.assert_not_called()
+
+    def test_health_repair_uses_the_same_requirement_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            entry = Path(tmp) / "Demo.py"
+            entry.write_text("# requires: deathtg aiohttp>=3.9 --extra-index-url\n", encoding="utf-8")
+            self.assertEqual(_requirements_from_entry(entry), ["aiohttp>=3.9"])
 
 
 if __name__ == "__main__":

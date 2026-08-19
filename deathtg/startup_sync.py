@@ -4,11 +4,10 @@ import asyncio
 import contextlib
 import json
 import os
-import random
 import re
+import secrets
 import string
 import time
-from pathlib import Path
 
 import aiohttp
 from dotenv import load_dotenv
@@ -157,7 +156,7 @@ def _is_valid_bot_username(username: str, owner_id: int) -> bool:
 
 def _random_bot_username(owner_id: int, role: str = "inline") -> str:
     role_prefix = {"inline": "i", "helper": "h", "community": "c"}.get(role, "x")
-    suffix = "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(6))
+    suffix = "".join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(6))
     return f"dtg{owner_id}_{role_prefix}{suffix}_bot"
 
 
@@ -1710,4 +1709,3 @@ async def _run_startup_sync_locked(client) -> dict:
     await _notify_integrity_if_needed(client, owner_id, status, previous_status)
     _write_status(status)
     return status
-

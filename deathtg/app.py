@@ -40,7 +40,7 @@ from deathtg.registry import CommandRegistry, PROTECTED_MODULES
 from deathtg.startup_sync import run_startup_sync
 from deathtg.startup_sync import check_runtime_integrity
 from deathtg.server_bootstrap import update_env_values
-from deathtg.session_guard import quarantine_session_files
+from deathtg.session_guard import harden_private_runtime_permissions, quarantine_session_files
 from deathtg.telethon_policy import INVALID_SESSION_ERRORS, client_retry_kwargs, quiet_telethon_network_logs
 from deathtg.update_manager import (
     apply_update,
@@ -115,6 +115,7 @@ class DeathTG:
             await self.client.disconnect()
             return
         self.owner_premium = bool(getattr(me, "premium", False))
+        harden_private_runtime_permissions(self.config.session_name)
         if self.config.owner_id is None:
             self.config.owner_id = me.id
 

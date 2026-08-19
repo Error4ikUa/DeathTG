@@ -6,18 +6,22 @@ function openMenu(value) {
   if (!drawer || !overlay) return;
   drawer.classList.toggle("open", value);
   overlay.classList.toggle("open", value);
+  if (toggle) toggle.setAttribute("aria-expanded", value ? "true" : "false");
 }
 
 if (toggle) toggle.onclick = () => openMenu(!drawer.classList.contains("open"));
 if (overlay) overlay.onclick = () => openMenu(false);
 document.querySelectorAll(".mini-menu a").forEach((a) => (a.onclick = () => openMenu(false)));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") openMenu(false);
+});
 
 (function warmPageLinks() {
   const seen = new Set();
   const links = [...document.querySelectorAll('a[href^="/"]')];
   for (const link of links) {
     const href = link.getAttribute("href");
-    if (!href || href.startsWith("/logout") || seen.has(href)) continue;
+    if (!href || seen.has(href)) continue;
     seen.add(href);
     const preload = document.createElement("link");
     preload.rel = "prefetch";
@@ -57,6 +61,18 @@ function setupTabs() {
 
 setupTabs();
 window.addEventListener("hashchange", () => activateTab(location.hash.replace("#", "")));
+
+document.querySelectorAll("[data-select-on-focus]").forEach((field) => {
+  const selectValue = () => field.select();
+  field.addEventListener("focus", selectValue);
+  field.addEventListener("click", selectValue);
+});
+
+document.querySelectorAll("[data-progress]").forEach((bar) => {
+  const raw = Number(bar.dataset.progress || 0);
+  const value = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 0;
+  bar.style.width = `${value}%`;
+});
 
 const search = document.getElementById("moduleSearch");
 if (search) {
@@ -366,6 +382,41 @@ function setupAvatarCrop() {
 
 setupAvatarCrop();
 
+(function setupQrPolling() {
+  const qrRefreshForm = document.getElementById("qr-refresh-form");
+  const qrStatusText = document.getElementById("qr-status-text");
+  if (!qrRefreshForm) return;
+
+  const statusText = (name, fallback) => String(qrStatusText?.dataset?.[name] || fallback || "");
+  const poll = async () => {
+    try {
+      const response = await fetch("/setup/qr-status", { cache: "no-store", credentials: "same-origin" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      if (data.redirect) {
+        window.location.assign(String(data.redirect));
+        return;
+      }
+      if (data.qr_state === "expired" || data.qr_state === "error") {
+        if (qrStatusText) {
+          const fallback = data.qr_state === "expired" ? statusText("refreshText") : statusText("failedText");
+          qrStatusText.textContent = String(data.qr_error || fallback);
+        }
+        qrRefreshForm.hidden = false;
+        return;
+      }
+    } catch (error) {
+      if (qrStatusText) qrStatusText.textContent = statusText("waitText");
+    }
+    window.setTimeout(poll, 2000);
+  };
+
+  window.setTimeout(() => {
+    qrRefreshForm.hidden = false;
+  }, 30000);
+  window.setTimeout(poll, 2000);
+})();
+
 (function guardPostForms() {
   document.querySelectorAll('form[method="post"], form[method="POST"]').forEach((form) => {
     form.addEventListener("submit", (event) => {
@@ -409,14 +460,16 @@ function shortDay(day) {
   return parts.length === 3 ? `${parts[2]}.${parts[1]}` : day;
 }
 
-function showTip(x, y, html) {
+function showTip(x, y, title, body) {
   let tip = document.querySelector(".dtg-tooltip");
   if (!tip) {
     tip = document.createElement("div");
     tip.className = "dtg-tooltip";
     document.body.appendChild(tip);
   }
-  tip.innerHTML = html;
+  const heading = document.createElement("b");
+  heading.textContent = String(title || "");
+  tip.replaceChildren(heading, document.createTextNode(` - ${String(body || "")}`));
   tip.style.left = x + "px";
   tip.style.top = y + "px";
   tip.style.opacity = "1";
@@ -502,7 +555,7 @@ function drawLineChart() {
   el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><g class="grid">${vLines}${hLines}</g>${yLabels}${xLabels}<path class="area" d="${area}"/><path class="line" d="${line}"/>${dots}</svg>`;
   el.querySelectorAll(".dot").forEach((dot) => {
     const pt = pts[Number(dot.dataset.i)];
-    dot.addEventListener("mousemove", (event) => showTip(event.clientX, event.clientY, `<b>${shortDay(pt.day)}</b> - ${pt.modules.join(", ") || "No modules"}`));
+    dot.addEventListener("mousemove", (event) => showTip(event.clientX, event.clientY, shortDay(pt.day), pt.modules.join(", ") || "No modules"));
     dot.addEventListener("mouseleave", hideTip);
   });
 }

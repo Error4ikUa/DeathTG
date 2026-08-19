@@ -1,8 +1,14 @@
 from __future__ import annotations
 
-import asyncio
+import datetime as dt
+import getpass
 import html
+import platform
 import shlex
+import shutil
+import sys
+
+import psutil
 
 from deathtg.command import command
 from deathtg.config import ROOT_DIR
@@ -22,24 +28,18 @@ SAFE_COMMANDS = {
     "python3",
 }
 
-BLOCKED_PARTS = {
-    "rm",
-    "del",
-    "format",
-    "mkfs",
-    "shutdown",
-    "reboot",
-    "poweroff",
-    "dd",
-    "curl",
-    "wget",
-    "nc",
-    "netcat",
-    "chmod",
-    "chown",
-    "sudo",
-    "su",
-    "git",
+SAFE_ARGUMENTS = {
+    "pwd": {()},
+    "ls": {(), ("-l",), ("-la",), ("-al",)},
+    "dir": {()},
+    "whoami": {()},
+    "uname": {(), ("-a",)},
+    "date": {()},
+    "uptime": {()},
+    "df": {(), ("-h",)},
+    "free": {(), ("-h",), ("-m",)},
+    "python": {("--version",), ("-V",)},
+    "python3": {("--version",), ("-V",)},
 }
 
 
@@ -139,24 +139,44 @@ class TerminalMod(Module):
         base = parts[0].lower()
         if base not in SAFE_COMMANDS:
             return False, f"Command '{base}' is not allowed."
-        for part in parts:
-            if part.lower() in BLOCKED_PARTS:
-                return False, f"Token '{part}' is blocked."
+        arguments = tuple(parts[1:])
+        if arguments not in SAFE_ARGUMENTS[base]:
+            return False, f"Arguments for '{base}' are not allowed. Use a preset."
         return True, ""
 
     async def _run(self, raw: str) -> str:
-        proc = await asyncio.create_subprocess_shell(
-            raw,
-            cwd=str(ROOT_DIR),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=20)
-        except asyncio.TimeoutError:
-            proc.kill()
-            return "Command timed out."
-        return (stdout + stderr).decode("utf-8", errors="replace").strip()[-3000:] or "Empty output."
+        parts = shlex.split(raw)
+        command = parts[0].lower()
+        if command == "pwd":
+            return str(ROOT_DIR)
+        if command in {"ls", "dir"}:
+            rows = []
+            for path in sorted(ROOT_DIR.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower())):
+                kind = "d" if path.is_dir() else "f"
+                size = "-" if path.is_dir() else str(path.stat().st_size)
+                rows.append(f"{kind} {size:>10} {path.name}")
+            return "\n".join(rows)[-3000:] or "Empty directory."
+        if command == "whoami":
+            return getpass.getuser()
+        if command == "uname":
+            return platform.platform()
+        if command == "date":
+            return dt.datetime.now().astimezone().isoformat(timespec="seconds")
+        if command == "uptime":
+            seconds = max(0, int(dt.datetime.now().timestamp() - psutil.boot_time()))
+            days, remainder = divmod(seconds, 86400)
+            hours, remainder = divmod(remainder, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            return f"{days}d {hours:02d}:{minutes:02d}:{seconds:02d}"
+        if command == "df":
+            usage = shutil.disk_usage(ROOT_DIR)
+            return f"total={usage.total} used={usage.used} free={usage.free}"
+        if command == "free":
+            memory = psutil.virtual_memory()
+            return f"total={memory.total} used={memory.used} available={memory.available} percent={memory.percent}%"
+        if command in {"python", "python3"}:
+            return sys.version.replace("\n", " ")
+        return "Unsupported diagnostic."
 
     @staticmethod
     def _result_text(raw: str, output: str) -> str:

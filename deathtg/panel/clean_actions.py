@@ -2,22 +2,28 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import json
+import os
+import re
 import secrets
 import shutil
+import stat
+import threading
 import time
+from io import BytesIO
 from pathlib import Path
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 
-import aiohttp
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from deathtg.config import MODULES_DIR, ROOT_DIR, RUNTIME_DIR
 from deathtg.panel.clean_core import MODULE_META_PATH, loader, refresh_modules, _extract_module_source_meta
 from deathtg.profile_store import profile_settings, save_profile_settings, update_env_value
 from deathtg.registry import PROTECTED_MODULES
-from deathtg.module_repo import fetch_module_bundle, parse_requirements_text
+from deathtg.module_repo import MAX_REMOTE_IMAGE_BYTES, fetch_module_bundle, fetch_public_binary, parse_requirements_text
 from deathtg.module_config import ModuleConfig, ValidationError
 from deathtg.requirements_manager import install_requirements, safe_requirements
 from deathtg.role_gate import can_assign_role, normalize_role
@@ -29,34 +35,50 @@ router = APIRouter()
 USER_STATIC_DIR = Path(__file__).resolve().parent / "static" / "user"
 PANEL_ACTIONS_PATH = RUNTIME_DIR / "panel_actions.jsonl"
 PENDING_INSTALLS_DIR = RUNTIME_DIR / "pending_installs"
+PENDING_INSTALL_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{20,64}$")
+PENDING_INSTALL_TTL = 30 * 60
+MAX_PENDING_INSTALL_BYTES = 5 * 1024 * 1024
 ROLE_SCAN_TIMEOUT_SECONDS = 15.0
+MAX_AVATAR_INPUT_BYTES = 8 * 1024 * 1024
+MAX_AVATAR_PIXELS = 16_000_000
+MAX_AVATAR_EDGE = 2048
+PANEL_FILE_LOCK = threading.RLock()
 
 
 def _load_module_meta() -> dict[str, dict]:
-    if not MODULE_META_PATH.exists():
-        return {}
-    try:
-        return json.loads(MODULE_META_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    with PANEL_FILE_LOCK:
+        if not MODULE_META_PATH.exists():
+            return {}
+        try:
+            payload = json.loads(MODULE_META_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        return payload if isinstance(payload, dict) else {}
 
 
 def _save_module_meta(data: dict[str, dict]) -> None:
-    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
-    MODULE_META_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    with PANEL_FILE_LOCK:
+        RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        temporary = MODULE_META_PATH.with_name(f".{MODULE_META_PATH.name}.{secrets.token_hex(4)}.tmp")
+        temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        with contextlib.suppress(OSError):
+            temporary.chmod(0o600)
+        os.replace(temporary, MODULE_META_PATH)
 
 
 def _set_module_meta(module_name: str, **payload: object) -> None:
-    meta = _load_module_meta()
-    meta[module_name] = {"updated_at": int(time.time()), **payload}
-    _save_module_meta(meta)
+    with PANEL_FILE_LOCK:
+        meta = _load_module_meta()
+        meta[module_name] = {"updated_at": int(time.time()), **payload}
+        _save_module_meta(meta)
 
 
 def _drop_module_meta(module_name: str) -> None:
-    meta = _load_module_meta()
-    if module_name in meta:
-        meta.pop(module_name, None)
-        _save_module_meta(meta)
+    with PANEL_FILE_LOCK:
+        meta = _load_module_meta()
+        if module_name in meta:
+            meta.pop(module_name, None)
+            _save_module_meta(meta)
 
 
 def _redirect(path: str, *, message: str | None = None, error: str | None = None) -> RedirectResponse:
@@ -100,12 +122,49 @@ def _safe_module_name(name: str) -> str:
     return stem
 
 
+def _normalize_avatar(data: bytes) -> bytes:
+    if not data:
+        raise RuntimeError("Avatar file is empty")
+    if len(data) > MAX_AVATAR_INPUT_BYTES:
+        raise RuntimeError("Avatar is larger than 8 MB")
+    try:
+        with Image.open(BytesIO(data)) as probe:
+            width, height = probe.size
+            if width < 1 or height < 1 or width * height > MAX_AVATAR_PIXELS:
+                raise RuntimeError("Avatar dimensions are too large")
+            probe.verify()
+        with Image.open(BytesIO(data)) as source:
+            image = ImageOps.exif_transpose(source)
+            image.load()
+            if image.mode not in {"RGB", "RGBA"}:
+                image = image.convert("RGBA" if "transparency" in image.info else "RGB")
+            image.thumbnail((MAX_AVATAR_EDGE, MAX_AVATAR_EDGE), Image.Resampling.LANCZOS)
+            output = BytesIO()
+            image.save(output, format="PNG", optimize=True)
+            return output.getvalue()
+    except (Image.DecompressionBombError, UnidentifiedImageError, OSError) as exc:
+        raise RuntimeError("Avatar must be a valid PNG, JPEG or WebP image") from exc
+
+
+def _save_avatar(data: bytes) -> None:
+    USER_STATIC_DIR.mkdir(parents=True, exist_ok=True)
+    target = USER_STATIC_DIR / "avatar.png"
+    temp_path = target.with_suffix(".tmp")
+    temp_path.write_bytes(_normalize_avatar(data))
+    with contextlib.suppress(OSError):
+        temp_path.chmod(0o600)
+    os.replace(temp_path, target)
+
+
 def _queue_userbot_action(action: str, **payload: object) -> None:
-    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
-    item = {"action": action, "ts": int(time.time())}
-    item.update(payload)
-    with PANEL_ACTIONS_PATH.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(item, ensure_ascii=False) + "\n")
+    with PANEL_FILE_LOCK:
+        RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        item = {"action": action, "ts": int(time.time())}
+        item.update(payload)
+        with PANEL_ACTIONS_PATH.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(item, ensure_ascii=False) + "\n")
+        with contextlib.suppress(OSError):
+            PANEL_ACTIONS_PATH.chmod(0o600)
 
 
 async def _request_role_scan(role: str) -> tuple[bool, str]:
@@ -148,8 +207,16 @@ def _report_payload(report) -> dict:
 
 
 def _pending_path(token: str) -> Path:
-    safe = "".join(ch for ch in token if ch.isalnum() or ch in {"_", "-"})
-    return PENDING_INSTALLS_DIR / f"{safe}.json"
+    if not PENDING_INSTALL_TOKEN_RE.fullmatch(token or ""):
+        raise ValueError("Invalid pending install token")
+    return PENDING_INSTALLS_DIR / f"{token}.json"
+
+
+def _chmod_private(path: Path) -> None:
+    try:
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    except OSError:
+        pass
 
 
 def _save_pending_install(
@@ -171,8 +238,9 @@ def _save_pending_install(
 ) -> str:
     PENDING_INSTALLS_DIR.mkdir(parents=True, exist_ok=True)
     token = secrets.token_urlsafe(18)
-    _pending_path(token).write_text(
-        json.dumps(
+    target = _pending_path(token)
+    temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    payload = json.dumps(
             {
                 "filename": Path(filename).name,
                 "source": source,
@@ -192,17 +260,33 @@ def _save_pending_install(
             },
             ensure_ascii=False,
             indent=2,
-        ),
-        encoding="utf-8",
     )
+    if len(payload.encode("utf-8")) > MAX_PENDING_INSTALL_BYTES:
+        raise ValueError("Pending module payload is too large")
+    try:
+        temporary.write_text(payload, encoding="utf-8")
+        _chmod_private(temporary)
+        os.replace(temporary, target)
+        _chmod_private(target)
+    finally:
+        temporary.unlink(missing_ok=True)
     return token
 
 
 def load_pending_install(token: str | None) -> dict | None:
     if not token:
         return None
-    path = _pending_path(token)
+    try:
+        path = _pending_path(token)
+    except ValueError:
+        return None
     if not path.exists():
+        return None
+    try:
+        if path.stat().st_size > MAX_PENDING_INSTALL_BYTES:
+            path.unlink(missing_ok=True)
+            return None
+    except OSError:
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -210,8 +294,36 @@ def load_pending_install(token: str | None) -> dict | None:
         return None
     if not isinstance(data, dict):
         return None
+    try:
+        created_at = int(data.get("created_at") or 0)
+    except (TypeError, ValueError):
+        path.unlink(missing_ok=True)
+        return None
+    if not created_at or time.time() - created_at > PENDING_INSTALL_TTL:
+        path.unlink(missing_ok=True)
+        return None
     data["token"] = token
     return data
+
+
+def _consume_pending_install(token: str) -> dict | None:
+    """Atomically claim a security override so concurrent requests cannot replay it."""
+    pending = load_pending_install(token)
+    if not pending:
+        return None
+    source = _pending_path(token)
+    claimed = source.with_name(f".{source.name}.{secrets.token_urlsafe(6)}.claimed")
+    try:
+        os.replace(source, claimed)
+    except OSError:
+        return None
+    try:
+        data = json.loads(claimed.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+    finally:
+        claimed.unlink(missing_ok=True)
 
 
 async def _download_module_source(link: str) -> tuple[str, str]:
@@ -279,10 +391,12 @@ async def _install_module_source(
             (target / "requirements.txt").write_text(requirements_text, encoding="utf-8")
         if image:
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(image, timeout=20) as response:
-                        if response.status == 200:
-                            (target / "Module.png").write_bytes(await response.read())
+                image_data = await fetch_public_binary(
+                    image,
+                    max_bytes=MAX_REMOTE_IMAGE_BYTES,
+                    label="Module image",
+                )
+                (target / "Module.png").write_bytes(image_data)
             except Exception:
                 pass
     else:
@@ -366,19 +480,20 @@ async def upload_avatar(
     if _require_auth(request):
         return JSONResponse({"error": "Auth"}, 401)
     try:
-        USER_STATIC_DIR.mkdir(parents=True, exist_ok=True)
         data: bytes
         if avatar_file and avatar_file.filename:
-            data = await avatar_file.read()
-            if not data:
-                raise RuntimeError("Avatar file is empty")
-            (USER_STATIC_DIR / "avatar.png").write_bytes(data)
+            data = await avatar_file.read(MAX_AVATAR_INPUT_BYTES + 1)
+            _save_avatar(data)
             _queue_userbot_action("startup_sync")
             return RedirectResponse("/profile?message=Avatar saved", status_code=303)
         if not avatar_base64:
             raise RuntimeError("Avatar payload is empty")
-        data = base64.b64decode(avatar_base64.split(",", 1)[1])
-        (USER_STATIC_DIR / "avatar.png").write_bytes(data)
+        encoded = avatar_base64.split(",", 1)[1] if "," in avatar_base64 else avatar_base64
+        try:
+            data = base64.b64decode(encoded, validate=True)
+        except (ValueError, TypeError) as exc:
+            raise RuntimeError("Avatar payload is not valid base64") from exc
+        _save_avatar(data)
         _queue_userbot_action("startup_sync")
         return JSONResponse({"status": "ok", "avatar": f"/static/user/avatar.png?t={int(time.time())}"})
     except Exception as e:
@@ -464,7 +579,10 @@ async def delete_pending_mod(request: Request, token: str, return_to: str = Form
     blocked = _require_auth(request)
     if blocked:
         return blocked
-    _pending_path(token).unlink(missing_ok=True)
+    try:
+        _pending_path(token).unlink(missing_ok=True)
+    except ValueError:
+        pass
     return _redirect(_target_path(return_to), message="Module install cancelled")
 
 
@@ -473,7 +591,7 @@ async def continue_pending_mod(request: Request, token: str, return_to: str = Fo
     blocked = _require_auth(request)
     if blocked:
         return blocked
-    pending = load_pending_install(token)
+    pending = _consume_pending_install(token)
     if not pending:
         return _redirect(_target_path(return_to), error="Pending module was not found")
     try:
@@ -493,7 +611,6 @@ async def continue_pending_mod(request: Request, token: str, return_to: str = Fo
             image_name=str(pending.get("image_name") or ""),
             requirements_text=str(pending.get("requirements_text") or ""),
         )
-        _pending_path(token).unlink(missing_ok=True)
         return _redirect(_target_path(return_to), message=f"Installed with warning: {name}")
     except Exception as e:
         return _redirect(_target_path(return_to), error=str(e))

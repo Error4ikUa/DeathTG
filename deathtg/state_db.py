@@ -11,6 +11,15 @@ from deathtg.config import RUNTIME_DIR
 
 STATE_DB = RUNTIME_DIR / "state.db"
 SCHEMA_VERSION = 3
+UPSERT_KEYS = {
+    "settings": "key",
+    "bots": "bot_key",
+    "telegram_resources": "resource_key",
+    "modules": "module_key",
+    "antivirus_reports": "module_key",
+    "module_sources": "source_id",
+    "health_checks": "check_key",
+}
 
 
 def now_iso() -> str:
@@ -23,6 +32,16 @@ class StateChange:
     record_id: str
     action: str
     changed_fields: list[str]
+
+
+class ClosingConnection(sqlite3.Connection):
+    """SQLite connection that also closes when a ``with`` block exits."""
+
+    def __exit__(self, exc_type, exc_value, traceback) -> bool:
+        try:
+            return bool(super().__exit__(exc_type, exc_value, traceback))
+        finally:
+            self.close()
 
 
 SCHEMA = (
@@ -143,7 +162,7 @@ SCHEMA = (
 
 def connect(path: Path = STATE_DB) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, timeout=30)
+    conn = sqlite3.connect(path, timeout=30, factory=ClosingConnection)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
@@ -178,7 +197,8 @@ def event(
     own = conn is None
     if own:
         conn = connect()
-    assert conn is not None
+    if conn is None:
+        raise RuntimeError("State database connection is unavailable")
     conn.execute(
         """
         INSERT INTO events(event_type, level, message, entity_type, entity_id, details_json, created_at)
@@ -192,9 +212,11 @@ def event(
 
 
 def _table_columns(table: str) -> set[str]:
+    if table not in UPSERT_KEYS:
+        raise ValueError(f"Unsupported state table: {table}")
     ensure_state_db()
     with connect() as conn:
-        return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        return {row[1] for row in conn.execute(f'PRAGMA table_info("{table}")')}  # nosec B608
 
 
 def upsert(
@@ -207,18 +229,31 @@ def upsert(
     event_type: str | None = None,
 ) -> StateChange:
     ensure_state_db()
+    if UPSERT_KEYS.get(table) != key_column:
+        raise ValueError(f"Invalid key column for state table {table}")
+    table_columns = _table_columns(table)
     clean = {k: v for k, v in data.items() if k != key_column}
+    invalid_columns = sorted(set(clean) - table_columns)
+    if invalid_columns:
+        raise ValueError(f"Invalid columns for state table {table}: {', '.join(invalid_columns)}")
     ts = now_iso()
-    if "updated_at" in _table_columns(table):
+    if "updated_at" in table_columns:
         clean["updated_at"] = ts
 
     with connect() as conn:
-        existing = conn.execute(f"SELECT * FROM {table} WHERE {key_column}=?", (key_value,)).fetchone()
+        existing = conn.execute(
+            f'SELECT * FROM "{table}" WHERE "{key_column}"=?',  # nosec B608
+            (key_value,),
+        ).fetchone()
         if existing is None:
             columns = [key_column, *clean.keys()]
             values = [key_value, *clean.values()]
             placeholders = ",".join("?" for _ in columns)
-            conn.execute(f"INSERT INTO {table}({','.join(columns)}) VALUES ({placeholders})", values)
+            quoted_columns = ",".join(f'"{column}"' for column in columns)
+            conn.execute(
+                f'INSERT INTO "{table}"({quoted_columns}) VALUES ({placeholders})',  # nosec B608
+                values,
+            )
             change = StateChange(table, key_value, "insert", list(clean.keys()))
             event(event_type or f"{table}.insert", f"Inserted {table}:{key_value}", entity_type=table, entity_id=key_value, details=asdict(change), conn=conn)
             conn.commit()
@@ -235,14 +270,60 @@ def upsert(
                 changed.append(field)
 
         if updates:
-            assignments = ", ".join(f"{field}=?" for field in updates)
-            conn.execute(f"UPDATE {table} SET {assignments} WHERE {key_column}=?", [*updates.values(), key_value])
+            assignments = ", ".join(f'"{field}"=?' for field in updates)
+            conn.execute(
+                f'UPDATE "{table}" SET {assignments} WHERE "{key_column}"=?',  # nosec B608
+                [*updates.values(), key_value],
+            )
             change = StateChange(table, key_value, "update", changed)
             event(event_type or f"{table}.update", f"Updated {table}:{key_value}", entity_type=table, entity_id=key_value, details=asdict(change), conn=conn)
         else:
             change = StateChange(table, key_value, "noop", [])
         conn.commit()
         return change
+
+
+def sync_module_requirements(module_key: str, requirements: list[str]) -> None:
+    """Synchronize a module's composite-key requirement records safely."""
+    ensure_state_db()
+    normalized = list(dict.fromkeys(str(item).strip() for item in requirements if str(item).strip()))
+    timestamp = now_iso()
+    with connect() as conn:
+        if normalized:
+            placeholders = ",".join("?" for _ in normalized)
+            conn.execute(
+                f"DELETE FROM module_requirements WHERE module_key=? AND requirement NOT IN ({placeholders})",  # nosec B608
+                [module_key, *normalized],
+            )
+        else:
+            conn.execute("DELETE FROM module_requirements WHERE module_key=?", (module_key,))
+        for requirement in normalized:
+            conn.execute(
+                """
+                INSERT INTO module_requirements(module_key, requirement, installed, error, updated_at)
+                VALUES (?, ?, 0, '', ?)
+                ON CONFLICT(module_key, requirement) DO UPDATE SET updated_at=excluded.updated_at
+                """,
+                (module_key, requirement, timestamp),
+            )
+        conn.commit()
+
+
+def set_module_requirement_status(module_key: str, requirement: str, installed: bool, error: str = "") -> None:
+    ensure_state_db()
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO module_requirements(module_key, requirement, installed, error, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(module_key, requirement) DO UPDATE SET
+                installed=excluded.installed,
+                error=excluded.error,
+                updated_at=excluded.updated_at
+            """,
+            (module_key, requirement, 1 if installed else 0, error, now_iso()),
+        )
+        conn.commit()
 
 
 def set_setting(key: str, value: Any) -> StateChange:

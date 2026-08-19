@@ -5,14 +5,13 @@ import re
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import Iterable
 
-from deathtg.state_db import connect, ensure_state_db, set_health, upsert
+from deathtg.state_db import connect, ensure_state_db, set_health, set_module_requirement_status
 
-PACKAGE_NAME_RE = re.compile(r"^\s*([A-Za-z0-9_.-]+)")
+PACKAGE_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9_.-]*)")
 SAFE_REQUIREMENT_RE = re.compile(
-    r"^[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]+\])?"
+    r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?:\[[A-Za-z0-9_,.-]+\])?"
     r"(?:\s*(?:==|~=|>=|<=|!=|>|<)\s*[A-Za-z0-9_.!+*-]+"
     r"(?:\s*,\s*(?:==|~=|>=|<=|!=|>|<)\s*[A-Za-z0-9_.!+*-]+)*)?$"
 )
@@ -125,18 +124,7 @@ def check_requirements(module_key: str | None = None) -> list[RequirementStatus]
             error="" if installed else error,
         )
         statuses.append(status)
-        upsert(
-            "module_requirements",
-            "module_key",
-            mod,
-            {
-                "requirement": req,
-                "installed": 1 if installed else 0,
-                "error": "" if installed else error,
-            },
-            preserve_existing=False,
-            event_type="requirement.check",
-        )
+        set_module_requirement_status(mod, req, installed, "" if installed else error)
     missing = [item for item in statuses if not item.installed]
     set_health(
         "requirements",

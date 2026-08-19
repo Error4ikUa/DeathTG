@@ -242,7 +242,9 @@ def render_nginx_config(server_name: str, *, panel_port: str = "8080") -> str:
             "        proxy_http_version 1.1;",
             "        proxy_set_header Host $host;",
             "        proxy_set_header X-Real-IP $remote_addr;",
-            "        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
+            # Overwrite client-supplied forwarding headers. Appending them lets
+            # an attacker inject 127.0.0.1 as the first hop and request local auth.
+            "        proxy_set_header X-Forwarded-For $remote_addr;",
             "        proxy_set_header X-Forwarded-Proto $scheme;",
             "        proxy_set_header Upgrade $http_upgrade;",
             "        proxy_set_header Connection \"upgrade\";",

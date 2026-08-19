@@ -5,11 +5,14 @@ import os
 import re
 import hashlib
 import io
+import ipaddress
 import json
+import socket
 import time
 import zipfile
+from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import aiohttp
 
@@ -64,6 +67,22 @@ MODULE_REPO_CACHE_PATH = RUNTIME_DIR / "module_repo_cache.json"
 MODULE_BUNDLE_CACHE_DIR = RUNTIME_DIR / "module_bundle_cache"
 MAX_BUNDLE_CACHE_BYTES = 1024 * 1024 * 5
 MODULE_REPO_CACHE_TTL_SECONDS = 5 * 60
+MAX_MODULE_SOURCE_BYTES = 2 * 1024 * 1024
+MAX_REQUIREMENTS_BYTES = 256 * 1024
+MAX_REPO_RESPONSE_BYTES = 5 * 1024 * 1024
+MAX_REPO_ARCHIVE_BYTES = 32 * 1024 * 1024
+MAX_REPO_ARCHIVE_MEMBERS = 5_000
+MAX_REPO_EXPANDED_BYTES = 128 * 1024 * 1024
+MAX_REPO_MEMBER_BYTES = 16 * 1024 * 1024
+MAX_REPO_COMPRESSION_RATIO = 500
+MAX_REMOTE_IMAGE_BYTES = 10 * 1024 * 1024
+SAFE_DOWNLOAD_HOSTS = {
+    "api.github.com",
+    "codeload.github.com",
+    "github.com",
+    "gitlab.com",
+    "raw.githubusercontent.com",
+}
 
 
 def _json_load(path: Path, default):
@@ -155,6 +174,115 @@ def _normalize_url(value: str) -> str:
     return value
 
 
+async def _assert_public_download_url(value: str) -> str:
+    url = _normalize_url(value)
+    parsed = urlparse(url)
+    if parsed.scheme.lower() != "https" or not parsed.hostname:
+        raise RuntimeError("Module downloads require a public HTTPS URL")
+    if parsed.username or parsed.password:
+        raise RuntimeError("Module URL must not contain credentials")
+    hostname = parsed.hostname.rstrip(".").lower()
+    if hostname == "localhost" or hostname.endswith((".localhost", ".local", ".internal")):
+        raise RuntimeError("Module URL points to a local network host")
+    if hostname in SAFE_DOWNLOAD_HOSTS or hostname.endswith(".githubusercontent.com"):
+        return url
+    try:
+        direct_ip = ipaddress.ip_address(hostname)
+        addresses = [direct_ip]
+    except ValueError:
+        try:
+            resolved = await asyncio.get_running_loop().getaddrinfo(
+                hostname,
+                parsed.port or 443,
+                type=socket.SOCK_STREAM,
+            )
+        except OSError as exc:
+            raise RuntimeError("Module host could not be resolved") from exc
+        addresses = []
+        for item in resolved:
+            try:
+                addresses.append(ipaddress.ip_address(item[4][0]))
+            except (IndexError, ValueError):
+                continue
+    if not addresses or any(not address.is_global for address in addresses):
+        raise RuntimeError("Module URL resolves to a private or reserved network")
+    return url
+
+
+@asynccontextmanager
+async def _safe_get(session: aiohttp.ClientSession, url: str, *, timeout: int, headers: dict | None = None):
+    current = url
+    for _ in range(4):
+        current = await _assert_public_download_url(current)
+        response = await session.get(
+            current,
+            timeout=timeout,
+            headers=headers,
+            allow_redirects=False,
+        )
+        if response.status in {301, 302, 303, 307, 308}:
+            location = response.headers.get("location", "").strip()
+            response.release()
+            if not location:
+                raise RuntimeError("Module download redirect has no destination")
+            current = urljoin(current, location)
+            continue
+        try:
+            yield response
+        finally:
+            response.release()
+        return
+    raise RuntimeError("Module download has too many redirects")
+
+
+async def read_limited_response(response: aiohttp.ClientResponse, max_bytes: int, label: str) -> bytes:
+    try:
+        declared = int(response.headers.get("content-length", "0") or 0)
+    except (TypeError, ValueError):
+        declared = 0
+    if declared > max_bytes:
+        raise RuntimeError(f"{label} is too large")
+    payload = bytearray()
+    async for chunk in response.content.iter_chunked(64 * 1024):
+        payload.extend(chunk)
+        if len(payload) > max_bytes:
+            raise RuntimeError(f"{label} is too large")
+    return bytes(payload)
+
+
+async def fetch_public_binary(url: str, *, max_bytes: int, label: str) -> bytes:
+    async with aiohttp.ClientSession() as session:
+        async with _safe_get(session, url, timeout=20, headers=GITHUB_HEADERS) as response:
+            if response.status != 200:
+                raise RuntimeError(f"{label} download failed, HTTP {response.status}")
+            return await read_limited_response(response, max_bytes, label)
+
+
+def _validated_archive_infos(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
+    infos = archive.infolist()
+    if len(infos) > MAX_REPO_ARCHIVE_MEMBERS:
+        raise RuntimeError("Repository archive contains too many files")
+    total = 0
+    result: dict[str, zipfile.ZipInfo] = {}
+    for info in infos:
+        if info.is_dir():
+            continue
+        if info.flag_bits & 0x1:
+            raise RuntimeError("Encrypted repository archives are not supported")
+        if info.file_size > MAX_REPO_MEMBER_BYTES:
+            raise RuntimeError(f"Repository file is too large: {info.filename}")
+        total += info.file_size
+        if total > MAX_REPO_EXPANDED_BYTES:
+            raise RuntimeError("Repository archive expands beyond the allowed size")
+        if info.file_size and (
+            info.compress_size <= 0
+            or info.file_size / max(1, info.compress_size) > MAX_REPO_COMPRESSION_RATIO
+        ):
+            raise RuntimeError(f"Suspicious compression ratio in repository file: {info.filename}")
+        result[info.filename] = info
+    return result
+
+
 def normalize_github_raw_url(link: str) -> str:
     value = _normalize_url(link)
     if not value:
@@ -238,24 +366,25 @@ def _parse_github_link(link: str) -> dict | None:
 
 
 async def _fetch_text(session: aiohttp.ClientSession, url: str) -> str:
-    async with session.get(url, timeout=20, headers=GITHUB_HEADERS) as response:
+    async with _safe_get(session, url, timeout=20, headers=GITHUB_HEADERS) as response:
         if response.status != 200:
             raise RuntimeError(f"Download failed, HTTP {response.status}")
-        return await response.text()
+        return (await read_limited_response(response, MAX_MODULE_SOURCE_BYTES, "Module source")).decode("utf-8", errors="replace")
 
 
 async def _fetch_json(session: aiohttp.ClientSession, url: str):
-    async with session.get(url, timeout=20, headers=GITHUB_HEADERS) as response:
+    async with _safe_get(session, url, timeout=20, headers=GITHUB_HEADERS) as response:
         if response.status != 200:
             raise RuntimeError(f"GitHub API failed, HTTP {response.status}")
-        return await response.json()
+        payload = await read_limited_response(response, MAX_REPO_RESPONSE_BYTES, "Repository metadata")
+        return json.loads(payload.decode("utf-8", errors="replace"))
 
 
 async def _fetch_html(session: aiohttp.ClientSession, url: str) -> str:
-    async with session.get(url, timeout=20, headers=GITHUB_HEADERS) as response:
+    async with _safe_get(session, url, timeout=20, headers=GITHUB_HEADERS) as response:
         if response.status != 200:
             raise RuntimeError(f"GitHub page failed, HTTP {response.status}")
-        return await response.text()
+        return (await read_limited_response(response, MAX_REPO_RESPONSE_BYTES, "Repository page")).decode("utf-8", errors="replace")
 
 
 def _pick_python_file(items: list[dict], folder_name: str) -> dict | None:
@@ -294,11 +423,16 @@ def _pick_zip_entry(entries: list[str], folder_name: str) -> str:
 
 def _zip_module_items(data: bytes, owner: str, repo: str, ref: str) -> list[dict]:
     modules: list[dict] = []
-    with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        names = [name for name in archive.namelist() if name and not name.endswith("/")]
+    if len(data) > MAX_REPO_ARCHIVE_BYTES:
+        raise RuntimeError("Repository archive is too large")
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            infos = _validated_archive_infos(archive)
+            names = list(infos)
+    except zipfile.BadZipFile as exc:
+        raise RuntimeError("Repository returned an invalid ZIP archive") from exc
     if not names:
         return modules
-    root = names[0].split("/", 1)[0]
     relative = [name.split("/", 1)[1] for name in names if "/" in name and name.split("/", 1)[1]]
     by_folder: dict[str, list[str]] = {}
     top_level_py: list[str] = []
@@ -360,10 +494,10 @@ async def _from_github_zip_archive(
     ref: str = "main",
 ) -> list[dict]:
     url = MODULE_REPO_ZIP or f"https://codeload.github.com/{owner}/{repo}/zip/refs/heads/{ref}"
-    async with session.get(url, timeout=30, headers=GITHUB_HEADERS) as response:
+    async with _safe_get(session, url, timeout=30, headers=GITHUB_HEADERS) as response:
         if response.status != 200:
             return []
-        payload = await response.read()
+        payload = await read_limited_response(response, MAX_REPO_ARCHIVE_BYTES, "Repository archive")
     return _zip_module_items(payload, owner, repo, ref)
 
 
@@ -375,15 +509,20 @@ async def _fetch_folder_bundle_from_zip(
     path: str,
 ) -> dict:
     url = MODULE_REPO_ZIP or f"https://codeload.github.com/{owner}/{repo}/zip/refs/heads/{ref}"
-    async with session.get(url, timeout=30, headers=GITHUB_HEADERS) as response:
+    async with _safe_get(session, url, timeout=30, headers=GITHUB_HEADERS) as response:
         if response.status != 200:
             raise RuntimeError(f"GitHub archive failed, HTTP {response.status}")
-        payload = await response.read()
+        payload = await read_limited_response(response, MAX_REPO_ARCHIVE_BYTES, "Repository archive")
     clean_path = path.strip("/")
     folder_name = PurePosixPath(clean_path).name or "module"
     prefix = clean_path + "/"
-    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-        names = [name for name in archive.namelist() if name and not name.endswith("/")]
+    try:
+        archive_context = zipfile.ZipFile(io.BytesIO(payload))
+    except zipfile.BadZipFile as exc:
+        raise RuntimeError("Repository returned an invalid ZIP archive") from exc
+    with archive_context as archive:
+        infos = _validated_archive_infos(archive)
+        names = list(infos)
         relative = [name.split("/", 1)[1] for name in names if "/" in name and name.split("/", 1)[1]]
         entries = [entry for entry in relative if entry.startswith(prefix)]
         preferred = [
@@ -405,6 +544,8 @@ async def _fetch_folder_bundle_from_zip(
         if not py_entry:
             raise RuntimeError("Folder does not contain a Python module entry")
         zip_py_entry = next(name for name in names if name.endswith("/" + py_entry))
+        if infos[zip_py_entry].file_size > MAX_MODULE_SOURCE_BYTES:
+            raise RuntimeError("Module source is too large")
         source = archive.read(zip_py_entry).decode("utf-8", errors="replace")
         image_entry = next(
             (
@@ -427,6 +568,8 @@ async def _fetch_folder_bundle_from_zip(
         requirements_text = ""
         if requirements_entry:
             zip_req_entry = next(name for name in names if name.endswith("/" + requirements_entry))
+            if infos[zip_req_entry].file_size > MAX_REQUIREMENTS_BYTES:
+                raise RuntimeError("Module requirements file is too large")
             requirements_text = archive.read(zip_req_entry).decode("utf-8", errors="replace")
 
     return {
@@ -656,10 +799,11 @@ def _normalize_repo_item(item: dict) -> dict:
 
 
 async def _from_index(session: aiohttp.ClientSession) -> list[dict]:
-    async with session.get(MODULE_REPO_INDEX, timeout=12) as response:
+    async with _safe_get(session, MODULE_REPO_INDEX, timeout=12) as response:
         if response.status != 200:
             return []
-        data = await response.json()
+        payload = await read_limited_response(response, MAX_REPO_RESPONSE_BYTES, "Module index")
+        data = json.loads(payload.decode("utf-8", errors="replace"))
     items = data.get("modules", []) if isinstance(data, dict) else data
     if not isinstance(items, list):
         return []
@@ -667,10 +811,11 @@ async def _from_index(session: aiohttp.ClientSession) -> list[dict]:
 
 
 async def _from_github_contents(session: aiohttp.ClientSession) -> list[dict]:
-    async with session.get(MODULE_REPO_API, timeout=12, headers=GITHUB_HEADERS) as response:
+    async with _safe_get(session, MODULE_REPO_API, timeout=12, headers=GITHUB_HEADERS) as response:
         if response.status != 200:
             return []
-        data = await response.json()
+        payload = await read_limited_response(response, MAX_REPO_RESPONSE_BYTES, "Repository listing")
+        data = json.loads(payload.decode("utf-8", errors="replace"))
     if not isinstance(data, list):
         return []
 
@@ -682,10 +827,11 @@ async def _from_github_contents(session: aiohttp.ClientSession) -> list[dict]:
             dir_url = str(item.get("url") or "")
             if not dir_url:
                 continue
-            async with session.get(dir_url, timeout=12, headers=GITHUB_HEADERS) as sub_response:
+            async with _safe_get(session, dir_url, timeout=12, headers=GITHUB_HEADERS) as sub_response:
                 if sub_response.status != 200:
                     continue
-                sub_items = await sub_response.json()
+                payload = await read_limited_response(sub_response, MAX_REPO_RESPONSE_BYTES, "Repository directory")
+                sub_items = json.loads(payload.decode("utf-8", errors="replace"))
             if not isinstance(sub_items, list):
                 continue
             py_item = _pick_python_file(sub_items, name)

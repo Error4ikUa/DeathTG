@@ -5,33 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ tr('activity.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
-    <link rel="stylesheet" href="/static/activity_fix.css">
-    <style>
-        .activity-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}
-        .rank-list{display:grid;gap:10px}
-        .rank-item{padding:10px 12px;border-radius:12px;background:rgba(0,0,0,.24);border:1px solid rgba(var(--accent-rgb),.16)}
-        .rank-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:8px}
-        .rank-head b{display:block;max-width:72%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .rank-bar{height:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
-        .rank-bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
-        .recent-list{display:grid;gap:10px}
-        .recent-item{padding:10px 12px;border-radius:12px;background:rgba(0,0,0,.24);border:1px solid rgba(var(--accent-rgb),.16)}
-        .recent-item b{display:block;margin-bottom:4px}
-        .recent-item p{margin:0;color:var(--muted)}
-        .mini-empty{padding:12px;border:1px dashed rgba(var(--accent-rgb),.28);border-radius:12px;color:var(--muted)}
-        @media(max-width:900px){.activity-grid{grid-template-columns:1fr}}
-    </style>
-    <link rel="stylesheet" href="/static/engineering.css?v=20260819.3">
+    <link rel="stylesheet" href="/static/engineering.css?v=20260819.6">
 </head>
 <body class="theme-activity" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>
-<button class="menu-btn" id="menuToggle">
+<button class="menu-btn" id="menuToggle" type="button" aria-label="{{ tr('nav.menu') }}" aria-controls="drawer" aria-expanded="false">
     {% if profile.avatar %}<img src="{{ profile.avatar }}">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}
 </button>
 <aside class="mini-menu" id="drawer">
     <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>{{ tr('activity.page_label') }}</span></div></div>
     <nav><a href="/">{{ tr('nav.news') }}</a><a href="/profile">{{ tr('nav.profile') }}</a><a class="active" href="/activity">{{ tr('nav.activity') }}</a><a href="/browser">{{ tr('nav.modules') }}</a><a href="/scanner">{{ tr('nav.scanner') }}</a><a href="/health">{{ tr('nav.health') }}</a></nav>
-    <a class="logout" href="/logout">{{ tr('nav.logout') }}</a>
+    <form class="logout-form" method="post" action="/logout"><button class="logout" type="submit">{{ tr('nav.logout') }}</button></form>
 </aside>
 <div class="overlay" id="drawerBackdrop"></div>
 
@@ -57,11 +41,11 @@
         <div class="section-line">
             <div>
                 <p class="eyebrow">{{ tr('activity.chart') }}</p>
-                <h2 style="margin:0">{{ tr('activity.daily_modules') }}</h2>
+                <h2 class="flush-heading">{{ tr('activity.daily_modules') }}</h2>
             </div>
         </div>
         <div id="lineChart" class="line-chart"></div>
-        <div id="chartData" style="display:none">
+        <div id="chartData" class="data-buffer" hidden>
             {% for point in activity_points %}
             <i data-day="{{ point.day }}" data-count="{{ point.count }}" data-modules="{{ point.modules|join(', ') }}"></i>
             {% endfor %}
@@ -71,7 +55,7 @@
     <section class="activity-grid">
         <article class="card panel">
             <p class="eyebrow">{{ tr('activity.top_modules') }}</p>
-            <h2 style="margin:0 0 12px">{{ tr('activity.ranked_usage') }}</h2>
+            <h2 class="section-heading">{{ tr('activity.ranked_usage') }}</h2>
             {% set max_count = (top_modules[0].count if top_modules else 1) %}
             <div class="rank-list">
                 {% for item in top_modules %}
@@ -80,7 +64,7 @@
                         <b>{{ item.module }}</b>
                         <span>{{ item.count }}</span>
                     </div>
-                    <div class="rank-bar"><i style="width: {{ ((item.count / max_count) * 100) if max_count else 0 }}%"></i></div>
+                    <div class="rank-bar"><i data-progress="{{ ((item.count / max_count) * 100) if max_count else 0 }}"></i></div>
                 </div>
                 {% endfor %}
                 {% if not top_modules %}
@@ -91,7 +75,7 @@
 
         <article class="card panel">
             <p class="eyebrow">{{ tr('activity.recent_days') }}</p>
-            <h2 style="margin:0 0 12px">{{ tr('activity.modules_per_day') }}</h2>
+            <h2 class="section-heading">{{ tr('activity.modules_per_day') }}</h2>
             <div class="recent-list">
                 {% for point in activity_points[-7:]|reverse %}
                 <div class="recent-item">
@@ -108,6 +92,6 @@
 </main>
 
 <script src="/static/matrix.js"></script>
-<script src="/static/clean.js?v=20260819.1"></script>
+<script src="/static/clean.js?v=20260819.3"></script>
 </body>
 </html>

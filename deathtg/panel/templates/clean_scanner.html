@@ -5,29 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ tr('scanner.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
-    <style>
-        .scan-result{display:grid;gap:10px;margin-top:16px}
-        .scan-chip{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.7px;text-transform:uppercase}
-        .scan-chip.clean{background:rgba(82,255,139,.10);border:1px solid rgba(82,255,139,.24);color:#dfffe8}
-        .scan-chip.warning{background:rgba(255,184,107,.10);border:1px solid rgba(255,184,107,.28);color:#ffebb9}
-        .scan-chip.danger{background:rgba(255,79,117,.12);border:1px solid rgba(255,79,117,.34);color:#ffe2e9}
-        .scan-chip.trusted,.scan-chip.trusted-risk{background:rgba(82,255,139,.10);border:1px solid rgba(82,255,139,.24);color:#dfffe8}
-        .scan-card{padding:16px;border-radius:16px;background:rgba(0,0,0,.22);border:1px solid rgba(var(--accent-rgb),.14)}
-        .scan-card ul{margin:0;padding-left:18px}
-        .scan-card li{margin:6px 0;color:#ffe2e9}
-        .scan-meta{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-        .scan-code{display:block;margin-top:6px;white-space:pre-wrap;word-break:break-word;max-height:150px;overflow:auto}
-        .trusted-note{padding:12px 14px;border-radius:14px;background:rgba(82,255,139,.08);border:1px solid rgba(82,255,139,.22);color:#dfffe8}
-    </style>
-    <link rel="stylesheet" href="/static/engineering.css?v=20260819.3">
+    <link rel="stylesheet" href="/static/engineering.css?v=20260819.6">
 </head>
 <body class="theme-scanner" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>
-<button class="menu-btn" id="menuToggle">{% if profile.avatar %}<img src="{{ profile.avatar }}">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}</button>
+<button class="menu-btn" id="menuToggle" type="button" aria-label="{{ tr('nav.menu') }}" aria-controls="drawer" aria-expanded="false">{% if profile.avatar %}<img src="{{ profile.avatar }}">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}</button>
 <aside class="mini-menu" id="drawer">
     <div class="menu-brand"><div class="mark">DTG</div><div><b>DeathTG</b><span>{{ tr('scanner.page_label') }}</span></div></div>
     <nav><a href="/">{{ tr('nav.news') }}</a><a href="/profile">{{ tr('nav.profile') }}</a><a href="/activity">{{ tr('nav.activity') }}</a><a href="/browser">{{ tr('nav.modules') }}</a><a class="active" href="/scanner">{{ tr('nav.scanner') }}</a><a href="/health">{{ tr('nav.health') }}</a></nav>
-    <a class="logout" href="/logout">{{ tr('nav.logout') }}</a>
+    <form class="logout-form" method="post" action="/logout"><button class="logout" type="submit">{{ tr('nav.logout') }}</button></form>
 </aside>
 <div class="overlay" id="drawerBackdrop"></div>
 
@@ -93,6 +79,6 @@
 </main>
 
 <script src="/static/matrix.js"></script>
-<script src="/static/clean.js?v=20260819.1"></script>
+<script src="/static/clean.js?v=20260819.3"></script>
 </body>
 </html>

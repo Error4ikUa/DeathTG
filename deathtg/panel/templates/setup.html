@@ -4,12 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ tr('setup.title') }}</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <link rel="stylesheet" href="/static/layout.css">
-  <style>
-    .delayed-action[hidden] { display: none !important; }
-  </style>
-    <link rel="stylesheet" href="/static/engineering.css?v=20260819.3">
+  <link rel="stylesheet" href="/static/engineering.css?v=20260819.6">
 </head>
 <body>
   <canvas id="matrix"></canvas>
@@ -20,10 +15,10 @@
       <h1>{{ tr('setup.title') }}</h1>
       <p>{{ tr('setup.intro') }}</p>
       {% if panel_url %}
-      <small style="display:block;margin-top:-4px;margin-bottom:10px;color:#9fc7ae">{{ tr('setup.current_address') }}: {{ panel_url }}</small>
+      <small class="setup-network-note setup-current-address">{{ tr('setup.current_address') }}: {{ panel_url }}</small>
       {% endif %}
       {% if panel_remote_access_ready %}
-      <small style="display:block;margin-bottom:12px;color:#9fc7ae">{{ tr('setup.remote_ready') }}</small>
+      <small class="setup-network-note">{{ tr('setup.remote_ready') }}</small>
       {% endif %}
       {% if message %}<div class="alert success">{{ message }}</div>{% endif %}
       {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
@@ -42,14 +37,19 @@
       <div class="form-stack">
         <label>{{ tr('setup.qr_login') }}</label>
         {% if qr_data_url %}
-        <div style="display:flex;justify-content:center;padding:8px 0 4px">
-          <img src="{{ qr_data_url }}" alt="DeathTG QR Login" style="width:min(100%,320px);height:auto;background:#fff;border-radius:18px;padding:14px">
+        <div class="setup-qr-shell">
+          <img src="{{ qr_data_url }}" alt="DeathTG QR Login" class="setup-qr-image">
         </div>
         {% endif %}
         <small>{{ tr('setup.qr_help') }}</small>
-        <small id="qr-status-text">{{ tr('setup.qr_wait') }}</small>
+      <small
+        id="qr-status-text"
+        data-refresh-text="{{ tr('setup.qr_refresh') }}"
+        data-failed-text="{{ tr('setup.qr_failed') }}"
+        data-wait-text="{{ tr('setup.qr_wait') }}"
+      >{{ tr('setup.qr_wait') }}</small>
       </div>
-      <form method="post" action="/setup/qr-refresh" class="form-stack delayed-action" id="qr-refresh-form" hidden style="margin-top:12px">
+      <form method="post" action="/setup/qr-refresh" class="form-stack delayed-action setup-refresh" id="qr-refresh-form" hidden>
         <button type="submit">{{ tr('setup.qr_refresh') }}</button>
       </form>
       {% elif step == "secret" %}
@@ -63,42 +63,6 @@
     </section>
   </main>
   <script src="/static/matrix.js"></script>
-  <script>
-    (function () {
-      const qrRefreshForm = document.getElementById("qr-refresh-form");
-      const qrStatusText = document.getElementById("qr-status-text");
-      if (!qrRefreshForm) return;
-
-      const poll = async () => {
-        try {
-          const response = await fetch("/setup/qr-status", { cache: "no-store" });
-          const data = await response.json();
-          if (data.redirect) {
-            window.location.href = data.redirect;
-            return;
-          }
-          if (data.qr_state === "expired") {
-            if (qrStatusText) qrStatusText.textContent = data.qr_error || "{{ tr('setup.qr_refresh') }}";
-            qrRefreshForm.hidden = false;
-            return;
-          }
-          if (data.qr_state === "error") {
-            if (qrStatusText) qrStatusText.textContent = data.qr_error || "{{ tr('setup.qr_failed') }}";
-            qrRefreshForm.hidden = false;
-            return;
-          }
-        } catch (error) {
-          if (qrStatusText) qrStatusText.textContent = "{{ tr('setup.qr_wait') }}";
-        }
-        window.setTimeout(poll, 2000);
-      };
-
-      window.setTimeout(() => {
-        qrRefreshForm.hidden = false;
-      }, 30000);
-      window.setTimeout(poll, 2000);
-    })();
-  </script>
-  <script src="/static/clean.js?v=20260819.1"></script>
+  <script src="/static/clean.js?v=20260819.3"></script>
 </body>
 </html>

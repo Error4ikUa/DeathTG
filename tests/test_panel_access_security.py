@@ -49,6 +49,112 @@ class PanelAccessSecurityTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "PANEL_SECRET"):
                 panel_access.issue_device_grant("Phone")
 
+    def test_device_cookie_is_bound_to_stable_browser_platform(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = Path(tmp)
+            with patch.object(panel_access, "DEVICES_PATH", runtime / "devices.json"):
+                panel_access.remember_device_session(
+                    "session",
+                    user_agent="Mozilla/5.0 (Windows NT 10.0) Chrome/123.0",
+                    label="Windows",
+                )
+                self.assertIsNotNone(
+                    panel_access.active_device(
+                        "session",
+                        user_agent="Mozilla/5.0 (Windows NT 10.0) Chrome/125.0",
+                    )
+                )
+                self.assertIsNone(
+                    panel_access.active_device(
+                        "session",
+                        user_agent="Mozilla/5.0 (Android 15) Chrome/125.0",
+                    )
+                )
+                self.assertIsNone(panel_access.active_device("session", user_agent=""))
+                self.assertIsNone(panel_access.touch_device_session("session", user_agent=""))
+
+    def test_tailscale_device_cookie_is_bound_to_peer_ip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = Path(tmp)
+            with patch.object(panel_access, "DEVICES_PATH", runtime / "devices.json"):
+                panel_access.remember_device_session(
+                    "session",
+                    ip="100.64.0.10",
+                    user_agent="Mozilla/5.0 (Android 15) Chrome/125.0",
+                    auth_method="tailscale",
+                )
+                self.assertIsNotNone(
+                    panel_access.active_device(
+                        "session",
+                        ip="100.64.0.10",
+                        user_agent="Mozilla/5.0 (Android 15) Chrome/126.0",
+                    )
+                )
+                self.assertIsNone(
+                    panel_access.active_device(
+                        "session",
+                        ip="100.64.0.11",
+                        user_agent="Mozilla/5.0 (Android 15) Chrome/126.0",
+                    )
+                )
+
+    def test_local_device_cookie_cannot_be_replayed_from_public_ip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = Path(tmp)
+            with patch.object(panel_access, "DEVICES_PATH", runtime / "devices.json"):
+                panel_access.remember_device_session(
+                    "session",
+                    ip="127.0.0.1",
+                    user_agent="Mozilla/5.0 (Windows NT 10.0) Chrome/125.0",
+                    auth_method="local",
+                )
+                self.assertIsNotNone(
+                    panel_access.active_device(
+                        "session",
+                        ip="127.0.0.1",
+                        user_agent="Mozilla/5.0 (Windows NT 10.0) Chrome/126.0",
+                    )
+                )
+                self.assertIsNone(
+                    panel_access.active_device(
+                        "session",
+                        ip="203.0.113.55",
+                        user_agent="Mozilla/5.0 (Windows NT 10.0) Chrome/126.0",
+                    )
+                )
+
+    def test_grant_consumed_over_tailscale_is_bound_to_peer_ip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = Path(tmp)
+            with (
+                patch.object(panel_access, "GRANTS_PATH", runtime / "grants.json"),
+                patch.object(panel_access, "DEVICES_PATH", runtime / "devices.json"),
+                patch.dict(panel_access.os.environ, {"PANEL_SECRET": "test-secret-with-enough-entropy"}),
+            ):
+                token = panel_access.issue_device_grant("Phone").rsplit("/", 1)[-1]
+                payload = panel_access.consume_device_grant(
+                    token,
+                    ip="100.64.0.10",
+                    user_agent="Mozilla/5.0 (Android 15) Chrome/125.0",
+                    bind_ip=True,
+                )
+                session_id = payload["session_id"]
+
+                self.assertIsNotNone(
+                    panel_access.active_device(
+                        session_id,
+                        ip="100.64.0.10",
+                        user_agent="Mozilla/5.0 (Android 15) Chrome/126.0",
+                    )
+                )
+                self.assertIsNone(
+                    panel_access.active_device(
+                        session_id,
+                        ip="100.64.0.11",
+                        user_agent="Mozilla/5.0 (Android 15) Chrome/126.0",
+                    )
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

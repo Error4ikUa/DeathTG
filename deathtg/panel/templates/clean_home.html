@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ tr('home.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
-    <link rel="stylesheet" href="/static/engineering.css?v=20260819.3">
+    <link rel="stylesheet" href="/static/engineering.css?v=20260819.6">
 </head>
 <body class="theme-main" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>
-<button class="menu-btn" id="menuToggle">
+<button class="menu-btn" id="menuToggle" type="button" aria-label="{{ tr('nav.menu') }}" aria-controls="drawer" aria-expanded="false">
     {% if profile.avatar %}<img src="{{ profile.avatar }}" alt="avatar">{% else %}{{ (profile.name or 'D')[0] }}{% endif %}
 </button>
 
@@ -23,7 +23,7 @@
                 <a href="/scanner">{{ tr('nav.scanner') }}</a>
                 <a href="/health">{{ tr('nav.health') }}</a>
             </nav>
-            <a class="logout" href="/logout">{{ tr('nav.logout') }}</a>
+            <form class="logout-form" method="post" action="/logout"><button class="logout" type="submit">{{ tr('nav.logout') }}</button></form>
         </aside>
 <div class="overlay" id="drawerBackdrop"></div>
 
@@ -124,6 +124,6 @@
 </main>
 
 <script src="/static/matrix.js"></script>
-<script src="/static/clean.js?v=20260819.1"></script>
+<script src="/static/clean.js?v=20260819.3"></script>
 </body>
 </html>
