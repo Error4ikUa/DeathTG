@@ -47,11 +47,10 @@ from deathtg.module_db import ModuleDatabase
 from deathtg.module_repo import fetch_module_bundle
 from deathtg.premium_emoji import premium_emoji
 from deathtg.registry import CommandRegistry
-from deathtg.requirements_manager import install_requirements
+from deathtg.requirements_manager import install_requirements, safe_requirements
 from deathtg.security import scan_module_source
 
 
-REQUIREMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+(?:==[A-Za-z0-9_.!+-]+|>=[A-Za-z0-9_.!+-]+|<=[A-Za-z0-9_.!+-]+)?$")
 IMPORT_REQUIREMENT_MAP = {
     "pil": "Pillow",
     "sklearn": "scikit-learn",
@@ -525,11 +524,7 @@ class ModuleLoader:
 
     @staticmethod
     def _safe_requirements(requirements) -> list[str]:
-        safe: list[str] = []
-        for item in requirements or []:
-            req = str(item or "").strip()
-            if req and REQUIREMENT_RE.fullmatch(req) and req not in safe:
-                safe.append(req)
+        safe, _skipped = safe_requirements(requirements or [])
         return safe
 
     def _requirements_for_entry(self, entry: Path, source: str, extra=None) -> list[str]:
@@ -559,7 +554,9 @@ class ModuleLoader:
         missing = str(getattr(exc, "name", "") or "").split(".", 1)[0].strip()
         if not missing:
             return ""
-        return IMPORT_REQUIREMENT_MAP.get(missing.lower(), missing)
+        requirement = IMPORT_REQUIREMENT_MAP.get(missing.lower(), missing)
+        safe, _skipped = safe_requirements([requirement])
+        return safe[0] if safe else ""
 
     async def load_file(self, path: Path, *, force: bool = False, module_name: str | None = None, _did_requirements: bool = False) -> str:
         entry = resolve_module_entry(path, module_name)

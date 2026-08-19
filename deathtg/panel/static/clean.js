@@ -45,7 +45,14 @@ function setupTabs() {
     }),
   );
   const hash = location.hash.replace("#", "");
-  if (hash) activateTab(hash);
+  if (hash) {
+    activateTab(hash);
+    // The target pane is hidden during the browser's native hash jump.  Once
+    // it becomes visible, align it below the fixed DeathTG service control.
+    requestAnimationFrame(() =>
+      document.getElementById(hash)?.scrollIntoView({ block: "start" }),
+    );
+  }
 }
 
 setupTabs();

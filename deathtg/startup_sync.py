@@ -170,6 +170,8 @@ def _bot_username_env_key(role: str) -> str:
 
 
 def _preferred_bot_username(owner_id: int, role: str) -> str:
+    if role == "community" and not community_enabled_for_owner(owner_id):
+        return preferred_community_bot_username(owner_id)
     env_key = _bot_username_env_key(role)
     raw = _env(env_key).lstrip("@")
     if _is_valid_bot_username(raw, owner_id):
@@ -467,7 +469,15 @@ def render_integrity_report(status: dict) -> str:
         lines.append(f"{'OK' if ok else 'FAIL'} {label}: @{item.get('username') or 'missing'}")
         if item.get("error"):
             lines.append(f"  {_msg('Reason', 'Причина')}: {item.get('error')}")
-        if role in {"inline", "helper", "community"}:
+        if item.get("managed_externally"):
+            lines.append(
+                "  "
+                + _msg(
+                    "Recovery: wait for the DeathTG owner role service",
+                    "Восстановление: дождитесь запуска сервиса ролей владельца DeathTG",
+                )
+            )
+        elif role in {"inline", "helper", "community"}:
             slot = {"inline": "1", "helper": "2", "community": "3"}[role]
             lines.append(f"  {_msg('Recovery', 'Восстановление')}: {_slot_command_name(slot)}")
     folder = status.get("folder") if isinstance(status.get("folder"), dict) else {}
@@ -551,7 +561,16 @@ def _integrity_alert_text(owner_id: int, status: dict) -> str:
                 _msg("Manual recovery shortcuts:", "Быстрые команды для восстановления:"),
             ]
         )
+        creatable_failures = [item for item in failures if not item.get("managed_externally")]
         for item in failures:
+            if item.get("managed_externally"):
+                lines.append(
+                    _msg(
+                        "Role service is temporarily offline; wait for the DeathTG owner to reconnect.",
+                        "Сервис ролей временно офлайн; дождитесь подключения владельца DeathTG.",
+                    )
+                )
+                continue
             slot = {"inline": "1", "helper": "2", "community": "3"}.get(str(item.get("role") or ""))
             if not slot:
                 continue
@@ -559,15 +578,16 @@ def _integrity_alert_text(owner_id: int, status: dict) -> str:
             if not guide:
                 continue
             lines.append(f"{_slot_command_name(slot)} -> @{guide['username']}")
-        lines.extend(
-            [
-                "",
-                _msg(
-                    "Create the missing bot in BotFather, copy the token, then paste it into one of the commands above.",
-                    "Создай отсутствующего бота в BotFather, скопируй токен и вставь его в одну из команд выше.",
-                )
-            ]
-        )
+        if creatable_failures:
+            lines.extend(
+                [
+                    "",
+                    _msg(
+                        "Create the missing bot in BotFather, copy the token, then paste it into one of the commands above.",
+                        "Создай отсутствующего бота в BotFather, скопируй токен и вставь его в одну из команд выше.",
+                    )
+                ]
+            )
     return "\n".join(lines)
 
 
@@ -1044,6 +1064,27 @@ async def check_runtime_integrity(client, *, notify: bool = True, allow_repair: 
     bots: list[dict] = []
     for blueprint in manual_bot_blueprints(owner_id):
         if blueprint["role"] == "community" and not community_enabled_for_owner(owner_id):
+            username = preferred_community_bot_username(owner_id)
+            start_ping, start_ping_error = await _ping_bot_runtime(client, username)
+            bots.append(
+                {
+                    "configured": bool(username),
+                    "role": "community",
+                    "env_key": "DEATHTG_ROLE_BOT_USERNAME",
+                    "username": username,
+                    "created": False,
+                    "valid_username": bool(username),
+                    "expected_prefix": username,
+                    "owner_id": owner_id,
+                    "commands_synced": None,
+                    "inline_synced": None,
+                    "avatar_synced": None,
+                    "start_ping": start_ping,
+                    "archived": None,
+                    "managed_externally": True,
+                    "error": start_ping_error,
+                }
+            )
             continue
         token = _env(blueprint["env_key"])
         username, token_error = await _fetch_bot_username(token, env_key=blueprint["env_key"])
@@ -1251,6 +1292,7 @@ async def _ensure_community_bot(client, owner_id: int, *, allow_create: bool = F
     }
     if status["valid_username"]:
         update_env_value("COMMUNITY_BOT_USERNAME", username)
+        update_env_value("DEATHTG_ROLE_BOT_USERNAME", username)
         status["error"] = None
         return bot_token, status
     if not allow_create:
@@ -1271,6 +1313,7 @@ async def _ensure_community_bot(client, owner_id: int, *, allow_create: bool = F
         if _is_valid_bot_username(recovered_username, owner_id):
             update_env_value("BOT_TOKEN_COMMUNITY", token)
             update_env_value("COMMUNITY_BOT_USERNAME", recovered_username)
+            update_env_value("DEATHTG_ROLE_BOT_USERNAME", recovered_username)
             status.update(
                 {
                     "configured": True,
@@ -1309,6 +1352,7 @@ async def _ensure_community_bot(client, owner_id: int, *, allow_create: bool = F
         status["error"] = "community bot username must match the owner-bound pattern"
     if status["valid_username"]:
         update_env_value("COMMUNITY_BOT_USERNAME", username)
+        update_env_value("DEATHTG_ROLE_BOT_USERNAME", username)
     return token, status
 
 
@@ -1321,6 +1365,8 @@ async def _run_startup_sync_locked(client) -> dict:
     me = await client.get_me()
     owner_id = int(getattr(me, "id", 0) or 0)
     update_env_value("OWNER_ID", str(owner_id))
+    if not community_enabled_for_owner(owner_id):
+        update_env_value("COMMUNITY_BOT_USERNAME", preferred_community_bot_username(owner_id))
     bot_token = _env("BOT_TOKEN")
     helper_token = _env("BOT_TOKEN_HELPER")
     community_token = _env("BOT_TOKEN_COMMUNITY")
@@ -1341,16 +1387,18 @@ async def _run_startup_sync_locked(client) -> dict:
         role="helper",
         allow_create=True,
     )
+    central_role_service = not community_enabled_for_owner(owner_id)
     community_status = {
-        "configured": False,
+        "configured": bool(community_token) if not central_role_service else bool(_env("COMMUNITY_BOT_USERNAME")),
         "role": "community",
         "env_key": "BOT_TOKEN_COMMUNITY",
         "username": _env("COMMUNITY_BOT_USERNAME"),
         "created": False,
-        "valid_username": False,
+        "valid_username": bool(_env("COMMUNITY_BOT_USERNAME")) if central_role_service else False,
         "expected_prefix": _expected_prefix(owner_id),
         "owner_id": owner_id,
-        "error": "Community bot is owner-only",
+        "error": None if central_role_service else "Community bot is owner-only",
+        "managed_externally": central_role_service,
         "commands_synced": False,
         "inline_synced": False,
         "avatar_synced": False,
@@ -1394,7 +1442,7 @@ async def _run_startup_sync_locked(client) -> dict:
     helper_start_ping, helper_start_ping_error = await _ping_bot_runtime(client, helper_username)
     community_start_ping = False
     community_start_ping_error = None
-    if community_enabled_for_owner(owner_id):
+    if community_username:
         community_start_ping, community_start_ping_error = await _ping_bot_runtime(client, community_username)
     bot_status["start_ping"] = start_ping
     helper_status["start_ping"] = helper_start_ping
@@ -1412,7 +1460,7 @@ async def _run_startup_sync_locked(client) -> dict:
             helper_avatar_error,
             helper_start_ping_error,
         )
-    if community_enabled_for_owner(owner_id) and not community_status.get("error"):
+    if not community_status.get("error"):
         community_status["error"] = _collect_error(
             community_commands_error,
             community_avatar_error,
@@ -1423,7 +1471,7 @@ async def _run_startup_sync_locked(client) -> dict:
         "bot": bot_status,
         "helper_bot": helper_status,
         "community_bot": community_status,
-        "bots": [bot_status, helper_status] + ([community_status] if community_enabled_for_owner(owner_id) else []),
+        "bots": [bot_status, helper_status, community_status],
         "channels": [],
         "folder": {
             "name": FOLDER_NAME,
@@ -1463,7 +1511,7 @@ async def _run_startup_sync_locked(client) -> dict:
     for role, username in (
         ("inline", bot_username),
         ("helper", helper_username),
-        ("community", community_username if community_enabled_for_owner(owner_id) else ""),
+        ("community", community_username),
     ):
         if not username:
             continue

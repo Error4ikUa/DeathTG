@@ -3,11 +3,8 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-import re
 import secrets
 import shutil
-import subprocess
-import sys
 import time
 from pathlib import Path
 from urllib.parse import quote, urlparse
@@ -22,6 +19,7 @@ from deathtg.profile_store import profile_settings, save_profile_settings, updat
 from deathtg.registry import PROTECTED_MODULES
 from deathtg.module_repo import fetch_module_bundle, parse_requirements_text
 from deathtg.module_config import ModuleConfig, ValidationError
+from deathtg.requirements_manager import install_requirements, safe_requirements
 from deathtg.role_gate import can_assign_role, normalize_role
 from deathtg.community_roles import clear_role_scan_result, read_role_scan_result
 from deathtg.security import is_trusted_module_link, scan_module_source
@@ -31,7 +29,6 @@ router = APIRouter()
 USER_STATIC_DIR = Path(__file__).resolve().parent / "static" / "user"
 PANEL_ACTIONS_PATH = RUNTIME_DIR / "panel_actions.jsonl"
 PENDING_INSTALLS_DIR = RUNTIME_DIR / "pending_installs"
-REQUIREMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+(?:==[A-Za-z0-9_.!+-]+|>=[A-Za-z0-9_.!+-]+|<=[A-Za-z0-9_.!+-]+)?$")
 ROLE_SCAN_TIMEOUT_SECONDS = 15.0
 
 
@@ -644,27 +641,19 @@ async def install_module_requirements(request: Request, name: str):
         if not path.exists():
             raise RuntimeError("Module source was not found")
         parsed = _extract_module_source_meta(path.read_text(encoding="utf-8", errors="replace"))
-        requirements = [item for item in parsed.get("requires", []) if REQUIREMENT_RE.fullmatch(item)]
+        requirements = list(parsed.get("requires", []))
         requirements_file = path.parent / "requirements.txt"
         if requirements_file.exists():
             requirements.extend(
-                item
-                for item in parse_requirements_text(requirements_file.read_text(encoding="utf-8", errors="replace"))
-                if REQUIREMENT_RE.fullmatch(item)
+                parse_requirements_text(requirements_file.read_text(encoding="utf-8", errors="replace"))
             )
-        requirements = sorted(set(requirements))
+        requirements, _skipped = safe_requirements(requirements)
         if not requirements:
             raise RuntimeError("No safe requirements found")
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", *requirements],
-            cwd=ROOT_DIR,
-            text=True,
-            capture_output=True,
-            timeout=180,
-        )
-        output = (result.stdout + "\n" + result.stderr).strip()
-        if result.returncode != 0:
-            raise RuntimeError((output or "pip failed")[-800:])
+        result = await asyncio.to_thread(install_requirements, requirements)
+        if not result.get("ok"):
+            output = str(result.get("message") or result.get("stderr") or "pip failed")
+            raise RuntimeError(output[-800:])
         return _redirect(f"/modules/{module_name}", message=f"Requirements installed: {', '.join(requirements)}")
     except Exception as e:
         return _redirect(f"/modules/{name}", error=str(e))

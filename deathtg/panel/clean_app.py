@@ -6,6 +6,7 @@ import os
 import secrets
 import time
 import re
+from urllib.parse import urlparse
 
 import aiohttp
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -21,6 +22,7 @@ from deathtg.panel.clean_actions import _queue_userbot_action, load_pending_inst
 from deathtg.panel.clean_core import (
     STATIC_DIR,
     activity_points,
+    annotate_repo_install_state,
     env_load,
     has_env,
     has_session,
@@ -98,7 +100,10 @@ SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Content-Security-Policy": "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
 }
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+PUBLIC_UNSAFE_PATHS = {"/login", "/setup/save", "/setup/qr-refresh", "/setup/secret"}
 
 app = FastAPI(title="DeathTG Panel")
 app.add_middleware(
@@ -132,6 +137,20 @@ async def startup_event() -> None:
 
 @app.middleware("http")
 async def harden_responses(request: Request, call_next):
+    if request.method.upper() in UNSAFE_METHODS:
+        if not _same_origin_request(request):
+            return JSONResponse({"error": "Cross-site request blocked"}, status_code=403)
+        if request.url.path not in PUBLIC_UNSAFE_PATHS:
+            session_data = request.scope.get("session") or {}
+            session_id = str(session_data.get("device_session_id") or "")
+            if (
+                not _network_access_allowed(request)
+                or not session_data.get("auth")
+                or not session_id
+                or not active_device(session_id)
+            ):
+                request.session.clear()
+                return JSONResponse({"error": "Authentication required"}, status_code=401)
     session_data = request.scope.get("session") or {}
     session_id = str(session_data.get("device_session_id") or "")
     if session_id:
@@ -148,16 +167,19 @@ def _auth_guard(request: Request):
     snapshot = startup_snapshot()
     if snapshot.get("setup_required") and not request.session.get("auth"):
         return RedirectResponse(_setup_path_with_token(), status_code=303)
-    if not request.session.get("auth") and _is_local_request(request):
+    local_request = _is_local_request(request)
+    peer = _tailscale_request_peer(request)
+    if not local_request and not peer and not public_panel_enabled():
+        return RedirectResponse("/login?error=Use+localhost+or+the+Tailscale+panel+address", status_code=303)
+    if not request.session.get("auth") and local_request:
         _authorize_local_request(request)
     if not request.session.get("auth"):
-        peer = _tailscale_request_peer(request)
         if peer:
             _authorize_tailscale_request(request, peer)
     if not request.session.get("auth"):
         return RedirectResponse("/login", status_code=303)
     session_id = str(request.session.get("device_session_id") or "")
-    if session_id and not active_device(session_id):
+    if not session_id or not active_device(session_id):
         request.session.clear()
         return RedirectResponse("/login?error=Device+session+revoked", status_code=303)
     return None
@@ -220,29 +242,57 @@ def _tailscale_request_peer(request: Request) -> dict | None:
     return tailscale_peer(_client_ip(request))
 
 
+def _network_access_allowed(request: Request) -> bool:
+    return bool(_is_local_request(request) or _tailscale_request_peer(request) or public_panel_enabled())
+
+
 def _client_ip(request: Request) -> str:
-    if panel_trust_proxy():
+    direct_ip = getattr(getattr(request, "client", None), "host", None) or "unknown"
+    if panel_trust_proxy() and _trusted_proxy_ip(direct_ip):
         forwarded = request.headers.get("x-forwarded-for", "")
         if forwarded:
             return forwarded.split(",", 1)[0].strip()
-    return getattr(getattr(request, "client", None), "host", None) or "unknown"
+    return direct_ip
+
+
+def _trusted_proxy_ip(value: str) -> bool:
+    try:
+        address = ipaddress.ip_address(str(value).split("%", 1)[0])
+    except ValueError:
+        return False
+    if address.is_loopback:
+        return True
+    configured = (os.getenv("PANEL_TRUSTED_PROXIES", "") or "").strip()
+    for item in configured.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            if address in ipaddress.ip_network(item, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def _same_origin_request(request: Request) -> bool:
+    fetch_site = (request.headers.get("sec-fetch-site") or "").strip().lower()
+    if fetch_site == "cross-site":
+        return False
+    origin = (request.headers.get("origin") or "").strip()
+    if not origin:
+        return True
+    try:
+        parsed = urlparse(origin)
+    except ValueError:
+        return False
+    request_host = (request.headers.get("host") or "").strip().lower()
+    origin_host = (parsed.netloc or "").strip().lower()
+    return parsed.scheme in {"http", "https"} and bool(origin_host) and origin_host == request_host
 
 
 def _is_local_request(request: Request) -> bool:
-    host = (request.url.hostname or "").strip().lower()
-    if host in {"127.0.0.1", "localhost", "::1"}:
-        return True
-    origin_host = (request.headers.get("host") or "").split(":", 1)[0].strip().lower()
-    if origin_host in {"127.0.0.1", "localhost", "::1"}:
-        return True
     client_ip = _client_ip(request).strip().lower()
-    local_ip = (local_network_ip() or "").strip().lower()
-    if local_ip and client_ip == local_ip:
-        return True
-    if client_ip and host and client_ip == host:
-        return True
-    if client_ip and origin_host and client_ip == origin_host:
-        return True
     try:
         return ipaddress.ip_address(client_ip).is_loopback
     except Exception:
@@ -400,7 +450,7 @@ async def setup_page(request: Request):
     if not _setup_allowed(request):
         return HTMLResponse(
             "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-            "<link rel='stylesheet' href='/static/clean.css'><link rel='stylesheet' href='/static/engineering.css?v=20260807.3'>"
+            "<link rel='stylesheet' href='/static/clean.css'><link rel='stylesheet' href='/static/engineering.css?v=20260819.3'>"
             "</head><body><main class='auth'><section class='card auth-card'>"
             "<div class='mark big'>DTG</div><h1>Setup token required</h1>"
             "<p>Open the private setup link printed in the DeathTG console.</p>"
@@ -422,7 +472,7 @@ async def setup_done_page(request: Request):
     body = (
         "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>"
         "<title>DeathTG Ready</title><link rel='stylesheet' href='/static/clean.css'>"
-        "<link rel='stylesheet' href='/static/engineering.css?v=20260807.3'></head>"
+        "<link rel='stylesheet' href='/static/engineering.css?v=20260819.3'></head>"
         "<body><main class='auth'><section class='card auth-card'>"
         "<div class='mark big'>DTG</div>"
         "<h1 style='margin-top:0'>Telegram connected</h1>"
@@ -451,7 +501,7 @@ async def setup_save(
     if not _setup_allowed(request, setup_token):
         return HTMLResponse(
             "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-            "<link rel='stylesheet' href='/static/clean.css'><link rel='stylesheet' href='/static/engineering.css?v=20260807.3'>"
+            "<link rel='stylesheet' href='/static/clean.css'><link rel='stylesheet' href='/static/engineering.css?v=20260819.3'>"
             "</head><body><main class='auth'><section class='card auth-card'>"
             "<div class='mark big'>DTG</div><h1>Setup token required</h1>"
             "<p>Open the private setup link printed in the DeathTG console.</p>"
@@ -596,12 +646,24 @@ async def login_page(request: Request):
     snapshot = startup_snapshot()
     if snapshot.get("phase") in {PHASE_FIRST_RUN, PHASE_SETUP_WAIT_QR, PHASE_SETUP_WAIT_2FA}:
         return RedirectResponse(_setup_path_with_token(), status_code=303)
-    if request.session.get("auth"):
+    local_request = _is_local_request(request)
+    peer = _tailscale_request_peer(request)
+    network_allowed = bool(local_request or peer or public_panel_enabled())
+    if request.session.get("auth") and network_allowed:
         return RedirectResponse("/", status_code=303)
-    if _is_local_request(request):
+    if request.session.get("auth") and not network_allowed:
+        return templates.TemplateResponse(
+            "clean_login.html",
+            {
+                "request": request,
+                "error": "Use localhost or the Tailscale panel address.",
+                "lang": _request_lang(request),
+            },
+            status_code=403,
+        )
+    if local_request:
         _authorize_local_request(request)
         return RedirectResponse("/?message=Local+device+connected", status_code=303)
-    peer = _tailscale_request_peer(request)
     if peer:
         _authorize_tailscale_request(request, peer)
         return RedirectResponse("/?message=Tailnet+device+connected", status_code=303)
@@ -617,6 +679,8 @@ async def grant_login(request: Request, token: str):
         return RedirectResponse(_setup_path_with_token(), status_code=303)
     if not PANEL_GRANT_TOKEN_RE.fullmatch(token or ""):
         return RedirectResponse("/login?error=Invalid+grant+token", status_code=303)
+    if not _network_access_allowed(request):
+        return RedirectResponse("/login?error=Open+this+link+through+Tailscale", status_code=303)
     try:
         payload = consume_device_grant(
             token,
@@ -664,8 +728,7 @@ async def login(request: Request):
 
 @app.get("/healthz")
 async def healthz():
-    snapshot = startup_snapshot()
-    return JSONResponse({"ok": True, "panel": "up", "session_file": has_session(), "env": has_env(), "phase": snapshot.get("phase")})
+    return JSONResponse({"ok": True, "panel": "up"})
 
 
 @app.get("/health", response_class=HTMLResponse)
@@ -678,7 +741,14 @@ async def health_page(request: Request):
 
 
 @app.get("/module-media/{name}")
-async def module_media(name: str):
+async def module_media(request: Request, name: str):
+    # Module media can reveal locally installed module names, so it follows the
+    # same authenticated session policy as the module center itself.
+    # FastAPI injects no Request here in older routes; keep static shared images
+    # under /images and protect only this runtime-specific endpoint.
+    blocked = _auth_guard(request)
+    if blocked:
+        return blocked
     path = module_image_path(name)
     if not path or not path.exists():
         return JSONResponse({"error": "module image not found"}, status_code=404)
@@ -763,7 +833,11 @@ async def browser_page(request: Request):
     if blocked:
         return blocked
     await refresh_modules()
-    repo_modules = await module_repo(refresh=request.query_params.get("refresh") == "1")
+    grouped = registry.by_module()
+    repo_modules = annotate_repo_install_state(
+        await module_repo(refresh=request.query_params.get("refresh") == "1"),
+        grouped,
+    )
     try:
         page = max(1, int(request.query_params.get("page", "1")))
     except Exception:
@@ -778,8 +852,8 @@ async def browser_page(request: Request):
             "browser_modules": repo_modules[start:start + per_page],
             "browser_page": page,
             "browser_pages": total_pages,
-            "grouped": registry.by_module(),
-            "module_cards": installed_module_cards(registry.by_module()),
+            "grouped": grouped,
+            "module_cards": installed_module_cards(grouped),
             "protected": PROTECTED_MODULES,
         }
     )

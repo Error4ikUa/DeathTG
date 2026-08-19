@@ -5,8 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ tr('browser.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
-    <link rel="stylesheet" href="/static/clean_patch.css">
-    <link rel="stylesheet" href="/static/engineering.css?v=20260809.1">
+    <link rel="stylesheet" href="/static/engineering.css?v=20260819.3">
 </head>
 <body class="theme-modules" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>
@@ -86,12 +85,18 @@
                 </div>
                 <div class="module-head">
                     <h2>{{ mod.name }}</h2>
-                    {% if mod.verified %}<span class="verified-pill">{{ tr('browser.verified') }}</span>{% endif %}
+                    <div class="module-state-stack">
+                        {% if mod.installed %}<span class="installed-pill">{{ tr('browser.installed_status') }}</span>{% endif %}
+                        {% if mod.verified %}<span class="verified-pill">{{ tr('browser.verified') }}</span>{% endif %}
+                    </div>
                 </div>
                 <p class="module-note">{{ mod.source_label or tr('browser.external_source') }}</p>
                 <p>{{ mod.description }}</p>
                 <div class="module-actions repo-actions">
                     <a class="small ghost info-link" href="/repo-modules/{{ mod.name }}">{{ tr('browser.info') }}</a>
+                    {% if mod.installed %}
+                    <a class="small installed-action" href="/modules/{{ mod.installed_name or mod.name }}">{{ tr('browser.open_installed') }}</a>
+                    {% else %}
                     <form method="post" action="/modules/download">
                         <input type="hidden" name="link" value="{{ mod.link or mod.raw or mod.url }}">
                         <input type="hidden" name="image" value="{{ image }}">
@@ -101,6 +106,7 @@
                         <input type="hidden" name="return_to" value="browser">
                         <button class="small" type="submit">{{ tr('browser.install') }}</button>
                     </form>
+                    {% endif %}
                 </div>
             </article>
             {% endfor %}
@@ -207,6 +213,6 @@
 </main>
 
 <script src="/static/matrix.js"></script>
-<script src="/static/clean.js"></script>
+<script src="/static/clean.js?v=20260819.1"></script>
 </body>
 </html>

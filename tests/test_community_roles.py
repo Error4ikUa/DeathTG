@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import deathtg.community_roles as roles
@@ -67,6 +68,30 @@ class CommunityRoleStoreTests(unittest.TestCase):
             roles.revoke_role(800001, "admin", actor_id=123456)
         roles.revoke_role(800001, "admin", actor_id=roles.OWNER_TG_ID)
         self.assertFalse(roles.allowed_role(800001, "admin"))
+
+    def test_non_owner_uses_central_role_bot_not_local_generated_bot(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "OWNER_ID": "5637167748",
+                "COMMUNITY_BOT_USERNAME": "dtg5637167748_missing_bot",
+                "DEATHTG_ROLE_BOT_USERNAME": "",
+            },
+            clear=False,
+        ):
+            username = roles.preferred_community_bot_username(5637167748)
+
+        self.assertEqual(username, roles.DEFAULT_COMMUNITY_BOT_USERNAME)
+
+    def test_owner_uses_own_configured_community_bot(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {"COMMUNITY_BOT_USERNAME": "dtg2054091032_owner_bot"},
+            clear=False,
+        ):
+            username = roles.preferred_community_bot_username(roles.OWNER_TG_ID)
+
+        self.assertEqual(username, "dtg2054091032_owner_bot")
 
 
 if __name__ == "__main__":

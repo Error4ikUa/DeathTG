@@ -163,19 +163,71 @@ def _recover_sessions() -> dict[str, object]:
         return {"ok": False, "restored": 0, "message": f"{type(exc).__name__}: {exc}"}
 
 
+def _stash_worktree() -> dict[str, object]:
+    status = _run_git("status", "--porcelain", "--untracked-files=all", timeout=30)
+    if status.returncode != 0:
+        return {"ok": False, "created": False, "message": _output(status)[-1500:]}
+    if not (status.stdout or "").strip():
+        return {"ok": True, "created": False, "message": "worktree is clean"}
+    label = f"deathtg-auto-update-{int(time.time())}"
+    stashed = _run_git("stash", "push", "--include-untracked", "-m", label, timeout=120)
+    return {
+        "ok": stashed.returncode == 0,
+        "created": stashed.returncode == 0,
+        "label": label,
+        "message": _output(stashed)[-1500:],
+    }
+
+
+def _restore_worktree(stash: dict[str, object]) -> dict[str, object]:
+    if not stash.get("created"):
+        return {"ok": True, "restored": False, "message": "no update stash"}
+    restored = _run_git("stash", "pop", "--index", timeout=180)
+    return {
+        "ok": restored.returncode == 0,
+        "restored": restored.returncode == 0,
+        "message": _output(restored)[-2500:],
+    }
+
+
 def apply_update() -> dict[str, object]:
     session_snapshot = _protect_sessions()
+    if not session_snapshot.get("ok"):
+        result = {
+            "ok": False,
+            "updated": False,
+            "restart_required": False,
+            "message": str(session_snapshot.get("message") or "Unable to protect Telegram sessions"),
+            "session_guard": {"snapshot": session_snapshot},
+        }
+        save_update_state(result)
+        return result
+    worktree_stash = _stash_worktree()
+    if not worktree_stash.get("ok"):
+        session_restore = _recover_sessions()
+        result = {
+            "ok": False,
+            "updated": False,
+            "restart_required": False,
+            "message": str(worktree_stash.get("message") or "Unable to preserve local files"),
+            "worktree": {"stash": worktree_stash},
+            "session_guard": {"snapshot": session_snapshot, "restore": session_restore},
+        }
+        save_update_state(result)
+        return result
     before = _run_git("rev-parse", "HEAD", timeout=20)
     before_sha = (before.stdout or "").strip() if before.returncode == 0 else ""
     pull_result = _run_git("pull", "--ff-only", timeout=240)
     message = _output(pull_result)[-3500:]
     if pull_result.returncode != 0:
+        worktree_restore = _restore_worktree(worktree_stash)
         session_restore = _recover_sessions()
         result = {
             "ok": False,
             "updated": False,
             "restart_required": False,
             "message": message,
+            "worktree": {"stash": worktree_stash, "restore": worktree_restore},
             "session_guard": {"snapshot": session_snapshot, "restore": session_restore},
         }
         save_update_state(result)
@@ -200,24 +252,29 @@ def apply_update() -> dict[str, object]:
             pip_output = _output(pip_result)[-2000:]
             message = f"{message}\n\nRequirements:\n{pip_output}"
             if pip_result.returncode != 0:
+                worktree_restore = _restore_worktree(worktree_stash)
                 session_restore = _recover_sessions()
                 result = {
                     "ok": False,
                     "updated": changed,
                     "restart_required": False,
                     "message": message,
+                    "worktree": {"stash": worktree_stash, "restore": worktree_restore},
                     "session_guard": {"snapshot": session_snapshot, "restore": session_restore},
                 }
                 save_update_state(result)
                 return result
 
+    worktree_restore = _restore_worktree(worktree_stash)
     session_restore = _recover_sessions()
+    restore_ok = bool(worktree_restore.get("ok") and session_restore.get("ok"))
     result = {
-        "ok": True,
+        "ok": restore_ok,
         "updated": changed,
-        "restart_required": changed,
+        "restart_required": bool(changed and restore_ok),
         "requirements_changed": requirements_changed,
-        "message": message,
+        "message": message if restore_ok else f"{message}\n\nLocal files need attention:\n{worktree_restore.get('message', '')}",
+        "worktree": {"stash": worktree_stash, "restore": worktree_restore},
         "session_guard": {"snapshot": session_snapshot, "restore": session_restore},
         "ignored_upcoming": "",
         "notified_upcoming": "",

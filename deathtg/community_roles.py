@@ -17,7 +17,9 @@ from deathtg.role_gate import OWNER_TG_ID, normalize_role
 COMMUNITY_REGISTRY_PATH = RUNTIME_DIR / "community_roles.json"
 COMMUNITY_ROLES_DB_PATH = RUNTIME_DIR / "community_roles.sqlite3"
 ROLE_SCAN_RESULTS_DIR = RUNTIME_DIR / "role_scan_results"
-DEFAULT_COMMUNITY_BOT_USERNAME = "Djdkxkxyscomunity_bot"
+# Public owner authority used by non-owner DeathTG installations.  A local
+# instance must never invent a community bot from its own Telegram ID.
+DEFAULT_COMMUNITY_BOT_USERNAME = "dtg2054091032_cpnf9hq_bot"
 ROLE_CODE_TTL_SECONDS = 15 * 60
 ROLE_TITLES = {"admin": "Администратор", "developer": "Разработчик"}
 ROLE_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -121,13 +123,13 @@ def _new_code(role: str) -> str:
 
 
 def preferred_community_bot_username(owner_id: int | None = None) -> str:
-    raw = (os.getenv("COMMUNITY_BOT_USERNAME", "") or "").strip().lstrip("@")
-    if raw:
-        username = raw
-    elif owner_id:
-        username = f"dtg{int(owner_id)}_community_bot"
+    configured_owner = str(os.getenv("OWNER_ID", "") or "").strip()
+    effective_owner = int(owner_id or configured_owner or 0)
+    if effective_owner == OWNER_TG_ID:
+        raw = (os.getenv("COMMUNITY_BOT_USERNAME", "") or "").strip().lstrip("@")
     else:
-        username = DEFAULT_COMMUNITY_BOT_USERNAME
+        raw = (os.getenv("DEATHTG_ROLE_BOT_USERNAME", "") or "").strip().lstrip("@")
+    username = raw or DEFAULT_COMMUNITY_BOT_USERNAME
     if not username.lower().endswith("bot"):
         username = f"{username}_bot"
     return username
