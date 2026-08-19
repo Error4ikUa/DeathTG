@@ -9,6 +9,7 @@ from unittest.mock import patch
 from telethon.errors import UnauthorizedError
 
 import deathtg.panel.auth_flow as auth_flow
+import deathtg.app as app_module
 import deathtg.session_guard as session_guard
 import deathtg.update_manager as update_manager
 from deathtg.app import DeathTG
@@ -16,6 +17,9 @@ from deathtg.telethon_policy import INVALID_SESSION_ERRORS
 
 
 class SessionLifecycleTests(unittest.TestCase):
+    def test_backup_scheduler_has_wall_clock_dependency(self) -> None:
+        self.assertTrue(callable(app_module.time.time))
+
     def test_revoked_session_is_snapshotted_and_quarantined(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
