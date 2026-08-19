@@ -245,7 +245,11 @@ async def harden_responses(request: Request, call_next):
                     user_agent=request.headers.get("user-agent", ""),
                 )
             ):
-                request.session.clear()
+                # This middleware wraps SessionMiddleware, so hostile requests
+                # can reach this branch before Starlette has populated
+                # request.session. Clearing the raw scope mapping is safe in
+                # both middleware orders and keeps rejection paths fail-closed.
+                session_data.clear()
                 response = JSONResponse({"error": "Authentication required"}, status_code=401)
     if response is None:
         session_data = request.scope.get("session") or {}
