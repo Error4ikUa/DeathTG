@@ -137,10 +137,11 @@ async def startup_event() -> None:
 
 @app.middleware("http")
 async def harden_responses(request: Request, call_next):
+    response = None
     if request.method.upper() in UNSAFE_METHODS:
         if not _same_origin_request(request):
-            return JSONResponse({"error": "Cross-site request blocked"}, status_code=403)
-        if request.url.path not in PUBLIC_UNSAFE_PATHS:
+            response = JSONResponse({"error": "Cross-site request blocked"}, status_code=403)
+        elif request.url.path not in PUBLIC_UNSAFE_PATHS:
             session_data = request.scope.get("session") or {}
             session_id = str(session_data.get("device_session_id") or "")
             if (
@@ -150,12 +151,13 @@ async def harden_responses(request: Request, call_next):
                 or not active_device(session_id)
             ):
                 request.session.clear()
-                return JSONResponse({"error": "Authentication required"}, status_code=401)
-    session_data = request.scope.get("session") or {}
-    session_id = str(session_data.get("device_session_id") or "")
-    if session_id:
-        touch_device_session(session_id, ip=_client_ip(request), user_agent=request.headers.get("user-agent", ""))
-    response = await call_next(request)
+                response = JSONResponse({"error": "Authentication required"}, status_code=401)
+    if response is None:
+        session_data = request.scope.get("session") or {}
+        session_id = str(session_data.get("device_session_id") or "")
+        if session_id:
+            touch_device_session(session_id, ip=_client_ip(request), user_agent=request.headers.get("user-agent", ""))
+        response = await call_next(request)
     for key, value in SECURITY_HEADERS.items():
         response.headers.setdefault(key, value)
     if request.url.path.startswith(("/login", "/setup", "/grant")):
