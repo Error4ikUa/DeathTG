@@ -186,6 +186,26 @@ class PanelSecurityMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["x-content-type-options"], "nosniff")
         self.assertEqual(response.headers["cache-control"], "no-store")
 
+    async def test_anonymous_unsafe_request_without_session_scope_fails_closed(self) -> None:
+        request = request_for(
+            "192.0.2.40",
+            method="POST",
+            path="/system/restart",
+            host="localhost",
+            origin="http://localhost",
+        )
+        request.scope.pop("session")
+
+        async def unreachable(_request):
+            self.fail("Anonymous unsafe request reached the application")
+
+        with patch.object(panel, "_network_access_allowed", return_value=False):
+            response = await panel.harden_responses(request, unreachable)
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+        self.assertEqual(response.headers["cache-control"], "no-store")
+
     async def test_https_response_gets_hsts(self) -> None:
         request = request_for("127.0.0.1", path="/profile", host="127.0.0.1:8080")
         request.scope["scheme"] = "https"
