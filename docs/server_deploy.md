@@ -2,8 +2,9 @@
 
 DeathTG now supports a secure-by-default server bootstrap:
 
-- panel binds to the configured local/LAN host
-- public remote access is intended for `https://` only
+- panel binds to `127.0.0.1` by default on desktops and servers
+- private remote access uses Tailscale Serve and requires no public domain
+- a public bind is disabled unless `PANEL_ALLOW_REMOTE_BIND=1` is set explicitly
 - strong `PANEL_SECRET` is auto-generated if missing or weak
 - trusted hosts are enforced
 - secure cookies switch on automatically when `PANEL_PUBLIC_URL=https://...`
@@ -29,6 +30,10 @@ Optional public reverse proxy:
 ```bash
 DTG_PUBLIC_HOST=panel.example.com DTG_PUBLIC_URL=https://panel.example.com bash scripts/install_server.sh
 ```
+
+Private phone/server access is automatic when Tailscale is connected. DeathTG
+keeps FastAPI on localhost and configures `tailscale serve --bg` without Funnel,
+so the panel is reachable only inside your tailnet.
 
 The installer:
 

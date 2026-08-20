@@ -21,6 +21,11 @@ def _enabled() -> bool:
     return value not in {"0", "false", "no", "off"}
 
 
+def _serve_enabled() -> bool:
+    value = os.getenv("PANEL_TAILSCALE_SERVE", "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
 def _normalize_ip(value: str) -> str:
     raw = (value or "").strip().split("%", 1)[0]
     try:
@@ -55,6 +60,8 @@ def _empty_status(message: str = "Tailscale is not installed") -> dict[str, Any]
         "ips": [],
         "peer_ips": {},
         "url": "",
+        "serve_ready": False,
+        "serve_url": "",
         "message": message,
     }
 
@@ -101,10 +108,7 @@ def _build_status(payload: dict[str, Any], command: str) -> dict[str, Any]:
                 peer_ips[normalized] = identity
 
     connected = backend_state.lower() == "running" and bool(own_ips)
-    host = dns_name or next((ip for ip in own_ips if ":" not in ip), "") or (own_ips[0] if own_ips else "")
-    port = os.getenv("PANEL_PORT", "8080").strip() or "8080"
-    url_host = f"[{host}]" if ":" in host else host
-    url = f"http://{url_host}:{port}" if connected and host else ""
+    serve_url = f"https://{dns_name}" if connected and dns_name else ""
     return {
         "available": True,
         "connected": connected,
@@ -114,10 +118,94 @@ def _build_status(payload: dict[str, Any], command: str) -> dict[str, Any]:
         "dns_name": dns_name,
         "ips": own_ips,
         "peer_ips": peer_ips,
-        "url": url,
+        "url": "",
+        "serve_ready": False,
+        "serve_url": serve_url,
         "command": command,
         "message": "Tailnet access is ready" if connected else f"Tailscale state: {backend_state}",
     }
+
+
+def _run_serve_status(command: str) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "timeout": 5,
+        "check": False,
+    }
+    if os.name == "nt":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    completed = subprocess.run([command, "serve", "status", "--json"], **kwargs)
+    if completed.returncode != 0:
+        return {}
+    try:
+        payload = json.loads(completed.stdout or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _serve_targets_port(payload: dict[str, Any], port: int) -> bool:
+    serialized = json.dumps(payload, sort_keys=True).lower()
+    return any(
+        target in serialized
+        for target in (
+            f"http://127.0.0.1:{port}",
+            f"http://localhost:{port}",
+            f"127.0.0.1:{port}",
+            f"localhost:{port}",
+        )
+    )
+
+
+def _cache_serve_state(*, ready: bool, message: str = "") -> dict[str, Any]:
+    global _CACHE
+    with _CACHE_LOCK:
+        cached_at, cached = _CACHE
+        result = dict(cached)
+        result["serve_ready"] = bool(ready)
+        result["url"] = result.get("serve_url", "") if ready else ""
+        if result["url"]:
+            os.environ["PANEL_TAILSCALE_URL"] = str(result["url"])
+        else:
+            os.environ.pop("PANEL_TAILSCALE_URL", None)
+        if message:
+            result["message"] = message
+        _CACHE = (cached_at or time.monotonic(), dict(result))
+    return result
+
+
+def ensure_tailscale_serve(port: int) -> dict[str, Any]:
+    """Expose the loopback panel only inside the active tailnet."""
+    status = tailscale_status(refresh=True)
+    if not _serve_enabled():
+        return _cache_serve_state(ready=False, message="Tailscale Serve is disabled")
+    if not status.get("connected"):
+        return _cache_serve_state(ready=False, message=str(status.get("message") or "Tailscale is offline"))
+    command = str(status.get("command") or "")
+    if not command:
+        return _cache_serve_state(ready=False, message="Tailscale CLI is unavailable")
+    if _serve_targets_port(_run_serve_status(command), int(port)):
+        return _cache_serve_state(ready=True, message="Private Tailnet HTTPS is ready")
+
+    kwargs: dict[str, Any] = {
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "timeout": 15,
+        "check": False,
+    }
+    if os.name == "nt":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    target = f"http://127.0.0.1:{int(port)}"
+    completed = subprocess.run([command, "serve", "--bg", "--yes", target], **kwargs)
+    if completed.returncode == 0:
+        return _cache_serve_state(ready=True, message="Private Tailnet HTTPS is ready")
+    detail = (completed.stderr or completed.stdout or "Unable to configure Tailscale Serve").strip()
+    return _cache_serve_state(ready=False, message=detail[:240])
 
 
 def tailscale_status(*, refresh: bool = False) -> dict[str, Any]:
@@ -134,6 +222,16 @@ def tailscale_status(*, refresh: bool = False) -> dict[str, Any]:
     else:
         try:
             result = _build_status(_run_status(command), command)
+            if result.get("connected") and _serve_enabled():
+                try:
+                    port = int(os.getenv("PANEL_PORT", "8080").strip() or "8080")
+                except ValueError:
+                    port = 8080
+                if _serve_targets_port(_run_serve_status(command), port):
+                    result["serve_ready"] = True
+                    result["url"] = result.get("serve_url", "")
+                    if result["url"]:
+                        os.environ["PANEL_TAILSCALE_URL"] = str(result["url"])
         except Exception as exc:
             result = _empty_status(f"{type(exc).__name__}: {exc}")
             result["available"] = True

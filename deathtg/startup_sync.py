@@ -380,7 +380,7 @@ def manual_bot_blueprints(owner_id: int) -> list[dict[str, str]]:
             "role": "inline",
             "label": "Inline bot",
             "env_key": "BOT_TOKEN",
-            "display_name": f"DeathTG Inline {owner_id}",
+            "display_name": "DeathTG Inline",
             "username": _preferred_bot_username(owner_id, "inline"),
             "purpose_en": "Main owner bot, startup actions, private panel link, inline bridge.",
             "purpose_ru": "Главный бот владельца, стартовые действия, приватная ссылка на панель, inline-мост.",
@@ -390,7 +390,7 @@ def manual_bot_blueprints(owner_id: int) -> list[dict[str, str]]:
             "role": "helper",
             "label": "Helper bot",
             "env_key": "BOT_TOKEN_HELPER",
-            "display_name": f"DeathTG Helper {owner_id}",
+            "display_name": "DeathTG Helper",
             "username": _preferred_bot_username(owner_id, "helper"),
             "purpose_en": "Fallback delivery channel, helper notifications, extra Telegram bridge.",
             "purpose_ru": "Резервный канал доставки, helper-уведомления, дополнительный Telegram-мост.",
@@ -813,10 +813,10 @@ async def _create_bot_with_botfather(client, owner_id: int, role: str = "inline"
                         if _botfather_retry_seconds(first_text):
                             return "", first_text[:240]
                     display_name = {
-                        "inline": f"DeathTG Inline {owner_id}",
-                        "helper": f"DeathTG Helper {owner_id}",
-                        "community": f"{community_bot_display_name()} {owner_id}",
-                    }.get(role, f"DeathTG Inline {owner_id}")
+                        "inline": "DeathTG Inline",
+                        "helper": "DeathTG Helper",
+                        "community": community_bot_display_name(),
+                    }.get(role, "DeathTG Inline")
                     print(f"BotFather: creating {role} bot for owner {owner_id}")
                     name_response = await _botfather_step(conv, display_name)
                     name_text = getattr(name_response, "raw_text", "") or ""
@@ -913,11 +913,22 @@ async def _set_bot_profile(bot_token: str, owner_id: int, role: str = "inline") 
             {"command": "status", "description": "Runtime status"},
         ]
     commands = {"commands": command_items}
-    description = {"description": f"DeathTG {role_title} bot for owner {owner_id}"}
+    descriptions = {
+        "inline": "DeathTG inline control plane",
+        "helper": "DeathTG helper delivery service",
+        "community": "DeathTG role verification service",
+    }
+    description = {"description": descriptions.get(role, "DeathTG control service")}
     short_description = {"short_description": f"DeathTG {role_title} runtime"}
+    display_name = {
+        "inline": "DeathTG Inline",
+        "helper": "DeathTG Helper",
+        "community": community_bot_display_name(),
+    }.get(role, "DeathTG Inline")
     try:
         async with aiohttp.ClientSession() as session:
             for method, payload in (
+                ("setMyName", {"name": display_name}),
                 ("setMyCommands", commands),
                 ("setMyDescription", description),
                 ("setMyShortDescription", short_description),

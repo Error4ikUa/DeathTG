@@ -331,12 +331,18 @@ def _wsl_remote_probe_ok() -> bool:
 
 
 def effective_panel_bind_host() -> str:
-    configured = _env("PANEL_HOST")
-    if configured:
+    configured = _env("PANEL_HOST") or "127.0.0.1"
+    if configured in {"127.0.0.1", "localhost", "::1"}:
         return configured
-    if _env("PANEL_PUBLIC_URL") or _env("PANEL_PUBLIC_HOST"):
-        return "0.0.0.0"
-    return "0.0.0.0"
+    allow_remote = _env("PANEL_ALLOW_REMOTE_BIND", "0").lower() in {"1", "true", "yes", "on"}
+    return configured if allow_remote else "127.0.0.1"
+
+
+def _is_unspecified_host(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_unspecified
+    except ValueError:
+        return False
 
 
 def visible_panel_host() -> str:
@@ -344,7 +350,7 @@ def visible_panel_host() -> str:
     if running_in_wsl() and not (_env("PANEL_PUBLIC_URL") or _env("PANEL_PUBLIC_HOST")):
         if not (_wsl_portproxy_ready() and _wsl_remote_probe_ok()):
             return "127.0.0.1"
-    if host in {"0.0.0.0", "::"}:
+    if _is_unspecified_host(host):
         lan_ip = local_network_ip()
         return lan_ip or "127.0.0.1"
     return host or "127.0.0.1"
@@ -356,7 +362,7 @@ def _normalize_visible_url(value: str) -> str:
         return ""
     parsed = urlparse(raw)
     host = (parsed.hostname or "").strip().lower()
-    if host not in {"0.0.0.0", "::", "localhost"}:
+    if not _is_unspecified_host(host) and host != "localhost":
         return raw.rstrip("/")
     scheme = parsed.scheme or _env("PANEL_SCHEME", "http") or "http"
     visible_host = visible_panel_host()
@@ -370,6 +376,9 @@ def panel_base_url() -> str:
     full = _env("PANEL_PUBLIC_URL")
     if full:
         return _normalize_visible_url(full)
+    tailnet_url = _env("PANEL_TAILSCALE_URL")
+    if tailnet_url:
+        return tailnet_url.rstrip("/")
     scheme = _env("PANEL_SCHEME", "http") or "http"
     host = visible_panel_host()
     port = _env("PANEL_PORT", "8080") or "8080"
@@ -421,6 +430,8 @@ def panel_host_kind() -> str:
 
 
 def panel_remote_access_ready() -> bool:
+    if _env("PANEL_TAILSCALE_URL"):
+        return True
     if running_in_wsl() and not (_env("PANEL_PUBLIC_URL") or _env("PANEL_PUBLIC_HOST")):
         if not _wsl_portproxy_ready():
             return False

@@ -42,7 +42,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "phone": "",
     "bot_token": "",
     "bot_token_helper": "",
-    "panel_host": "0.0.0.0",
+    "panel_host": "127.0.0.1",
     "panel_port": "8080",
     "panel_public_url": "",
     "panel_secret": "",
@@ -101,7 +101,7 @@ def normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     if not normalized["command_prefix"]:
         normalized["command_prefix"] = "."
     if not normalized["panel_host"]:
-        normalized["panel_host"] = "0.0.0.0"
+        normalized["panel_host"] = "127.0.0.1"
     if not normalized["panel_port"]:
         normalized["panel_port"] = "8080"
     return normalized
