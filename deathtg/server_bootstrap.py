@@ -96,15 +96,24 @@ def ensure_server_env(*, path: Path = ENV_PATH, panel_host: str = "", panel_port
     if current.get("PANEL_SECRET", "") != secret:
         updates["PANEL_SECRET"] = secret
 
-    default_panel_host = "0.0.0.0"
+    default_panel_host = "127.0.0.1"
     current_panel_host = current.get("PANEL_HOST", "").strip()
-    if not current_panel_host:
-        resolved_panel_host = panel_host or default_panel_host
-    elif current_panel_host in {"127.0.0.1", "localhost"} and not effective_public_host and not effective_public_url:
-        resolved_panel_host = "0.0.0.0"
-        updates["PANEL_HOST"] = resolved_panel_host
+    requested_panel_host = panel_host.strip()
+    allow_remote_bind = _strip(current.get("PANEL_ALLOW_REMOTE_BIND")).lower() in {"1", "true", "yes", "on"}
+    tailscale_serve = current.get("PANEL_TAILSCALE_SERVE", "1") or "1"
+    private_proxy_enabled = tailscale_serve.lower() not in {"0", "false", "no", "off"}
+    if requested_panel_host:
+        resolved_panel_host = requested_panel_host
+    elif current_panel_host in {"127.0.0.1", "localhost", "::1"}:
+        resolved_panel_host = current_panel_host
+    elif current_panel_host and allow_remote_bind:
+        resolved_panel_host = current_panel_host
     else:
-        resolved_panel_host = panel_host or current_panel_host
+        # Migrate the legacy 0.0.0.0 default back to loopback. Remote binding
+        # is an explicit escape hatch; normal remote access uses Tailscale Serve.
+        resolved_panel_host = default_panel_host
+        if current_panel_host != resolved_panel_host:
+            updates["PANEL_HOST"] = resolved_panel_host
 
     desired_defaults = {
         "SESSION_NAME": current.get("SESSION_NAME", "deathtg") or "deathtg",
@@ -117,8 +126,10 @@ def ensure_server_env(*, path: Path = ENV_PATH, panel_host: str = "", panel_port
         "PANEL_PUBLIC_URL": effective_public_url,
         "PANEL_ALLOWED_HOSTS": current.get("PANEL_ALLOWED_HOSTS", ""),
         "PANEL_COOKIE_SECURE": current.get("PANEL_COOKIE_SECURE", "auto") or "auto",
-        "PANEL_TRUST_PROXY": current.get("PANEL_TRUST_PROXY", "1" if (effective_public_host or effective_public_url) else "0") or "0",
+        "PANEL_TRUST_PROXY": "1" if (effective_public_host or effective_public_url or private_proxy_enabled) else (current.get("PANEL_TRUST_PROXY", "0") or "0"),
         "PANEL_TAILSCALE_TRUST": current.get("PANEL_TAILSCALE_TRUST", "1") or "1",
+        "PANEL_TAILSCALE_SERVE": tailscale_serve,
+        "PANEL_ALLOW_REMOTE_BIND": current.get("PANEL_ALLOW_REMOTE_BIND", "0") or "0",
         "PANEL_SHORTCUTS_ON_STARTUP": current.get("PANEL_SHORTCUTS_ON_STARTUP", "1") or "1",
         "PANEL_SHORTCUTS_MIN_INTERVAL": current.get("PANEL_SHORTCUTS_MIN_INTERVAL", "21600") or "21600",
         "BOT_TOKEN": current.get("BOT_TOKEN", ""),
@@ -279,7 +290,7 @@ def render_caddy_config(server_name: str, *, panel_port: str = "8080") -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate secure DeathTG server defaults and deploy files.")
     parser.add_argument("--write-env", action="store_true", help="Fill missing or insecure env values.")
-    parser.add_argument("--panel-host", default="0.0.0.0")
+    parser.add_argument("--panel-host", default="127.0.0.1")
     parser.add_argument("--panel-port", default="8080")
     parser.add_argument("--public-host", default="")
     parser.add_argument("--public-url", default="")

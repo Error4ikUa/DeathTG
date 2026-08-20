@@ -3,7 +3,12 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from deathtg.startup_sync import FOLDER_NAME, _discover_service_bot_peers, _ensure_folder
+from deathtg.startup_sync import (
+    FOLDER_NAME,
+    _discover_service_bot_peers,
+    _ensure_folder,
+    manual_bot_blueprints,
+)
 
 
 class FakeClient:
@@ -35,6 +40,13 @@ def bot_dialog(user_id: int, username: str, title: str) -> object:
 
 
 class StartupFolderDiscoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_visible_bot_names_never_include_owner_id(self) -> None:
+        owner_id = 2054091032
+        names = [item["display_name"] for item in manual_bot_blueprints(owner_id)]
+
+        self.assertEqual(names, ["DeathTG Inline", "DeathTG Helper", "DeathTG Community"])
+        self.assertTrue(all(str(owner_id) not in name for name in names))
+
     async def test_discovers_current_legacy_and_random_service_bots(self) -> None:
         owner_id = 2054091032
         dialogs = [

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import deathtg.tailscale as tailscale
@@ -40,7 +41,8 @@ class TailscaleTests(unittest.TestCase):
             status = tailscale._build_status(_status_payload(), "tailscale")
 
         self.assertTrue(status["connected"])
-        self.assertEqual(status["url"], "http://death-pc.example.ts.net:8081")
+        self.assertEqual(status["serve_url"], "https://death-pc.example.ts.net")
+        self.assertEqual(status["url"], "")
         self.assertEqual(status["peer_ips"]["100.90.80.71"]["hostname"], "death-phone")
 
     def test_peer_must_exist_in_local_tailnet_status(self) -> None:
@@ -71,6 +73,31 @@ class TailscaleTests(unittest.TestCase):
 
         self.assertIn("death-pc.example.ts.net", hosts)
         self.assertIn("100.90.80.70", hosts)
+
+    def test_serve_target_detection_is_port_specific(self) -> None:
+        payload = {"Web": {"death-pc.example.ts.net:443": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:8081"}}}}}
+
+        self.assertTrue(tailscale._serve_targets_port(payload, 8081))
+        self.assertFalse(tailscale._serve_targets_port(payload, 8082))
+
+    def test_serve_is_configured_for_loopback_only(self) -> None:
+        status = tailscale._build_status(_status_payload(), "tailscale")
+        tailscale._CACHE = (1.0, status)
+        completed = SimpleNamespace(returncode=0, stdout="", stderr="")
+        with (
+            patch.dict(os.environ, {"PANEL_TAILSCALE_SERVE": "1"}),
+            patch.object(tailscale, "tailscale_status", return_value=status),
+            patch.object(tailscale, "_run_serve_status", return_value={}),
+            patch.object(tailscale.subprocess, "run", return_value=completed) as run,
+        ):
+            result = tailscale.ensure_tailscale_serve(8082)
+
+        self.assertTrue(result["serve_ready"])
+        self.assertEqual(result["url"], "https://death-pc.example.ts.net")
+        self.assertEqual(
+            run.call_args.args[0],
+            ["tailscale", "serve", "--bg", "--yes", "http://127.0.0.1:8082"],
+        )
 
 
 if __name__ == "__main__":

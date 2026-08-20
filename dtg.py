@@ -20,15 +20,13 @@ import uvicorn
 from dotenv import load_dotenv
 from deathtg.panel_access import (
     effective_panel_bind_host,
-    ensure_wsl_public_access,
     panel_base_url,
     panel_local_url,
     panel_remote_access_ready,
-    running_in_wsl,
 )
 from deathtg.server_bootstrap import ensure_server_env, update_env_values
 from deathtg.setup_access import setup_link
-from deathtg.tailscale import tailscale_status
+from deathtg.tailscale import ensure_tailscale_serve
 from deathtg.startup_core import print_report, ready_to_start_userbot, run_preflight
 from deathtg.startup_state import (
     PHASE_DEGRADED,
@@ -233,7 +231,8 @@ def cleanup(signum=None, frame=None):
 
 
 def clear_console() -> None:
-    os.system("cls" if os.name == "nt" else "clear")
+    sys.stdout.write("\033[2J\033[H")
+    sys.stdout.flush()
 
 
 def panel_url() -> str:
@@ -241,8 +240,8 @@ def panel_url() -> str:
 
 
 def _port_is_available(host: str, port: int) -> bool:
-    bind_host = "0.0.0.0" if host in {"", "0.0.0.0", "::"} else host
-    family = socket.AF_INET6 if ":" in bind_host and bind_host != "0.0.0.0" else socket.AF_INET
+    bind_host = host or "127.0.0.1"
+    family = socket.AF_INET6 if ":" in bind_host else socket.AF_INET
     try:
         with socket.socket(family, socket.SOCK_STREAM) as sock:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -324,10 +323,10 @@ def main() -> int:
         return 1
 
     if not args.no_panel:
-        normalize_panel_port()
-        wsl_publish = ensure_wsl_public_access(request_elevation=True)
+        panel_port = normalize_panel_port()
+        tailnet = ensure_tailscale_serve(panel_port)
     else:
-        wsl_publish = {"message": "panel disabled"}
+        tailnet = {"message": "panel disabled"}
 
     sync_startup_state()
     signal.signal(signal.SIGINT, cleanup)
@@ -346,13 +345,10 @@ def main() -> int:
         print(f"Panel (this device): {panel_local_url()}")
         if panel_remote_access_ready():
             print(f"Panel (phone / PC): {panel_url()}")
-        elif running_in_wsl():
-            publish_message = str(wsl_publish.get("message") or "").strip()
-            if publish_message:
-                print(f"Panel (phone / PC): {publish_message}")
-        tailnet = tailscale_status(refresh=True)
         if tailnet.get("connected") and tailnet.get("url"):
             print(f"Panel (Tailscale): {tailnet['url']}")
+        elif str(tailnet.get("message") or "").strip():
+            print(f"Panel (Tailscale): {tailnet['message']}")
     if phase in {PHASE_FIRST_RUN, PHASE_SETUP_WAIT_QR, PHASE_SETUP_WAIT_2FA}:
         print(f"First run setup link: {setup_link()}")
     if phase == PHASE_FIRST_RUN:
@@ -373,9 +369,7 @@ def main() -> int:
     elif phase == PHASE_REPAIR:
         print("Runtime state: repair flow is active.")
     if not os.getenv("PANEL_PUBLIC_URL", "").strip():
-        print("HTTPS is not enabled yet. For a real public site with a certificate, set a domain and PANEL_PUBLIC_URL.")
-    if running_in_wsl():
-        print("WSL note: DeathTG is trying to publish the panel automatically. If Windows shows an admin prompt, allow it for phone and LAN access.")
+        print("Panel stays on localhost. Optional phone/server access is private through Tailscale Serve.")
     print("Userbot: will auto-start after setup and session creation." if not safe_runtime else "Safe mode: userbot/modules are disabled.")
     print("Git updates are not auto-applied. DeathTG will notify you in Telegram when a new update appears.")
 
