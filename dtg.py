@@ -57,6 +57,7 @@ supervisor_stop = threading.Event()
 restart_in_progress = threading.Event()
 last_start_attempt = 0.0
 MIN_RESTART_INTERVAL = 5.0
+RESTART_PARENT_ENV = "DTG_RESTART_PARENT_PID"
 
 
 def configure_console_encoding() -> None:
@@ -82,6 +83,35 @@ def _pid_is_running(pid: int) -> bool:
             return True
         except Exception:
             return False
+
+
+def _wait_for_replaced_parent(timeout: float = 15.0) -> None:
+    raw_pid = os.environ.pop(RESTART_PARENT_ENV, "").strip()
+    try:
+        parent_pid = int(raw_pid or "0")
+    except ValueError:
+        return
+    if parent_pid <= 0 or parent_pid == os.getpid():
+        return
+    deadline = time.time() + max(1.0, float(timeout))
+    while time.time() < deadline and _pid_is_running(parent_pid):
+        time.sleep(0.1)
+
+
+def _spawn_replacement() -> bool:
+    environment = os.environ.copy()
+    environment[RESTART_PARENT_ENV] = str(os.getpid())
+    try:
+        subprocess.Popen(
+            [sys.executable, str(ROOT_DIR / "dtg.py")],
+            cwd=ROOT_DIR,
+            env=environment,
+            close_fds=True,
+        )
+    except OSError as exc:
+        print(f"DeathTG restart failed: {type(exc).__name__}: {exc}")
+        return False
+    return True
 
 
 def acquire_instance_lock() -> bool:
@@ -218,9 +248,17 @@ def restart_monitor_loop() -> None:
         restart_in_progress.set()
         supervisor_stop.set()
         stop_userbot()
+        if not _spawn_replacement():
+            restart_in_progress.clear()
+            supervisor_stop.clear()
+            continue
         release_instance_lock()
-        os.chdir(ROOT_DIR)
-        os.execv(sys.executable, [sys.executable, str(ROOT_DIR / "dtg.py")])
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.flush()
+            except Exception:
+                pass
+        os._exit(0)
 
 
 def cleanup(signum=None, frame=None):
@@ -322,6 +360,7 @@ def main() -> int:
         print("DeathTG does not support Termux.")
         print("Use a normal Linux server, VPS, or desktop Python environment instead.")
         return 1
+    _wait_for_replaced_parent()
     if not acquire_instance_lock():
         return 1
     try:
