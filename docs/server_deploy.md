@@ -3,7 +3,7 @@
 DeathTG now supports a secure-by-default server bootstrap:
 
 - panel binds to `127.0.0.1` by default on desktops and servers
-- private remote access uses Tailscale Serve and requires no public domain
+- private remote access uses the active Tailscale identity and requires no public domain
 - a public bind is disabled unless `PANEL_ALLOW_REMOTE_BIND=1` is set explicitly
 - strong `PANEL_SECRET` is auto-generated if missing or weak
 - trusted hosts are enforced
@@ -32,8 +32,23 @@ DTG_PUBLIC_HOST=panel.example.com DTG_PUBLIC_URL=https://panel.example.com bash 
 ```
 
 Private phone/server access is automatic when Tailscale is connected. DeathTG
-keeps FastAPI on localhost and configures `tailscale serve --bg` without Funnel,
-so the panel is reachable only inside your tailnet.
+always keeps its local listener on `127.0.0.1`. If an existing Tailscale Serve
+route already points to the panel, DeathTG reuses its private HTTPS address.
+Otherwise it opens a second listener only on the machine's own Tailscale IP;
+it never falls back to `0.0.0.0` or the LAN address.
+
+On first successful start, DeathTG stores the local Tailscale user, tailnet,
+MagicDNS suffix, and hostname in `runtime/tailscale_binding.json`. Later account
+or tailnet changes fail closed for remote access while localhost keeps working.
+Only peers owned by the same Tailscale user are accepted; shared tailnet users
+do not receive automatic panel access.
+
+Optional settings:
+
+- `PANEL_TAILSCALE_DIRECT=1` enables the private Tailscale-IP listener.
+- `PANEL_TAILSCALE_SERVE=1` reuses an already configured Serve route.
+- `PANEL_TAILSCALE_AUTO_SERVE=1` explicitly allows DeathTG to try configuring Serve.
+- `PANEL_TAILSCALE_EXPECTED_LOGIN=user@example.com` pins an additional expected login.
 
 The installer:
 

@@ -19,6 +19,8 @@ class LocalhostDefaultTests(unittest.TestCase):
             env = ensure_server_env(path=env_path)
 
         self.assertEqual(env["PANEL_HOST"], "127.0.0.1")
+        self.assertEqual(env["PANEL_TAILSCALE_DIRECT"], "1")
+        self.assertEqual(env["PANEL_TAILSCALE_AUTO_SERVE"], "0")
 
     def test_remote_bind_requires_explicit_opt_in(self) -> None:
         with patch.dict(os.environ, {"PANEL_HOST": "0.0.0.0", "PANEL_ALLOW_REMOTE_BIND": "0"}, clear=False):
