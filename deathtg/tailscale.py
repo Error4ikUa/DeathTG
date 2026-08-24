@@ -187,7 +187,14 @@ def ensure_tailscale_serve(port: int) -> dict[str, Any]:
     command = str(status.get("command") or "")
     if not command:
         return _cache_serve_state(ready=False, message="Tailscale CLI is unavailable")
-    if _serve_targets_port(_run_serve_status(command), int(port)):
+    try:
+        serve_status = _run_serve_status(command)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return _cache_serve_state(
+            ready=False,
+            message=f"Tailscale Serve status failed: {type(exc).__name__}",
+        )
+    if _serve_targets_port(serve_status, int(port)):
         return _cache_serve_state(ready=True, message="Private Tailnet HTTPS is ready")
 
     kwargs: dict[str, Any] = {
@@ -195,13 +202,24 @@ def ensure_tailscale_serve(port: int) -> dict[str, Any]:
         "text": True,
         "encoding": "utf-8",
         "errors": "replace",
-        "timeout": 15,
+        "timeout": 6,
         "check": False,
     }
     if os.name == "nt":
         kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     target = f"http://127.0.0.1:{int(port)}"
-    completed = subprocess.run([command, "serve", "--bg", "--yes", target], **kwargs)
+    try:
+        completed = subprocess.run([command, "serve", "--bg", "--yes", target], **kwargs)
+    except subprocess.TimeoutExpired:
+        return _cache_serve_state(
+            ready=False,
+            message="Tailscale Serve setup timed out; panel remains localhost-only",
+        )
+    except OSError as exc:
+        return _cache_serve_state(
+            ready=False,
+            message=f"Tailscale Serve could not start: {type(exc).__name__}",
+        )
     if completed.returncode == 0:
         return _cache_serve_state(ready=True, message="Private Tailnet HTTPS is ready")
     detail = (completed.stderr or completed.stdout or "Unable to configure Tailscale Serve").strip()
