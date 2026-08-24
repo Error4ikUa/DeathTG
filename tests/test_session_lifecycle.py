@@ -186,8 +186,10 @@ class QRSessionProtectionTests(unittest.IsolatedAsyncioTestCase):
 
         app = object.__new__(DeathTG)
         app.client = Client()
+        app._shutting_down = False
         await app._apply_panel_action({"action": "shutdown"})
         self.assertTrue(app.client.disconnected)
+        self.assertTrue(app._shutting_down)
 
 
 class RestartLifecycleTests(unittest.TestCase):

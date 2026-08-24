@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import time
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from telethon import TelegramClient, events
@@ -81,6 +82,7 @@ class DeathTG:
         self._backup_task: asyncio.Task | None = None
         self._bootstrap_task: asyncio.Task | None = None
         self.owner_premium: bool = False
+        self._shutting_down = False
 
     async def start(self) -> None:
         await init_metrics()
@@ -153,6 +155,7 @@ class DeathTG:
         except INVALID_SESSION_ERRORS as exc:
             self._handle_invalid_runtime_session(exc)
         finally:
+            self._shutting_down = True
             if self._bootstrap_task:
                 self._bootstrap_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -329,34 +332,44 @@ class DeathTG:
         return True
 
     async def _panel_actions_loop(self) -> None:
-        while True:
+        while not self._shutting_down:
             try:
                 await self._read_panel_actions()
             except Exception:
+                if self._shutting_down:
+                    return
                 log.exception("Panel action sync failed")
             await asyncio.sleep(1.0)
 
     async def _update_watch_loop(self) -> None:
-        while True:
+        while not self._shutting_down:
             try:
                 await self._check_updates_once()
             except Exception:
+                if self._shutting_down:
+                    return
                 log.exception("Update watch failed")
             await asyncio.sleep(update_notify_interval())
 
     async def _integrity_watch_loop(self) -> None:
-        while True:
+        while not self._shutting_down:
             try:
                 if self._bootstrap_task and not self._bootstrap_task.done():
                     await asyncio.sleep(5)
                     continue
                 await check_runtime_integrity(self.client, notify=True)
+            except ConnectionError:
+                if self._shutting_down:
+                    return
+                log.warning("Integrity watch deferred while Telegram reconnects")
             except Exception:
+                if self._shutting_down:
+                    return
                 log.exception("Integrity watch failed")
             await asyncio.sleep(300)
 
     async def _backup_loop(self) -> None:
-        while True:
+        while not self._shutting_down:
             try:
                 settings = profile_settings()
                 if settings.get("backup_enabled") != "1":
@@ -381,7 +394,14 @@ class DeathTG:
                         backup_last_sent_at=str(now),
                         backup_last_path=path,
                     )
+            except ConnectionError:
+                if self._shutting_down:
+                    return
+                log.warning("Backup deferred while Telegram reconnects")
+                await asyncio.sleep(120)
             except Exception:
+                if self._shutting_down:
+                    return
                 log.exception("Backup loop failed")
                 await asyncio.sleep(120)
 
@@ -535,6 +555,7 @@ class DeathTG:
         action = str(payload.get("action") or "").strip()
         if action == "shutdown":
             log.info("Graceful userbot shutdown requested by launcher")
+            self._shutting_down = True
             await self.client.disconnect()
             return
         if action == "install":
@@ -666,10 +687,16 @@ class DeathTG:
 def run_async(config: DeathTGConfig) -> None:
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     console_handler = logging.StreamHandler()
-    file_handler = logging.FileHandler(RUNTIME_LOG_PATH, encoding="utf-8")
+    file_handler = RotatingFileHandler(
+        RUNTIME_LOG_PATH,
+        maxBytes=4 * 1024 * 1024,
+        backupCount=3,
+        encoding="utf-8",
+    )
     logging.basicConfig(
         level=logging.INFO,
-        format="[%(levelname)s] %(name)s: %(message)s",
+        format="[%(asctime)s] [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[console_handler, file_handler],
         force=True,
     )
