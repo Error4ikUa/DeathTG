@@ -26,7 +26,7 @@ from deathtg.panel_access import (
 )
 from deathtg.server_bootstrap import ensure_server_env, update_env_values
 from deathtg.setup_access import setup_link
-from deathtg.tailscale import ensure_tailscale_serve
+from deathtg.tailscale import ensure_tailscale_access, tailscale_listener_hosts
 from deathtg.startup_core import print_report, ready_to_start_userbot, run_preflight
 from deathtg.startup_state import (
     PHASE_DEGRADED,
@@ -251,11 +251,21 @@ def _port_is_available(host: str, port: int) -> bool:
         return False
 
 
-def _pick_panel_port(host: str, preferred: int) -> int:
-    if _port_is_available(host, preferred):
+def _panel_listen_hosts() -> list[str]:
+    primary = effective_panel_bind_host()
+    hosts = [primary]
+    if primary in {"127.0.0.1", "localhost", "::1"}:
+        for host in tailscale_listener_hosts():
+            if host not in hosts:
+                hosts.append(host)
+    return hosts
+
+
+def _pick_panel_port(hosts: list[str], preferred: int) -> int:
+    if all(_port_is_available(host, preferred) for host in hosts):
         return preferred
     for candidate in range(preferred + 1, min(preferred + 100, 65535) + 1):
-        if _port_is_available(host, candidate):
+        if all(_port_is_available(host, candidate) for host in hosts):
             return candidate
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -263,13 +273,13 @@ def _pick_panel_port(host: str, preferred: int) -> int:
 
 
 def normalize_panel_port() -> int:
-    host = effective_panel_bind_host()
+    hosts = _panel_listen_hosts()
     raw_port = os.getenv("PANEL_PORT", "8080").strip() or "8080"
     try:
         preferred_port = max(1, min(65535, int(raw_port)))
     except ValueError:
         preferred_port = 8080
-    chosen_port = _pick_panel_port(host, preferred_port)
+    chosen_port = _pick_panel_port(hosts, preferred_port)
     if chosen_port != preferred_port:
         update_env_values({"PANEL_PORT": str(chosen_port)}, path=ENV_PATH)
         os.environ["PANEL_PORT"] = str(chosen_port)
@@ -278,15 +288,31 @@ def normalize_panel_port() -> int:
 
 
 def run_panel(debug: bool = False) -> None:
-    host = effective_panel_bind_host()
     port = normalize_panel_port()
-    uvicorn.run(
+    hosts = _panel_listen_hosts()
+    config = uvicorn.Config(
         "deathtg.panel.clean_app:app",
-        host=host,
+        host=hosts[0],
         port=port,
         log_level="info" if debug else "warning",
         access_log=debug,
     )
+    sockets: list[socket.socket] = []
+    try:
+        for host in hosts:
+            family = socket.AF_INET6 if ":" in host else socket.AF_INET
+            listener = socket.socket(family, socket.SOCK_STREAM)
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            listener.bind((host, port))
+            listener.set_inheritable(True)
+            sockets.append(listener)
+        uvicorn.Server(config).run(sockets=sockets)
+    finally:
+        for listener in sockets:
+            try:
+                listener.close()
+            except OSError:
+                pass
 
 
 def main() -> int:
@@ -324,7 +350,7 @@ def main() -> int:
 
     if not args.no_panel:
         panel_port = normalize_panel_port()
-        tailnet = ensure_tailscale_serve(panel_port)
+        tailnet = ensure_tailscale_access(panel_port)
     else:
         tailnet = {"message": "panel disabled"}
 
