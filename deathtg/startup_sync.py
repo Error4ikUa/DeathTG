@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -38,10 +39,16 @@ BOTFATHER_NETWORK_RE = re.compile(
     r"(WinError\s+(?:121|10054|1231|1236)|timeout|timed out|network|connection|semaphore)",
     re.IGNORECASE,
 )
+BOT_API_TRANSIENT_RE = re.compile(
+    r"(WinError|timeout|timed out|network|connection|temporar|too many requests|HTTP\s+(?:429|5\d\d))",
+    re.IGNORECASE,
+)
 BOT_AVATAR = default_avatar_path() or (ROOT_DIR / "deathtg" / "panel" / "static" / "default_avatar.png")
 BOTFATHER_CREATE_TIMEOUT = 35
 AUTO_BOT_REPAIR_INTERVAL = 60 * 15
 BOTFATHER_PROCESS_LOCK = RUNTIME_DIR / "botfather.lock"
+BOT_RESOURCE_STATE_PATH = RUNTIME_DIR / "bot_resource_state.json"
+BOT_RESOURCE_STATE_VERSION = 1
 _STARTUP_SYNC_LOCK = asyncio.Lock()
 _BOTFATHER_LOCK = asyncio.Lock()
 
@@ -64,6 +71,80 @@ def _load_status() -> dict:
     except Exception:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _load_bot_resource_state() -> dict:
+    if not BOT_RESOURCE_STATE_PATH.exists():
+        return {"version": BOT_RESOURCE_STATE_VERSION, "resources": {}}
+    try:
+        data = json.loads(BOT_RESOURCE_STATE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"version": BOT_RESOURCE_STATE_VERSION, "resources": {}}
+    if not isinstance(data, dict):
+        return {"version": BOT_RESOURCE_STATE_VERSION, "resources": {}}
+    resources = data.get("resources")
+    if not isinstance(resources, dict):
+        resources = {}
+    return {"version": BOT_RESOURCE_STATE_VERSION, "resources": resources}
+
+
+def _write_bot_resource_state(payload: dict) -> None:
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    data = {
+        "version": BOT_RESOURCE_STATE_VERSION,
+        "updated_at": int(time.time()),
+        "resources": payload.get("resources") if isinstance(payload.get("resources"), dict) else {},
+    }
+    tmp = BOT_RESOURCE_STATE_PATH.with_suffix(BOT_RESOURCE_STATE_PATH.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(BOT_RESOURCE_STATE_PATH)
+
+
+def _resource_key(kind: str, role: str, username: str) -> str:
+    clean_username = str(username or "").lstrip("@").strip().lower()
+    return f"{kind}:{role}:{clean_username}"
+
+
+def _resource_fingerprint(payload: object) -> str:
+    normalized = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _file_fingerprint(path) -> str:
+    try:
+        with open(path, "rb") as handle:
+            digest = hashlib.sha256()
+            for chunk in iter(lambda: handle.read(1024 * 256), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except Exception:
+        return "missing"
+
+
+def _resource_current(kind: str, role: str, username: str, fingerprint: str) -> bool:
+    if _env("BOT_RESOURCE_FORCE_SYNC") == "1":
+        return False
+    state = _load_bot_resource_state()
+    item = state.get("resources", {}).get(_resource_key(kind, role, username))
+    return isinstance(item, dict) and item.get("fingerprint") == fingerprint
+
+
+def _resource_has_record(kind: str, role: str, username: str) -> bool:
+    state = _load_bot_resource_state()
+    return _resource_key(kind, role, username) in state.get("resources", {})
+
+
+def _mark_resource_current(kind: str, role: str, username: str, fingerprint: str, *, adopted: bool = False) -> None:
+    if not username or not fingerprint:
+        return
+    state = _load_bot_resource_state()
+    resources = state.setdefault("resources", {})
+    resources[_resource_key(kind, role, username)] = {
+        "fingerprint": fingerprint,
+        "adopted": bool(adopted),
+        "updated_at": int(time.time()),
+    }
+    _write_bot_resource_state(state)
 
 
 @contextlib.asynccontextmanager
@@ -337,6 +418,10 @@ def _botfather_network_error(exc: Exception) -> str | None:
     message = "Telegram network is unstable; BotFather auto-create paused for 30 minutes"
     _set_botfather_cooldown(60 * 30, text[:240])
     return message
+
+
+def _is_transient_bot_api_error(error: str | None) -> bool:
+    return bool(error and BOT_API_TRANSIENT_RE.search(str(error)))
 
 
 def _language() -> str:
@@ -892,10 +977,7 @@ async def _create_named_bot_with_botfather(client, display_name: str, username: 
         return "", network_error or str(exc)
 
 
-async def _set_bot_profile(bot_token: str, owner_id: int, role: str = "inline") -> tuple[bool, str | None]:
-    if not bot_token:
-        return False, "missing bot token"
-    base = f"https://api.telegram.org/bot{bot_token}"
+def _bot_profile_payload(owner_id: int, role: str = "inline") -> dict:
     role_title = role if role in {"helper", "community"} else "inline"
     if role == "community":
         command_items = [
@@ -912,26 +994,47 @@ async def _set_bot_profile(bot_token: str, owner_id: int, role: str = "inline") 
             {"command": "start", "description": f"DeathTG {role_title} bot"},
             {"command": "status", "description": "Runtime status"},
         ]
-    commands = {"commands": command_items}
     descriptions = {
         "inline": "DeathTG inline control plane",
         "helper": "DeathTG helper delivery service",
         "community": "DeathTG role verification service",
     }
-    description = {"description": descriptions.get(role, "DeathTG control service")}
-    short_description = {"short_description": f"DeathTG {role_title} runtime"}
     display_name = {
         "inline": "DeathTG Inline",
         "helper": "DeathTG Helper",
         "community": community_bot_display_name(),
     }.get(role, "DeathTG Inline")
+    return {
+        "display_name": display_name,
+        "commands": command_items,
+        "description": descriptions.get(role, "DeathTG control service"),
+        "short_description": f"DeathTG {role_title} runtime",
+    }
+
+
+async def _set_bot_profile(
+    bot_token: str,
+    owner_id: int,
+    role: str = "inline",
+    *,
+    bot_username: str = "",
+    force: bool = False,
+) -> tuple[bool, str | None]:
+    if not bot_token:
+        return False, "missing bot token"
+    desired = _bot_profile_payload(owner_id, role)
+    fingerprint = _resource_fingerprint(desired)
+    if bot_username and not force and _resource_current("profile", role, bot_username, fingerprint):
+        return True, None
+
+    base = f"https://api.telegram.org/bot{bot_token}"
     try:
         async with aiohttp.ClientSession() as session:
             for method, payload in (
-                ("setMyName", {"name": display_name}),
-                ("setMyCommands", commands),
-                ("setMyDescription", description),
-                ("setMyShortDescription", short_description),
+                ("setMyName", {"name": desired["display_name"]}),
+                ("setMyCommands", {"commands": desired["commands"]}),
+                ("setMyDescription", {"description": desired["description"]}),
+                ("setMyShortDescription", {"short_description": desired["short_description"]}),
             ):
                 async with session.post(f"{base}/{method}", json=payload, timeout=12) as response:
                     if response.status != 200:
@@ -941,13 +1044,32 @@ async def _set_bot_profile(bot_token: str, owner_id: int, role: str = "inline") 
                         return False, str(data.get("description") or f"{method} failed")
     except Exception as exc:
         return False, str(exc)
+    if bot_username:
+        _mark_resource_current("profile", role, bot_username, fingerprint)
     return True, None
 
 
-async def _sync_bot_avatar(client, bot_username: str) -> tuple[bool, str | None]:
+async def _sync_bot_avatar(
+    client,
+    bot_username: str,
+    *,
+    role: str = "inline",
+    force: bool = False,
+) -> tuple[bool, str | None]:
     if not bot_username:
         return False, "missing bot username"
     if not BOT_AVATAR.exists():
+        return True, None
+    fingerprint = _resource_fingerprint(
+        {
+            "avatar": _file_fingerprint(BOT_AVATAR),
+            "filename": BOT_AVATAR.name,
+        }
+    )
+    if not force and _resource_current("avatar", role, bot_username, fingerprint):
+        return True, None
+    if not force and not _resource_has_record("avatar", role, bot_username):
+        _mark_resource_current("avatar", role, bot_username, fingerprint, adopted=True)
         return True, None
     cooldown_error = _botfather_cooldown_error()
     if cooldown_error:
@@ -959,9 +1081,13 @@ async def _sync_bot_avatar(client, bot_username: str) -> tuple[bool, str | None]
         pass
     try:
         async with _BOTFATHER_LOCK:
+            if not force and _resource_current("avatar", role, bot_username, fingerprint):
+                return True, None
             async with _botfather_process_guard(f"sync avatar @{bot_username}", wait_seconds=8) as (allowed, guard_error):
                 if not allowed:
                     return False, guard_error
+                if not force and _resource_current("avatar", role, bot_username, fingerprint):
+                    return True, None
                 async with client.conversation("BotFather", timeout=120, exclusive=True) as conv:
                     with contextlib.suppress(Exception):
                         await _botfather_step(conv, "/cancel", retries=1)
@@ -978,12 +1104,19 @@ async def _sync_bot_avatar(client, bot_username: str) -> tuple[bool, str | None]
                         await conv.get_response()
     except Exception as exc:
         return False, str(exc)
+    _mark_resource_current("avatar", role, bot_username, fingerprint)
     return True, None
 
 
-async def _ensure_bot_inline(client, bot_username: str) -> tuple[bool, str | None]:
+async def _ensure_bot_inline(client, bot_username: str, *, force: bool = False) -> tuple[bool, str | None]:
     if not bot_username:
         return False, "missing bot username"
+    fingerprint = _resource_fingerprint({"placeholder": "DeathTG", "enabled": True})
+    if not force and _resource_current("inline", "inline", bot_username, fingerprint):
+        return True, None
+    if not force and not _resource_has_record("inline", "inline", bot_username):
+        _mark_resource_current("inline", "inline", bot_username, fingerprint, adopted=True)
+        return True, None
     cooldown_error = _botfather_cooldown_error()
     if cooldown_error:
         return False, cooldown_error
@@ -995,9 +1128,13 @@ async def _ensure_bot_inline(client, bot_username: str) -> tuple[bool, str | Non
 
     try:
         async with _BOTFATHER_LOCK:
+            if not force and _resource_current("inline", "inline", bot_username, fingerprint):
+                return True, None
             async with _botfather_process_guard(f"sync inline @{bot_username}", wait_seconds=8) as (allowed, guard_error):
                 if not allowed:
                     return False, guard_error
+                if not force and _resource_current("inline", "inline", bot_username, fingerprint):
+                    return True, None
                 async with client.conversation("BotFather", timeout=120, exclusive=True) as conv:
                     with contextlib.suppress(Exception):
                         await _botfather_step(conv, "/cancel", retries=1)
@@ -1023,8 +1160,10 @@ async def _ensure_bot_inline(client, bot_username: str) -> tuple[bool, str | Non
 
                     lower = final_text.lower()
                     if any(word in lower for word in ("success", "enabled", "updated", "changed")):
+                        _mark_resource_current("inline", "inline", bot_username, fingerprint)
                         return True, None
                     if "already" in lower and "inline" in lower:
+                        _mark_resource_current("inline", "inline", bot_username, fingerprint)
                         return True, None
                     return False, final_text[:240] or "BotFather did not confirm inline mode"
     except Exception as exc:
@@ -1229,6 +1368,9 @@ async def _ensure_bot(
         elif not status["error"]:
             status["error"] = "bot username does not match expected owner prefix"
         return bot_token, status
+    if bot_token and _is_transient_bot_api_error(token_error):
+        status["error"] = f"{token_error}; kept existing token and skipped BotFather auto-create"
+        return bot_token, status
     if cooldown_error:
         status["error"] = cooldown_error
         return bot_token, status
@@ -1310,6 +1452,9 @@ async def _ensure_community_bot(client, owner_id: int, *, allow_create: bool = F
             status["error"] = "BOT_TOKEN_COMMUNITY is missing"
         elif not status["error"]:
             status["error"] = "community bot username must match the owner-bound pattern"
+        return bot_token, status
+    if bot_token and _is_transient_bot_api_error(token_error):
+        status["error"] = f"{token_error}; kept existing token and skipped BotFather auto-create"
         return bot_token, status
     if cooldown_error:
         status["error"] = cooldown_error
@@ -1421,15 +1566,44 @@ async def _run_startup_sync_locked(client) -> dict:
     helper_username = str(helper_status.get("username") or "")
     community_username = str(community_status.get("username") or "")
 
-    commands_synced, commands_error = await _set_bot_profile(bot_token, owner_id, "inline")
-    inline_synced, inline_error = await _ensure_bot_inline(client, bot_username)
-    avatar_synced, avatar_error = await _sync_bot_avatar(client, bot_username)
+    bot_created = bool(bot_status.get("created"))
+    helper_created = bool(helper_status.get("created"))
+    community_created = bool(community_status.get("created"))
+
+    if bot_status.get("valid_username"):
+        commands_synced, commands_error = await _set_bot_profile(
+            bot_token,
+            owner_id,
+            "inline",
+            bot_username=bot_username,
+            force=bot_created,
+        )
+        inline_synced, inline_error = await _ensure_bot_inline(client, bot_username, force=bot_created)
+        avatar_synced, avatar_error = await _sync_bot_avatar(client, bot_username, role="inline", force=bot_created)
+    else:
+        commands_synced = inline_synced = avatar_synced = False
+        commands_error = inline_error = avatar_error = None
     bot_status["commands_synced"] = commands_synced
     bot_status["inline_synced"] = inline_synced
     bot_status["avatar_synced"] = avatar_synced
 
-    helper_commands_synced, helper_commands_error = await _set_bot_profile(helper_token, owner_id, "helper")
-    helper_avatar_synced, helper_avatar_error = await _sync_bot_avatar(client, helper_username)
+    if helper_status.get("valid_username"):
+        helper_commands_synced, helper_commands_error = await _set_bot_profile(
+            helper_token,
+            owner_id,
+            "helper",
+            bot_username=helper_username,
+            force=helper_created,
+        )
+        helper_avatar_synced, helper_avatar_error = await _sync_bot_avatar(
+            client,
+            helper_username,
+            role="helper",
+            force=helper_created,
+        )
+    else:
+        helper_commands_synced = helper_avatar_synced = False
+        helper_commands_error = helper_avatar_error = None
     helper_status["commands_synced"] = helper_commands_synced
     helper_status["inline_synced"] = False
     helper_status["avatar_synced"] = helper_avatar_synced
@@ -1438,9 +1612,20 @@ async def _run_startup_sync_locked(client) -> dict:
     community_commands_error = None
     community_avatar_synced = False
     community_avatar_error = None
-    if community_enabled_for_owner(owner_id):
-        community_commands_synced, community_commands_error = await _set_bot_profile(community_token, owner_id, "community")
-        community_avatar_synced, community_avatar_error = await _sync_bot_avatar(client, community_username)
+    if community_enabled_for_owner(owner_id) and community_status.get("valid_username"):
+        community_commands_synced, community_commands_error = await _set_bot_profile(
+            community_token,
+            owner_id,
+            "community",
+            bot_username=community_username,
+            force=community_created,
+        )
+        community_avatar_synced, community_avatar_error = await _sync_bot_avatar(
+            client,
+            community_username,
+            role="community",
+            force=community_created,
+        )
     community_status["commands_synced"] = community_commands_synced
     community_status["inline_synced"] = False
     community_status["avatar_synced"] = community_avatar_synced
