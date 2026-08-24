@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import unittest
 from unittest.mock import patch
 
@@ -29,6 +30,29 @@ class PanelListenerHostTests(unittest.TestCase):
 
         with patch.object(dtg, "_port_is_available", side_effect=available):
             self.assertEqual(dtg._pick_panel_port(hosts, 8082), 8083)
+
+    def test_replacement_process_waits_for_the_old_launcher(self) -> None:
+        process = type("Process", (), {"pid": 54321})()
+        with (
+            patch.object(dtg.subprocess, "Popen", return_value=process) as popen,
+            patch.object(dtg.os, "getpid", return_value=12345),
+        ):
+            self.assertTrue(dtg._spawn_replacement())
+
+        environment = popen.call_args.kwargs["env"]
+        self.assertEqual(environment[dtg.RESTART_PARENT_ENV], "12345")
+        self.assertTrue(popen.call_args.kwargs["close_fds"])
+
+    def test_parent_wait_is_bounded_and_consumes_handoff_environment(self) -> None:
+        with (
+            patch.dict(os.environ, {dtg.RESTART_PARENT_ENV: "12345"}),
+            patch.object(dtg, "_pid_is_running", side_effect=[True, False]) as running,
+            patch.object(dtg.time, "sleep"),
+        ):
+            dtg._wait_for_replaced_parent(timeout=1)
+
+        self.assertEqual(running.call_count, 2)
+        self.assertNotIn(dtg.RESTART_PARENT_ENV, os.environ)
 
 
 if __name__ == "__main__":
