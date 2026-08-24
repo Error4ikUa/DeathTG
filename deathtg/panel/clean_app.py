@@ -410,6 +410,11 @@ def _same_origin_request(request: Request) -> bool:
     fetch_site = (request.headers.get("sec-fetch-site") or "").strip().lower()
     if fetch_site == "cross-site":
         return False
+    # Sec-Fetch-Site is a forbidden browser header, so page scripts cannot
+    # forge "same-origin". Trusting it also avoids false CSRF failures when a
+    # loopback/Tailscale proxy rewrites Host while preserving the real Origin.
+    if fetch_site == "same-origin":
+        return True
     origin = (request.headers.get("origin") or "").strip()
     if not origin:
         return True
