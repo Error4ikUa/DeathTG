@@ -210,9 +210,10 @@ def _scan_tree(report: SecurityReport, tree: ast.AST, source_lines: list[str]) -
 
 def _finalize(report: SecurityReport) -> SecurityReport:
     if report.trusted:
-        report.allowed = True
-        report.verdict = "VERIFIED"
-        report.severity = "trusted" if report.score < 70 else "trusted-risk"
+        critical = any(finding.score >= 95 for finding in report.findings)
+        report.allowed = not critical
+        report.verdict = "BLOCKED" if critical else "VERIFIED"
+        report.severity = "danger" if critical else ("trusted" if report.score < 70 else "trusted-risk")
         return report
 
     if report.score >= 70:
