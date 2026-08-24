@@ -124,6 +124,30 @@ class PanelSecurityTests(unittest.TestCase):
         )
         self.assertTrue(panel._same_origin_request(request))
 
+    def test_browser_same_origin_metadata_survives_proxy_host_rewrite(self) -> None:
+        request = request_for(
+            "127.0.0.1",
+            method="POST",
+            path="/health/recheck",
+            host="127.0.0.1:8082",
+            origin="https://device.tailnet.example",
+        )
+        request.scope["headers"].append((b"sec-fetch-site", b"same-origin"))
+
+        self.assertTrue(panel._same_origin_request(request))
+
+    def test_browser_cross_site_metadata_cannot_be_overridden_by_origin(self) -> None:
+        request = request_for(
+            "127.0.0.1",
+            method="POST",
+            path="/health/recheck",
+            host="127.0.0.1:8082",
+            origin="http://127.0.0.1:8082",
+        )
+        request.scope["headers"].append((b"sec-fetch-site", b"cross-site"))
+
+        self.assertFalse(panel._same_origin_request(request))
+
 
 class PanelSecurityMiddlewareTests(unittest.IsolatedAsyncioTestCase):
     async def test_request_body_limit_rejects_chunked_oversize_payload(self) -> None:
