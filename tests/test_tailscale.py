@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -98,6 +99,43 @@ class TailscaleTests(unittest.TestCase):
             run.call_args.args[0],
             ["tailscale", "serve", "--bg", "--yes", "http://127.0.0.1:8082"],
         )
+
+    def test_serve_timeout_keeps_the_panel_local_instead_of_crashing(self) -> None:
+        status = tailscale._build_status(_status_payload(), "tailscale")
+        tailscale._CACHE = (1.0, status)
+        with (
+            patch.dict(os.environ, {"PANEL_TAILSCALE_SERVE": "1"}),
+            patch.object(tailscale, "tailscale_status", return_value=status),
+            patch.object(tailscale, "_run_serve_status", return_value={}),
+            patch.object(
+                tailscale.subprocess,
+                "run",
+                side_effect=subprocess.TimeoutExpired(["tailscale", "serve"], 6),
+            ),
+        ):
+            result = tailscale.ensure_tailscale_serve(8082)
+
+        self.assertFalse(result["serve_ready"])
+        self.assertEqual(result["url"], "")
+        self.assertIn("localhost-only", result["message"])
+
+    def test_serve_status_timeout_keeps_the_panel_local(self) -> None:
+        status = tailscale._build_status(_status_payload(), "tailscale")
+        tailscale._CACHE = (1.0, status)
+        with (
+            patch.dict(os.environ, {"PANEL_TAILSCALE_SERVE": "1"}),
+            patch.object(tailscale, "tailscale_status", return_value=status),
+            patch.object(
+                tailscale,
+                "_run_serve_status",
+                side_effect=subprocess.TimeoutExpired(["tailscale", "serve", "status"], 5),
+            ),
+        ):
+            result = tailscale.ensure_tailscale_serve(8082)
+
+        self.assertFalse(result["serve_ready"])
+        self.assertEqual(result["url"], "")
+        self.assertIn("status failed", result["message"])
 
 
 if __name__ == "__main__":
