@@ -17,6 +17,7 @@ from urllib.parse import urljoin, urlparse
 import aiohttp
 
 from deathtg.config import RUNTIME_DIR
+from deathtg.security import is_trusted_module_link
 
 
 MODULE_REPO_INDEX = os.getenv(
@@ -82,6 +83,15 @@ SAFE_DOWNLOAD_HOSTS = {
     "github.com",
     "gitlab.com",
     "raw.githubusercontent.com",
+}
+CATALOG_IGNORED_NAMES = {
+    ".github",
+    "assets",
+    "docs",
+    "images",
+    "scripts",
+    "test",
+    "tests",
 }
 
 
@@ -300,12 +310,14 @@ def is_url(value: str) -> bool:
 
 
 def trusted_repo_link(link: str) -> bool:
-    raw = _normalize_url(link).lower()
-    return (
-        "raw.githubusercontent.com/error4ikua/dtg_modules/" in raw
-        or "github.com/error4ikua/dtg_modules/" in raw
-        or "api.github.com/repos/error4ikua/dtg_modules/" in raw
-    )
+    return is_trusted_module_link(_normalize_url(link))
+
+
+def _catalog_name_allowed(value: str) -> bool:
+    name = str(value or "").strip()
+    if not name or name.lower() in CATALOG_IGNORED_NAMES:
+        return False
+    return bool(re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,99}", name))
 
 
 def _derive_tree_link_from_raw(raw_link: str) -> str:
@@ -443,7 +455,7 @@ def _zip_module_items(data: bytes, owner: str, repo: str, ref: str) -> list[dict
                 top_level_py.append(item)
             continue
         folder = parts[0].strip()
-        if not folder or folder.startswith(".") or folder.startswith("_"):
+        if not _catalog_name_allowed(folder) or folder.startswith("_"):
             continue
         by_folder.setdefault(folder, []).append(item)
 
@@ -824,6 +836,8 @@ async def _from_github_contents(session: aiohttp.ClientSession) -> list[dict]:
         name = str(item.get("name") or "")
         item_type = str(item.get("type") or "")
         if item_type == "dir":
+            if not _catalog_name_allowed(name):
+                continue
             dir_url = str(item.get("url") or "")
             if not dir_url:
                 continue
@@ -899,6 +913,8 @@ async def _from_github_tree_html(session: aiohttp.ClientSession, owner: str = "E
     modules: list[dict] = []
     for path in tree_paths:
         name = PurePosixPath(path).name
+        if not _catalog_name_allowed(name):
+            continue
         modules.append(
             _normalize_repo_item(
                 {
@@ -927,9 +943,10 @@ async def _from_github_tree_html(session: aiohttp.ClientSession, owner: str = "E
 def _dedupe_repo_items(items: list[dict]) -> list[dict]:
     unique: dict[str, dict] = {}
     for item in items:
-        key = str(item.get("name") or "").strip().lower()
-        if not key:
+        name = str(item.get("name") or "").strip()
+        if not _catalog_name_allowed(name):
             continue
+        key = name.lower()
         if key not in unique:
             unique[key] = dict(item)
             continue

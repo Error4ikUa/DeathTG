@@ -30,6 +30,34 @@ class ModuleRepositorySecurityTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaisesRegex(RuntimeError, "too many files"):
                 module_repo._zip_module_items(payload.getvalue(), "owner", "repo", "main")
 
+    def test_repository_archive_ignores_test_and_tooling_folders(self) -> None:
+        payload = io.BytesIO()
+        with zipfile.ZipFile(payload, "w") as archive:
+            archive.writestr("repo-main/RealModule/RealModule.py", "VALUE = 1")
+            archive.writestr("repo-main/tests/test_module.py", "VALUE = 2")
+            archive.writestr("repo-main/scripts/release.py", "VALUE = 3")
+
+        items = module_repo._zip_module_items(payload.getvalue(), "owner", "repo", "main")
+
+        self.assertEqual([item["name"] for item in items], ["RealModule"])
+
+    def test_trusted_repository_check_validates_host_and_path(self) -> None:
+        self.assertTrue(
+            module_repo.trusted_repo_link(
+                "https://github.com/Error4ikUa/DTG_Modules/tree/main/NoteDtg"
+            )
+        )
+        self.assertFalse(
+            module_repo.trusted_repo_link(
+                "https://evil.example/github.com/error4ikua/dtg_modules/tree/main/NoteDtg"
+            )
+        )
+        self.assertFalse(
+            module_repo.trusted_repo_link(
+                "https://github.com.evil.example/Error4ikUa/DTG_Modules/tree/main/NoteDtg"
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

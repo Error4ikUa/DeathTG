@@ -359,7 +359,10 @@ async def _install_module_source(
         raise RuntimeError("Module filename must end with .py")
     final_module_name = _safe_module_name(module_name or Path(safe_name).stem)
     report = scan_module_source(source, trusted=trusted)
-    if report.severity in {"warning", "danger"} and not trusted and not force:
+    critical = any(finding.score >= 95 for finding in report.findings)
+    if critical:
+        raise RuntimeError("Module contains a blocked account/session capability:\n" + report.pretty())
+    if not trusted and not force:
         token = _save_pending_install(
             filename=safe_name,
             source=source,
@@ -378,17 +381,14 @@ async def _install_module_source(
         )
         raise RuntimeError(f"SECURITY_PENDING:{token}")
     MODULES_DIR.mkdir(parents=True, exist_ok=True)
+    stage_token = secrets.token_hex(6)
     if install_kind == "folder":
         target = MODULES_DIR / final_module_name
-        if target.exists():
-            if target.is_dir():
-                shutil.rmtree(target)
-            else:
-                target.unlink()
-        target.mkdir(parents=True, exist_ok=True)
-        (target / safe_name).write_text(source, encoding="utf-8")
+        staged = MODULES_DIR / f".{final_module_name}.{stage_token}.stage"
+        staged.mkdir(parents=True, exist_ok=False)
+        (staged / safe_name).write_text(source, encoding="utf-8")
         if requirements_text.strip():
-            (target / "requirements.txt").write_text(requirements_text, encoding="utf-8")
+            (staged / "requirements.txt").write_text(requirements_text, encoding="utf-8")
         if image:
             try:
                 image_data = await fetch_public_binary(
@@ -396,22 +396,46 @@ async def _install_module_source(
                     max_bytes=MAX_REMOTE_IMAGE_BYTES,
                     label="Module image",
                 )
-                (target / "Module.png").write_bytes(image_data)
+                (staged / "Module.png").write_bytes(image_data)
             except Exception:
                 pass
     else:
         target = MODULES_DIR / safe_name
-        target.write_text(source, encoding="utf-8")
+        staged = MODULES_DIR / f".{Path(safe_name).stem}.{stage_token}.stage.py"
+        staged.write_text(source, encoding="utf-8")
+    backup = MODULES_DIR / f".{final_module_name}.{stage_token}.rollback"
     try:
-        name = await loader.load_file(target, force=trusted or force, module_name=final_module_name if install_kind == "folder" else None)
-    except Exception:
+        name = await loader.load_file(
+            staged,
+            force=trusted or force,
+            module_name=final_module_name,
+        )
         if target.exists():
-            if target.is_dir():
-                shutil.rmtree(target, ignore_errors=True)
+            os.replace(target, backup)
+        os.replace(staged, target)
+        await refresh_modules()
+    except Exception:
+        if staged.exists():
+            if staged.is_dir():
+                shutil.rmtree(staged, ignore_errors=True)
             else:
-                target.unlink(missing_ok=True)
+                staged.unlink(missing_ok=True)
+        if backup.exists():
+            if target.exists():
+                if target.is_dir():
+                    shutil.rmtree(target, ignore_errors=True)
+                else:
+                    target.unlink(missing_ok=True)
+            os.replace(backup, target)
+        with contextlib.suppress(Exception):
+            await refresh_modules()
         raise
-    verified = bool(trusted or (not report.findings and report.allowed and not force))
+    if backup.exists():
+        if backup.is_dir():
+            shutil.rmtree(backup, ignore_errors=True)
+        else:
+            backup.unlink(missing_ok=True)
+    verified = bool(trusted)
     _set_module_meta(
         name,
         verified=verified,
@@ -428,7 +452,6 @@ async def _install_module_source(
         filename=(f"{final_module_name}/{safe_name}" if install_kind == "folder" else safe_name),
     )
     _queue_userbot_action("install", path=str(target), force=trusted or force)
-    await refresh_modules()
     return name
 
 
