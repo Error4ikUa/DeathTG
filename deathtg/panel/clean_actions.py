@@ -122,6 +122,16 @@ def _safe_module_name(name: str) -> str:
     return stem
 
 
+def _local_module_path(module_name: str) -> Path | None:
+    folder = MODULES_DIR / module_name
+    file = MODULES_DIR / f"{module_name}.py"
+    if folder.exists():
+        return folder
+    if file.exists():
+        return file
+    return None
+
+
 def _normalize_avatar(data: bytes) -> bytes:
     if not data:
         raise RuntimeError("Avatar file is empty")
@@ -380,6 +390,10 @@ async def _install_module_source(
             requirements_text=requirements_text,
         )
         raise RuntimeError(f"SECURITY_PENDING:{token}")
+    try:
+        compile(source, safe_name, "exec")
+    except SyntaxError as exc:
+        raise RuntimeError(f"Module source has a syntax error on line {exc.lineno}: {exc.msg}") from exc
     MODULES_DIR.mkdir(parents=True, exist_ok=True)
     stage_token = secrets.token_hex(6)
     if install_kind == "folder":
@@ -405,11 +419,6 @@ async def _install_module_source(
         staged.write_text(source, encoding="utf-8")
     backup = MODULES_DIR / f".{final_module_name}.{stage_token}.rollback"
     try:
-        name = await loader.load_file(
-            staged,
-            force=trusted or force,
-            module_name=final_module_name,
-        )
         if target.exists():
             os.replace(target, backup)
         os.replace(staged, target)
@@ -437,7 +446,7 @@ async def _install_module_source(
             backup.unlink(missing_ok=True)
     verified = bool(trusted)
     _set_module_meta(
-        name,
+        final_module_name,
         verified=verified,
         security_override=bool(force and not trusted),
         security_verdict=report.verdict,
@@ -452,7 +461,7 @@ async def _install_module_source(
         filename=(f"{final_module_name}/{safe_name}" if install_kind == "folder" else safe_name),
     )
     _queue_userbot_action("install", path=str(target), force=trusted or force)
-    return name
+    return final_module_name
 
 
 @router.post("/profile/save")
@@ -715,13 +724,13 @@ async def update_mod(request: Request, name: str, return_to: str = Form("browser
                 requirements_text=str(bundle.get("requirements_text") or ""),
             )
             return _redirect(_target_path(return_to), message=f"Updated: {updated_name}")
-        path = loader.module_path(module_name)
+        path = _local_module_path(module_name)
         if not path or not path.exists():
             raise RuntimeError("Module source was not found")
         force = bool(meta.get("verified") or meta.get("security_override"))
-        await loader.load_file(path, force=force)
         _queue_userbot_action("install", path=str(path), force=force)
-        return _redirect(_target_path(return_to), message=f"Reloaded: {module_name}")
+        await refresh_modules()
+        return _redirect(_target_path(return_to), message=f"Reload scheduled: {module_name}")
     except Exception as e:
         text = str(e)
         if text.startswith("SECURITY_PENDING:"):

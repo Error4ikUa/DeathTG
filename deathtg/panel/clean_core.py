@@ -131,7 +131,7 @@ def avatar_url() -> str:
 
 
 async def refresh_modules() -> None:
-    """Reload the panel registry without allowing concurrent clears."""
+    """Reload panel-owned commands without starting external userbot modules."""
     async with MODULE_REFRESH_LOCK:
         registry._commands.clear()
         registry._aliases.clear()
@@ -146,13 +146,6 @@ async def refresh_modules() -> None:
         await loader.load_builtin(
             "deathtg.modules", ["core", "root", "info", "system", "antivirus", "terminal"]
         )
-        meta = load_module_meta()
-        verified = {
-            name
-            for name, item in meta.items()
-            if isinstance(item, dict) and (item.get("verified") or item.get("security_override"))
-        }
-        await loader.load_all_local(force_modules=verified)
 
 
 def startup_status() -> dict:
