@@ -197,13 +197,6 @@ async def panel_lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="DeathTG Panel", lifespan=panel_lifespan)
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=os.getenv("PANEL_SECRET", secrets.token_hex(32)),
-    same_site="strict",
-    https_only=panel_cookie_secure(),
-    max_age=60 * 60 * 24 * 90,
-)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=panel_allowed_hosts())
 app.add_middleware(RequestBodyLimitMiddleware, max_bytes=MAX_REQUEST_BODY_BYTES)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -276,6 +269,18 @@ async def harden_responses(request: Request, call_next):
     if request.url.scheme == "https" or forwarded_proto == "https":
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
+
+
+# Starlette applies the most recently registered middleware first. Session must
+# therefore be registered after this function middleware so POST hardening can
+# inspect the authenticated device session instead of seeing an empty scope.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("PANEL_SECRET", secrets.token_hex(32)),
+    same_site="strict",
+    https_only=panel_cookie_secure(),
+    max_age=60 * 60 * 24 * 90,
+)
 
 
 def _auth_guard(request: Request):

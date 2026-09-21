@@ -35,6 +35,7 @@ def normalize_template_action(action: str) -> str:
     replacements = {
         r"{{\s*pending_warning\.token\s*}}": "{token}",
         r"{{\s*device\.session_id\s*}}": "{session_id}",
+        r"{{\s*mod\.name\s*}}": "{name}",
         r"{{\s*module\.name\s*}}": "{name}",
         r"{{\s*module\s*}}": "{name}",
     }
@@ -94,6 +95,8 @@ class PanelRouteContractTests(unittest.TestCase):
         self.assertIn("per_page = 8", app_source)
         self.assertIn("annotate_repo_install_state", app_source)
         self.assertIn("{% if mod.installed %}", template)
+        self.assertIn("{% elif mod.downloaded %}", template)
+        self.assertIn("browser.activate", template)
         self.assertIn("browser.open_installed", template)
 
     def test_legacy_route_layers_are_removed(self) -> None:

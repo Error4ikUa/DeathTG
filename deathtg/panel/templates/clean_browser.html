@@ -86,7 +86,7 @@
                 <div class="module-head">
                     <h2>{{ mod.name }}</h2>
                     <div class="module-state-stack">
-                        {% if mod.installed %}<span class="installed-pill">{{ tr('browser.installed_status') }}</span>{% endif %}
+                        {% if mod.installed %}<span class="installed-pill">{{ tr('browser.installed_status') }}</span>{% elif mod.downloaded %}<span class="verified-pill">{{ tr('browser.downloaded_status') }}</span>{% endif %}
                         {% if mod.verified %}<span class="verified-pill">{{ tr('browser.verified') }}</span>{% endif %}
                     </div>
                 </div>
@@ -96,6 +96,11 @@
                     <a class="small ghost info-link" href="/repo-modules/{{ mod.name }}">{{ tr('browser.info') }}</a>
                     {% if mod.installed %}
                     <a class="small installed-action" href="/modules/{{ mod.installed_name or mod.name }}">{{ tr('browser.open_installed') }}</a>
+                    {% elif mod.downloaded %}
+                    <form method="post" action="/modules/{{ mod.name }}/update">
+                        <input type="hidden" name="return_to" value="browser">
+                        <button class="small" type="submit">{{ tr('browser.activate') }}</button>
+                    </form>
                     {% else %}
                     <form method="post" action="/modules/download">
                         <input type="hidden" name="link" value="{{ mod.link or mod.raw or mod.url }}">

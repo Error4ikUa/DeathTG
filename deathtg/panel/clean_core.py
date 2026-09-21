@@ -478,7 +478,7 @@ def annotate_repo_install_state(items: list[dict], grouped: dict[str, list] | No
 
     The repository and runtime registry are independent data sources.  Keeping
     the merge here gives every UI the same answer and avoids showing an
-    ``Install`` button for a module that is already present on disk.
+    ``Install`` button for a module that is already active in the userbot.
     """
 
     grouped = grouped or registry.by_module()
@@ -504,7 +504,10 @@ def annotate_repo_install_state(items: list[dict], grouped: dict[str, list] | No
         local_name = local_by_key.get(key, "")
         prepared["loaded"] = bool(loaded_name)
         prepared["downloaded"] = bool(local_name or loaded_name)
-        prepared["installed"] = bool(local_name or loaded_name)
+        # A downloaded file is not proof that the live userbot loaded it.  The
+        # panel must not offer an "Open" action for a module with no runtime
+        # instance, because that makes a failed activation look successful.
+        prepared["installed"] = bool(loaded_name)
         prepared["installed_name"] = loaded_name or local_name
         annotated.append(prepared)
     return annotated
