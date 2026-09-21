@@ -27,16 +27,14 @@ class ModuleInstallTransactionTests(unittest.IsolatedAsyncioTestCase):
             current = modules / "Demo"
             current.mkdir()
             (current / "Demo.py").write_text("VALUE = 'old'\n", encoding="utf-8")
-            fake_loader = _Loader(RuntimeError("import failed"))
             with (
                 patch.object(clean_actions, "MODULES_DIR", modules),
-                patch.object(clean_actions, "loader", fake_loader),
                 patch.object(clean_actions, "refresh_modules", AsyncMock()),
             ):
-                with self.assertRaisesRegex(RuntimeError, "import failed"):
+                with self.assertRaisesRegex(RuntimeError, "syntax error"):
                     await clean_actions._install_module_source(
                         filename="Demo.py",
-                        source="VALUE = 'new'\n",
+                        source="def broken(:\n",
                         link="https://github.com/Error4ikUa/DTG_Modules/tree/main/Demo",
                         source_type="repo",
                         trusted=True,
@@ -53,10 +51,8 @@ class ModuleInstallTransactionTests(unittest.IsolatedAsyncioTestCase):
             current = modules / "Demo"
             current.mkdir()
             (current / "Demo.py").write_text("VALUE = 'old'\n", encoding="utf-8")
-            fake_loader = _Loader()
             with (
                 patch.object(clean_actions, "MODULES_DIR", modules),
-                patch.object(clean_actions, "loader", fake_loader),
                 patch.object(clean_actions, "refresh_modules", AsyncMock()),
                 patch.object(clean_actions, "_set_module_meta"),
                 patch.object(clean_actions, "_queue_userbot_action"),

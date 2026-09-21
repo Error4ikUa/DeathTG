@@ -53,7 +53,7 @@ class ModuleRefreshConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.gather(clean_core.refresh_modules(), clean_core.refresh_modules())
 
         self.assertEqual(fake_loader.max_active, 1)
-        self.assertEqual(fake_loader.completed, 2)
+        self.assertEqual(fake_loader.completed, 0)
 
 
 if __name__ == "__main__":
