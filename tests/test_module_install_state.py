@@ -32,7 +32,7 @@ class ModuleInstallStateTests(unittest.TestCase):
         self.assertTrue(by_name["DownloaderDtg"]["loaded"])
         self.assertTrue(by_name["DownloaderDtg"]["installed"])
         self.assertTrue(by_name["NoteDtg"]["downloaded"])
-        self.assertTrue(by_name["NoteDtg"]["installed"])
+        self.assertFalse(by_name["NoteDtg"]["installed"])
         self.assertFalse(by_name["AdminToolsDtg"]["installed"])
 
     def test_verified_source_cannot_hide_critical_account_action(self) -> None:

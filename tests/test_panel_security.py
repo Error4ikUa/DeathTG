@@ -39,6 +39,11 @@ def request_for(
 
 
 class PanelSecurityTests(unittest.TestCase):
+    def test_session_middleware_wraps_post_hardening(self) -> None:
+        middleware = panel.app.user_middleware
+        self.assertEqual(middleware[0].cls.__name__, "SessionMiddleware")
+        self.assertEqual(middleware[1].kwargs.get("dispatch"), panel.harden_responses)
+
     def test_template_renderer_uses_starlette_request_first_api(self) -> None:
         request = request_for("127.0.0.1")
         context = {"request": request, "value": "ok"}
