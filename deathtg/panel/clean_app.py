@@ -4,7 +4,10 @@ from contextlib import asynccontextmanager
 import html
 import ipaddress
 import os
+import platform
 import secrets
+import shutil
+import subprocess
 import time
 import re
 from urllib.parse import quote, urlparse
@@ -77,6 +80,7 @@ from deathtg.server_bootstrap import (
     panel_cookie_secure,
     panel_trust_proxy,
     secure_panel_secret,
+    update_env_values,
 )
 from deathtg.startup_state import (
     PHASE_FIRST_RUN,
@@ -127,7 +131,7 @@ SECURITY_HEADERS = {
     ),
 }
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-PUBLIC_UNSAFE_PATHS = {"/login", "/setup/save", "/setup/qr-refresh", "/setup/secret"}
+PUBLIC_UNSAFE_PATHS = {"/login", "/setup/mode", "/setup/save", "/setup/qr-refresh", "/setup/secret"}
 MAX_REQUEST_BODY_BYTES = _bounded_env_int(
     "PANEL_MAX_BODY_BYTES",
     10 * 1024 * 1024,
@@ -230,8 +234,24 @@ def _template_response(
 @app.middleware("http")
 async def harden_responses(request: Request, call_next):
     response = None
+    if (
+        os.getenv("DEATHTG_MODE", "").strip().lower() == "telegram"
+        and not startup_snapshot().get("setup_required")
+        and request.url.path not in {"/setup", "/setup/done", "/login"}
+        and not request.url.path.startswith("/static/")
+    ):
+        response = HTMLResponse(
+            "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>DeathTG · Telegram</title><style>body{margin:0;background:#090d0f;color:#e5fff5;font:16px system-ui;display:grid;min-height:100vh;place-items:center}"
+            "main{max-width:520px;padding:36px;border:1px solid #36564a;background:#101817}p{color:#a8bcb3;line-height:1.7}</style>"
+            "<main><small>DEATHTG · TELEGRAM ONLY</small><h1>Управление через Telegram</h1>"
+            "<p>Для этой установки веб-панель отключена. Используй команды DeathTG в Telegram.</p></main>",
+            status_code=404,
+        )
     if request.method.upper() in UNSAFE_METHODS:
-        if not _same_origin_request(request):
+        if response is not None:
+            pass
+        elif not _same_origin_request(request):
             response = JSONResponse({"error": "Cross-site request blocked"}, status_code=403)
         elif request.url.path not in PUBLIC_UNSAFE_PATHS:
             session_data = request.scope.get("session") or {}
@@ -576,12 +596,52 @@ def _setup_context(request: Request, step: str, *, error: str | None = None, mes
         "lang": lang,
         "step": step,
         "error": error,
-        "message": message,
+        "message": message or request.query_params.get("message"),
         "setup_token": "",
         "panel_url": _current_panel_url(request),
         "panel_remote_access_ready": panel_remote_access_ready(),
         **extra,
     }
+
+
+def _install_tailscale_for_web_mode() -> str:
+    """Install the Tailscale client when the user explicitly selects web mode."""
+    command = shutil.which("tailscale") or shutil.which("tailscale.exe")
+    if not command and os.name == "nt":
+        winget = shutil.which("winget")
+        if not winget:
+            raise RuntimeError("winget is unavailable; install Tailscale from https://tailscale.com/download/windows")
+        subprocess.run(
+            [winget, "install", "--id", "Tailscale.Tailscale", "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements"],
+            check=True,
+            timeout=600,
+            capture_output=True,
+            text=True,
+        )
+        command = shutil.which("tailscale") or shutil.which("tailscale.exe") or r"C:\Program Files\Tailscale\tailscale.exe"
+    elif not command and platform.system() == "Linux":
+        curl = shutil.which("curl")
+        if not curl:
+            raise RuntimeError("curl is unavailable; install Tailscale from https://tailscale.com/download/linux")
+        installer = f"{curl} -fsSL https://tailscale.com/install.sh | sh"
+        if hasattr(os, "geteuid") and os.geteuid() != 0:
+            sudo = shutil.which("sudo")
+            if not sudo:
+                raise RuntimeError("Tailscale needs administrator access. Install it with sudo, then choose web mode again.")
+            installer = f"{sudo} -n sh -c '{installer}'"
+        subprocess.run(["sh", "-c", installer], check=True, timeout=600)
+        command = shutil.which("tailscale")
+    elif not command:
+        raise RuntimeError("Automatic Tailscale installation is not supported on this operating system.")
+    if not command:
+        raise RuntimeError("Tailscale installed, but its command was not found. Restart DeathTG and choose web mode again.")
+    completed = subprocess.run([command, "up"], check=False, timeout=90, capture_output=True, text=True)
+    output = (completed.stdout or completed.stderr or "").strip()
+    if output:
+        print("Tailscale sign-in:\n" + output, flush=True)
+    if completed.returncode:
+        raise RuntimeError("Tailscale is installed, but could not start. Sign in to Tailscale on this computer and retry.")
+    return "Tailscale is installed. Complete its sign-in from the console link, then restart DeathTG to activate private web access."
 
 
 class _InfoPreviewMap(dict):
@@ -633,8 +693,36 @@ async def setup_page(request: Request):
         )
     return _template_response(
         "setup.html",
-        _setup_context(request, "start"),
+        _setup_context(request, "mode" if os.getenv("DEATHTG_MODE") not in {"web", "telegram"} else "start"),
     )
+
+
+@app.post("/setup/mode")
+async def setup_mode(request: Request, mode: str = Form(...), setup_token: str = Form("")):
+    if not _setup_mutation_allowed(request, setup_token):
+        return RedirectResponse("/setup", status_code=303)
+    selected = str(mode or "").strip().lower()
+    if selected not in {"web", "telegram"}:
+        return _template_response("setup.html", _setup_context(request, "mode", error="Выберите один из режимов."), status_code=400)
+    tailscale = "1" if selected == "web" else "0"
+    update_env_values({
+        "DEATHTG_MODE": selected,
+        "PANEL_TAILSCALE_TRUST": tailscale,
+        "PANEL_TAILSCALE_SERVE": tailscale,
+        "PANEL_TAILSCALE_DIRECT": tailscale,
+        "PANEL_TAILSCALE_AUTO_SERVE": "1" if selected == "web" else "0",
+    })
+    if selected == "web":
+        try:
+            install_message = _install_tailscale_for_web_mode()
+        except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+            return _template_response(
+                "setup.html",
+                _setup_context(request, "mode", error=f"Режим сохранён, но Tailscale не удалось подготовить: {exc}"),
+                status_code=503,
+            )
+        return RedirectResponse(f"/setup?message={quote(install_message)}", status_code=303)
+    return RedirectResponse("/setup", status_code=303)
 
 
 @app.get("/setup/done", response_class=HTMLResponse)

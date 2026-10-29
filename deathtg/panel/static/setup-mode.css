@@ -1,0 +1,24 @@
+.setup-card { width: min(920px, 100%) !important; }
+.mode-intro { margin: 30px 0 22px; text-align: center; }
+.mode-kicker,.mode-tag { color: #81f3ca; font: 700 10px/1.4 ui-monospace,Consolas,monospace; letter-spacing: .17em; }
+.mode-intro h2 { margin: 12px 0 8px; font-size: clamp(25px,5vw,38px); letter-spacing: -.04em; }
+.mode-intro p { color: #9aa9a7; }
+.mode-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.mode-card { position: relative; display: flex; min-height: 330px; flex-direction: column; align-items: flex-start; padding: 26px; overflow: hidden; border: 1px solid #344744; background: linear-gradient(145deg,rgba(17,36,32,.98),rgba(8,13,16,.98)); text-align: left; transition: transform .2s ease,border-color .2s ease,box-shadow .2s ease; }
+.mode-card::after { position: absolute; inset: 0; z-index: 0; border: 1px solid transparent; content: ""; pointer-events: none; transition: border-color .2s ease; }
+.mode-card:hover,.mode-card:focus-within { transform: translateY(-4px); border-color: #8af5cd; box-shadow: 0 18px 55px #0008,0 0 34px #57dfad1c; }
+.mode-card > * { position: relative; z-index: 1; }
+.mode-icon { display: grid; width: 44px; height: 44px; margin-bottom: 23px; place-items: center; border: 1px solid #477669; color: #8af5cd; font-size: 23px; }
+.mode-telegram .mode-icon { color: #8dbbff; border-color: #426188; }
+.mode-tag { margin-bottom: 9px; color: #86a49b; font-size: 9px; }
+.mode-card h3 { margin: 0 0 10px; color: #effff9; font-size: 23px; }
+.mode-card p { min-height: 54px; margin: 0 0 16px; color: #acbdb8; font-size: 14px; line-height: 1.65; }
+.mode-hint { margin-top: auto; padding: 10px 12px; border-left: 2px solid #66cbaa; background: #b4f3dd0b; color: #b8d6cb; font-size: 11px; line-height: 1.55; transition: background .2s ease,color .2s ease; }
+.mode-telegram .mode-hint { border-left-color: #79aaf2; background: #91b9ff0c; }
+.mode-card:hover .mode-hint,.mode-card:focus-within .mode-hint { background: #8af5cd15; color: #e3fff4; }
+.mode-card button { display: flex; width: 100%; justify-content: space-between; margin-top: 18px; padding: 13px 15px; border: 1px solid #6de3bd; background: #74e6c41a; color: #dbfff2; font-weight: 700; }
+.mode-telegram button { border-color: #789ff0; background: #789ff019; color: #e4ebff; }
+.mode-foot { display: flex; align-items: center; justify-content: center; gap: 9px; margin: 22px 0 4px; color: #7d918a; font: 700 9px/1.4 ui-monospace,Consolas,monospace; letter-spacing: .1em; text-align: center; }
+.mode-pulse { width: 7px; height: 7px; border-radius: 50%; background: #75e7bc; box-shadow: 0 0 12px #75e7bc; }
+@media(max-width:640px) { .setup-card { padding: 22px 16px !important; } .mode-grid { grid-template-columns: 1fr; } .mode-card { min-height: 300px; padding: 21px; } }
+@media(prefers-reduced-motion:reduce) { .mode-card,.mode-hint { transition: none; } }

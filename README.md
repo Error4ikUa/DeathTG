@@ -47,6 +47,15 @@ What happens automatically:
 5. Prints setup link in terminal
 6. Opens DeathTG web setup flow
 
+## Choose your control mode
+
+On the first setup page, choose one of two modes:
+
+- **Web panel** installs the Tailscale client on Windows (via `winget`) or supported Linux systems, then prints the Tailscale sign-in link in the console. Sign in on this computer and on the device you use to access DeathTG, then restart DeathTG to activate private panel access through Tailscale Serve. Linux may require administrator access.
+- **Telegram only** disables Tailscale panel trust and blocks the management website after initial QR setup. The local setup page is still used once to connect the Telegram account.
+
+The current project does not include Google OAuth or a hosted account service, so DeathTG account registration and binding to a Google account are not part of this setup flow yet. Tailscale sign-in is separate and follows the identity provider configured in the user's tailnet.
+
 ## First Start
 
 You do not need manual `nano .env`.

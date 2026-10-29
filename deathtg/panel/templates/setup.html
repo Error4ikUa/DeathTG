@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ tr('setup.title') }}</title>
   <link rel="stylesheet" href="/static/engineering.css?v=20260819.7">
+  <link rel="stylesheet" href="/static/setup-mode.css?v=1">
 </head>
 <body>
   <canvas id="matrix"></canvas>
@@ -14,6 +15,29 @@
       <p class="eyebrow">DTG</p>
       <h1>{{ tr('setup.title') }}</h1>
       <p>{{ tr('setup.intro') }}</p>
+      {% if step == "mode" %}
+      {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
+      <div class="mode-intro"><span class="mode-kicker">ШАГ 01 · ВЫБОР СЦЕНАРИЯ</span><h2>Как ты хочешь управлять DeathTG?</h2><p>Выбор сохранится для этой установки.</p></div>
+      <div class="mode-grid">
+        <form method="post" action="/setup/mode" class="mode-card mode-web">
+          <input type="hidden" name="mode" value="web">
+          <div class="mode-icon">◈</div><span class="mode-tag">PRIVATE WEB</span>
+          <h3>С веб-панелью</h3>
+          <p>Управляй DeathTG через сайт с компьютера и других устройств в своей сети Tailscale.</p>
+          <span class="mode-hint">Tailscale установится автоматически. Затем подключи этот компьютер и устройство управления к своему tailnet.</span>
+          <button type="submit">Выбрать веб-режим <span>↗</span></button>
+        </form>
+        <form method="post" action="/setup/mode" class="mode-card mode-telegram">
+          <input type="hidden" name="mode" value="telegram">
+          <div class="mode-icon">✳</div><span class="mode-tag">TELEGRAM ONLY</span>
+          <h3>Только Telegram</h3>
+          <p>Без удалённой веб-панели и Tailscale. Основное управление — в Telegram.</p>
+          <span class="mode-hint">Локальная страница установки нужна только для первичного QR-входа.</span>
+          <button type="submit">Выбрать Telegram <span>↗</span></button>
+        </form>
+      </div>
+      <div class="mode-foot"><span class="mode-pulse"></span> ДАЛЕЕ · API TELEGRAM · ВХОД ПО QR-КОДУ</div>
+      {% elif step == "start" %}
       {% if panel_url %}
       <small class="setup-network-note setup-current-address">{{ tr('setup.current_address') }}: {{ panel_url }}</small>
       {% endif %}
@@ -22,7 +46,6 @@
       {% endif %}
       {% if message %}<div class="alert success">{{ message }}</div>{% endif %}
       {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
-      {% if step == "start" %}
       <form method="post" action="/setup/save" class="form-stack">
         <input type="hidden" name="setup_token" value="{{ setup_token or '' }}">
         <label>{{ tr('setup.api_id') }}</label>
@@ -59,6 +82,7 @@
         <button type="submit">{{ tr('setup.2fa_confirm') }}</button>
       </form>
       <small>{{ tr('setup.2fa_help') }}</small>
+      {% endif %}
       {% endif %}
     </section>
   </main>
