@@ -14,8 +14,8 @@
 .mode-card h3 { margin: 0 0 10px; color: #effff9; font-size: 23px; }
 .mode-card p { min-height: 54px; margin: 0 0 16px; color: #acbdb8; font-size: 14px; line-height: 1.65; }
 .mode-action { position: relative; z-index: 3; width: 100%; margin-top: auto; }
-.mode-hint { position: absolute; top: calc(100% + 9px); left: 0; z-index: 5; width: 100%; box-sizing: border-box; padding: 11px 13px; border: 1px solid #5b9a83; border-left: 3px solid #75e7bc; background: #101a18; color: #d2eee2; font-size: 11px; line-height: 1.55; text-align: left; opacity: 0; visibility: hidden; transform: translateY(-5px); box-shadow: 0 12px 30px #0009; transition: opacity .16s ease,transform .16s ease,visibility .16s; }
-.mode-action:hover .mode-hint,.mode-action:focus-within .mode-hint { opacity: 1; visibility: visible; transform: translateY(0); }
+.mode-hint { display: block; width: 100%; max-height: 0; box-sizing: border-box; margin-top: 0; padding: 0 13px; overflow: hidden; border: 0 solid #5b9a83; border-left-width: 3px; background: #101a18; color: #d2eee2; font-size: 11px; line-height: 1.55; text-align: left; opacity: 0; visibility: hidden; transition: max-height .2s ease,margin .2s ease,padding .2s ease,opacity .16s ease,visibility .16s,border-width .2s ease; }
+.mode-action:hover .mode-hint,.mode-action:focus-within .mode-hint { max-height: 120px; margin-top: 8px; padding: 10px 13px; border-width: 1px; border-left-width: 3px; opacity: 1; visibility: visible; }
 .mode-telegram .mode-hint { border-color: #5578af; border-left-color: #87adff; }
 .mode-card button { display: flex; width: 100%; justify-content: space-between; margin-top: 0; padding: 13px 15px; border: 1px solid #6de3bd; background: #74e6c41a; color: #dbfff2; font-weight: 700; }
 .mode-telegram button { border-color: #789ff0; background: #789ff019; color: #e4ebff; }
