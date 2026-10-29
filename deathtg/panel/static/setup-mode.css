@@ -21,5 +21,7 @@
 .mode-telegram button { border-color: #789ff0; background: #789ff019; color: #e4ebff; }
 .mode-foot { display: flex; align-items: center; justify-content: center; gap: 9px; margin: 22px 0 4px; color: #7d918a; font: 700 9px/1.4 ui-monospace,Consolas,monospace; letter-spacing: .1em; text-align: center; }
 .mode-pulse { width: 7px; height: 7px; border-radius: 50%; background: #75e7bc; box-shadow: 0 0 12px #75e7bc; }
+.setup-back { display: inline-flex; width: fit-content; align-items: center; gap: 8px; margin: 4px 0 16px; padding: 9px 12px; border: 1px solid #426188; color: #b9d4ff; font: 700 11px/1.4 ui-monospace,Consolas,monospace; text-decoration: none; transition: background .16s ease,border-color .16s ease,color .16s ease; }
+.setup-back:hover,.setup-back:focus-visible { border-color: #87adff; background: #789ff019; color: #fff; }
 @media(max-width:640px) { .setup-card { padding: 22px 16px !important; } .mode-grid { grid-template-columns: 1fr; } .mode-card { min-height: 300px; padding: 21px; } }
 @media(prefers-reduced-motion:reduce) { .mode-card,.mode-hint { transition: none; } }

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ tr('setup.title') }}</title>
   <link rel="stylesheet" href="/static/engineering.css?v=20260819.7">
-  <link rel="stylesheet" href="/static/setup-mode.css?v=4">
+  <link rel="stylesheet" href="/static/setup-mode.css?v=5">
 </head>
 <body>
   <canvas id="matrix"></canvas>
@@ -42,6 +42,7 @@
       {% if panel_remote_access_ready %}
       <small class="setup-network-note">{{ tr('setup.remote_ready') }}</small>
       {% endif %}
+      <a class="setup-back" href="/setup?step=mode">← Вернуться к выбору режима</a>
       {% if message %}<div class="alert success">{{ message }}</div>{% endif %}
       {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
       <form method="post" action="/setup/save" class="form-stack">
@@ -55,6 +56,7 @@
         <button type="submit">{{ tr('setup.confirm') }}</button>
       </form>
       {% elif step == "qr" %}
+      <a class="setup-back" href="/setup?step=mode">← Вернуться к выбору режима</a>
       <div class="form-stack">
         <label>{{ tr('setup.qr_login') }}</label>
         {% if qr_data_url %}
@@ -74,6 +76,7 @@
         <button type="submit">{{ tr('setup.qr_refresh') }}</button>
       </form>
       {% elif step == "secret" %}
+      <a class="setup-back" href="/setup?step=mode">← Вернуться к выбору режима</a>
       <form method="post" action="/setup/secret" class="form-stack">
         <label>{{ tr('setup.2fa') }}</label>
         <input type="password" name="secret_value" placeholder="{{ tr('setup.2fa_placeholder') }}" autofocus required>

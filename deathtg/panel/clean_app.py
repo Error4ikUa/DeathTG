@@ -693,7 +693,10 @@ async def setup_page(request: Request):
         )
     return _template_response(
         "setup.html",
-        _setup_context(request, "mode" if os.getenv("DEATHTG_MODE") not in {"web", "telegram"} else "start"),
+        _setup_context(
+            request,
+            "mode" if request.query_params.get("step") == "mode" or os.getenv("DEATHTG_MODE") not in {"web", "telegram"} else "start",
+        ),
     )
 
 
