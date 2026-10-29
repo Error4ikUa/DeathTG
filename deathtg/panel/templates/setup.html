@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ tr('setup.title') }}</title>
   <link rel="stylesheet" href="/static/engineering.css?v=20260819.7">
-  <link rel="stylesheet" href="/static/setup-mode.css?v=1">
+  <link rel="stylesheet" href="/static/setup-mode.css?v=2">
 </head>
 <body>
   <canvas id="matrix"></canvas>
@@ -24,16 +24,14 @@
           <div class="mode-icon">◈</div><span class="mode-tag">PRIVATE WEB</span>
           <h3>С веб-панелью</h3>
           <p>Управляй DeathTG через сайт с компьютера и других устройств в своей сети Tailscale.</p>
-          <span class="mode-hint">Tailscale установится автоматически. Затем подключи этот компьютер и устройство управления к своему tailnet.</span>
-          <button type="submit">Выбрать веб-режим <span>↗</span></button>
+          <div class="mode-action"><button type="submit">Выбрать веб-режим <span>↗</span></button><span class="mode-hint" role="tooltip">Tailscale установится автоматически. Затем подключи этот компьютер и устройство управления к своему tailnet.</span></div>
         </form>
         <form method="post" action="/setup/mode" class="mode-card mode-telegram">
           <input type="hidden" name="mode" value="telegram">
           <div class="mode-icon">✳</div><span class="mode-tag">TELEGRAM ONLY</span>
           <h3>Только Telegram</h3>
           <p>Без удалённой веб-панели и Tailscale. Основное управление — в Telegram.</p>
-          <span class="mode-hint">Локальная страница установки нужна только для первичного QR-входа.</span>
-          <button type="submit">Выбрать Telegram <span>↗</span></button>
+          <div class="mode-action"><button type="submit">Выбрать Telegram <span>↗</span></button><span class="mode-hint" role="tooltip">Локальная страница установки нужна только для первичного QR-входа.</span></div>
         </form>
       </div>
       <div class="mode-foot"><span class="mode-pulse"></span> ДАЛЕЕ · API TELEGRAM · ВХОД ПО QR-КОДУ</div>
@@ -82,7 +80,6 @@
         <button type="submit">{{ tr('setup.2fa_confirm') }}</button>
       </form>
       <small>{{ tr('setup.2fa_help') }}</small>
-      {% endif %}
       {% endif %}
     </section>
   </main>
