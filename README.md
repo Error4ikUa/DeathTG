@@ -49,14 +49,17 @@ What happens automatically:
 
 ## Choose your control mode
 
-On the first setup page, choose one of two modes:
+On first start, DeathTG asks in the console whether it is running on a server or on your own computer.
 
-- **Web panel** installs the Tailscale client on Windows (via `winget`) or supported Linux systems, then prints the server's Tailscale sign-in link in the console. Install Tailscale on the device you use to access DeathTG and sign in to the same account on both devices. This places them in one private network; there is no pairing code. DeathTG then prints the private panel address. Linux may require administrator access.
-- **Telegram only** disables Tailscale panel trust and blocks the management website after initial QR setup. The local setup page is still used once to connect the Telegram account.
+- **Local computer:** setup opens at `http://127.0.0.1`. Choose Telegram only to use the page just for Telegram QR sign-in; the website closes when setup finishes. Choose Web dashboard to install/start Tailscale and create a private HTTPS address. Add your other devices to the same Tailscale account to open it.
+- **Server/VPS:** before showing a setup page, DeathTG connects the server to Tailscale. Install Tailscale on your main computer or phone, sign in, then approve the Tailscale link printed in the server console with that same account. Return to the console and press `Y`; DeathTG verifies the server and your device share the same Tailscale owner. It then prints a private, one-time `https://…ts.net/setup?setup_token=…` link. Open it from a device already signed in to that account.
+- **Choose a mode on the setup page:** Web dashboard keeps the site on private Tailscale HTTPS. Telegram only turns off the HTTPS route and closes the setup website after QR sign-in; DeathTG keeps running in Telegram and the console. The userbot still sends its welcome message, without an unusable panel link.
 
-When started in an interactive console, DeathTG asks whether it is running on a remote server. For the first QR setup on a server, use the SSH tunnel shown in the setup page. For everyday web access, use the private Tailscale panel address; both the server and the device opening the panel must be online in the same Tailscale account.
+Tailscale account sign-in may use Google if you chose Google as the identity provider when creating that Tailscale account. DeathTG itself does not collect Google credentials or provide a separate hosted account. Access is restricted to the Tailscale identity bound to this DeathTG installation and devices owned by that same Tailscale user. The one-time setup token is an additional gate, not a replacement for Tailscale.
 
-The current project does not include Google OAuth or a hosted account service, so DeathTG account registration and binding to a Google account are not part of this setup flow yet. Tailscale sign-in is separate and follows the identity provider configured in the user's tailnet.
+The setup site binds to localhost. Remote access is through Tailscale Serve HTTPS; it is not opened on the public internet. An SSH tunnel is only a manual troubleshooting fallback, not the normal server setup path.
+
+To reopen the setup mode picker later, stop the running DeathTG process and start `python dtg.py --choose-mode`. On a server this runs the private Tailscale check again before showing the picker.
 
 ## First Start
 
@@ -73,8 +76,7 @@ After that DeathTG:
 1. Creates Telegram session
 2. Starts userbot automatically
 3. Syncs bots
-4. Sends welcome message in Telegram
-5. Sends your personal secure panel links
+4. Sends a welcome message in Telegram; Web mode includes a personal secure panel link, Telegram-only mode does not include a website link
 
 ## Public Server Logic
 

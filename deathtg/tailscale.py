@@ -3,6 +3,8 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import platform
+import re
 import shutil
 import subprocess
 import threading
@@ -61,6 +63,56 @@ def _tailscale_command() -> str:
             if candidate.is_file():
                 return str(candidate)
     return ""
+
+
+def install_tailscale_and_run_up() -> str:
+    """Install the Tailscale client when needed and print its login URL."""
+    command = _tailscale_command()
+    if not command and os.name == "nt":
+        winget = shutil.which("winget")
+        if not winget:
+            raise RuntimeError("winget is unavailable; install Tailscale from https://tailscale.com/download/windows")
+        subprocess.run(
+            [winget, "install", "--id", "Tailscale.Tailscale", "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements"],
+            check=True,
+            timeout=600,
+            capture_output=True,
+            text=True,
+        )
+        command = _tailscale_command() or r"C:\Program Files\Tailscale\tailscale.exe"
+    elif not command and platform.system() == "Linux":
+        curl = shutil.which("curl")
+        if not curl:
+            raise RuntimeError("curl is unavailable; install Tailscale from https://tailscale.com/download/linux")
+        installer = f"{curl} -fsSL https://tailscale.com/install.sh | sh"
+        if hasattr(os, "geteuid") and os.geteuid() != 0:
+            sudo = shutil.which("sudo")
+            if not sudo:
+                raise RuntimeError("Tailscale needs administrator access. Install it with sudo, then run DeathTG again.")
+            installer = f"{sudo} -n sh -c '{installer}'"
+        subprocess.run(["sh", "-c", installer], check=True, timeout=600)
+        command = _tailscale_command()
+    elif not command:
+        raise RuntimeError("Automatic Tailscale installation is not supported on this operating system.")
+    if not command:
+        raise RuntimeError("Tailscale installed, but its command was not found. Restart DeathTG and try again.")
+
+    completed = subprocess.run(
+        [command, "up"],
+        check=False,
+        timeout=90,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    output = (completed.stdout or completed.stderr or "").strip()
+    if output:
+        print("Tailscale sign-in:\n" + output, flush=True)
+    if completed.returncode:
+        detail = output or "Sign in to Tailscale on this device, then try again."
+        raise RuntimeError(f"Tailscale could not start: {detail}")
+    return output
 
 
 def _empty_status(message: str = "Tailscale is not installed") -> dict[str, Any]:
@@ -279,6 +331,29 @@ def _serve_targets_port(payload: dict[str, Any], port: int) -> bool:
     )
 
 
+def _serve_proxy_routes(payload: dict[str, Any]) -> list[tuple[int, str, str]]:
+    """Return HTTPS Serve paths as (front-end port, path, local proxy target)."""
+    routes: list[tuple[int, str, str]] = []
+    web = payload.get("Web") if isinstance(payload, dict) else None
+    if not isinstance(web, dict):
+        return routes
+    for endpoint, config in web.items():
+        match = re.search(r":(\d+)$", str(endpoint))
+        handlers = config.get("Handlers") if isinstance(config, dict) else None
+        if not match or not isinstance(handlers, dict):
+            continue
+        https_port = int(match.group(1))
+        for path, handler in handlers.items():
+            target = handler.get("Proxy") if isinstance(handler, dict) else None
+            if isinstance(target, str) and target:
+                routes.append((https_port, str(path) or "/", target))
+    return routes
+
+
+def _target_uses_port(target: str, port: int) -> bool:
+    return bool(re.search(r":%d(?:/|$)" % int(port), str(target).lower()))
+
+
 def _direct_access_url(status: dict[str, Any], port: int) -> str:
     host = str(status.get("dns_name") or "").strip().rstrip(".")
     if not host:
@@ -333,6 +408,7 @@ def ensure_tailscale_access(port: int) -> dict[str, Any]:
             message=str(status.get("identity_message") or "Tailscale identity mismatch"),
         )
     command = str(status.get("command") or "")
+    serve_error = ""
     if _serve_enabled() and command:
         try:
             serve_status = _run_serve_status(command)
@@ -371,6 +447,8 @@ def ensure_tailscale_access(port: int) -> dict[str, Any]:
                     serve_ready=True,
                     message="Private Tailnet HTTPS is ready",
                 )
+            if completed is not None:
+                serve_error = (completed.stderr or completed.stdout or "").strip()
 
     if _direct_enabled():
         direct_url = _direct_access_url(status, int(port))
@@ -384,8 +462,62 @@ def ensure_tailscale_access(port: int) -> dict[str, Any]:
 
     return _cache_access_state(
         mode="local",
-        message="Tailscale remote access is unavailable; panel remains localhost-only",
+        message=(
+            f"Tailscale HTTPS setup failed: {serve_error[:240]}"
+            if serve_error
+            else "Tailscale remote access is unavailable; panel remains localhost-only"
+        ),
     )
+
+
+def disable_tailscale_serve(port: int) -> dict[str, Any]:
+    """Disable the private Serve proxy only when it targets this panel port."""
+    status = tailscale_status(refresh=True)
+    command = str(status.get("command") or _tailscale_command())
+    if not command:
+        return {"disabled": False, "message": "Tailscale is not installed"}
+    try:
+        serve_status = _run_serve_status(command)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"disabled": False, "message": f"Could not inspect Tailscale Serve: {type(exc).__name__}"}
+    routes = _serve_proxy_routes(serve_status)
+    # DeathTG configures the Serve root path. Leave any user-created routes,
+    # including additional paths that happen to share the same local port.
+    matching_routes = [
+        route
+        for route in routes
+        if route[1] == "/" and _target_uses_port(route[2], int(port))
+    ]
+    if not matching_routes:
+        return {"disabled": False, "message": "No DeathTG Tailscale Serve route was found"}
+
+    kwargs: dict[str, Any] = {
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "timeout": 8,
+        "check": False,
+    }
+    if os.name == "nt":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    for https_port, path, _target in matching_routes:
+        try:
+            completed = subprocess.run(
+                [command, "serve", f"--https={https_port}", f"--set-path={path}", "off"],
+                **kwargs,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return {"disabled": False, "message": f"Could not disable Tailscale Serve: {type(exc).__name__}"}
+        if completed.returncode:
+            detail = (completed.stderr or completed.stdout or "Tailscale Serve could not be disabled").strip()
+            return {"disabled": False, "message": detail[:240]}
+
+    global _CACHE
+    with _CACHE_LOCK:
+        _CACHE = (0.0, {})
+    os.environ.pop("PANEL_TAILSCALE_URL", None)
+    return {"disabled": True, "message": "DeathTG Tailscale HTTPS route disabled"}
 
 
 def ensure_tailscale_serve(port: int) -> dict[str, Any]:

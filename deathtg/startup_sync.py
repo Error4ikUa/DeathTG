@@ -196,6 +196,30 @@ def _build_panel_grant_url(owner_id: int) -> str:
     return _issue_panel_grant(owner_id)
 
 
+def _telegram_only_mode() -> bool:
+    return _env("DEATHTG_MODE_SELECTED") == "1" and _env("DEATHTG_MODE").lower() == "telegram"
+
+
+def _panel_grant_url_for_mode(owner_id: int) -> str:
+    return "" if _telegram_only_mode() else _build_panel_grant_url(owner_id)
+
+
+def _owner_shortcut_buttons(panel_url: str, news_url: str, support_url: str, personal_url: str) -> list[list[dict]]:
+    buttons: list[list[dict]] = []
+    if panel_url:
+        buttons.append([{"text": "Open DeathTG", "url": panel_url}])
+    second_row: list[dict] = []
+    if news_url:
+        second_row.append({"text": "News", "url": news_url})
+    if support_url:
+        second_row.append({"text": "Support", "url": support_url})
+    if second_row:
+        buttons.append(second_row)
+    if personal_url:
+        buttons.append([{"text": "Personal Site", "url": personal_url}])
+    return buttons
+
+
 def _shortcuts_interval_seconds() -> int:
     raw = _env("PANEL_SHORTCUTS_MIN_INTERVAL")
     if not raw:
@@ -1779,45 +1803,43 @@ async def _run_startup_sync_locked(client) -> dict:
         allowed, cooldown_reason, _ = _shortcuts_allowed_now()
         if not allowed:
             return False, cooldown_reason, ""
-        panel_url = _build_panel_grant_url(owner_id)
+        telegram_only = _telegram_only_mode()
+        panel_url = _panel_grant_url_for_mode(owner_id)
         remote_ready = panel_remote_access_ready()
         me = await client.get_me()
         owner_premium = bool(getattr(me, "premium", False))
         news_url = _env("PANEL_NEWS_URL")
         support_url = _env("PANEL_SUPPORT_URL")
         personal_url = _env("PANEL_PERSONAL_URL")
-        buttons: list[list[dict]] = [[{"text": "Open DeathTG", "url": panel_url}]]
-        second_row: list[dict] = []
-        if news_url:
-            second_row.append({"text": "News", "url": news_url})
-        if support_url:
-            second_row.append({"text": "Support", "url": support_url})
-        if second_row:
-            buttons.append(second_row)
-        if personal_url:
-            buttons.append([{"text": "Personal Site", "url": personal_url}])
+        buttons = _owner_shortcut_buttons(panel_url, news_url, support_url, personal_url)
         remote_note = ""
-        if not remote_ready:
+        if panel_url and not remote_ready:
             remote_note = (
                 "\n\nRemote phone access is not enabled yet because the panel is still local-only. "
                 "Restart DeathTG after this update so it can rebind the panel and refresh your secure links."
             )
+        welcome_lines = [emoji_line("pirate", "Welcome to DeathTG.", owner_premium), ""]
+        if panel_url:
+            welcome_lines.extend(
+                [
+                    emoji_line("mail", "Your personal private panel link is ready.", owner_premium),
+                    emoji_line("key", "Do not share this link with anyone.", owner_premium),
+                    emoji_line("phone", "Open this link on your phone or on another browser if you want to trust one more device.", owner_premium),
+                    "If you need another device later, create a new secure link from inside the panel.",
+                ]
+            )
+        else:
+            welcome_lines.append("Telegram-only mode is active. Use DeathTG in Telegram; no website is enabled.")
+        if remote_note:
+            welcome_lines.append(remote_note)
         payload = {
             "chat_id": owner_id,
-            "caption": "".join(
-                [
-                    emoji_line("pirate", "Welcome to DeathTG.", owner_premium) + "\n\n",
-                    emoji_line("mail", "Your personal private panel link is ready.", owner_premium) + "\n",
-                    emoji_line("key", "Do not share this link with anyone.", owner_premium) + "\n",
-                    emoji_line("phone", "Open this link on your phone or on another browser if you want to trust one more device.", owner_premium) + "\n",
-                    "If you need another device later, create a new secure link from inside the panel.",
-                    remote_note,
-                ]
-            ),
-            "reply_markup": {"inline_keyboard": buttons},
+            "caption": "\n".join(welcome_lines),
             "disable_web_page_preview": True,
             "parse_mode": "HTML",
         }
+        if buttons:
+            payload["reply_markup"] = {"inline_keyboard": buttons}
         welcome_image = system_image("welcome")
         if welcome_image and welcome_image.exists():
             payload["photo"] = str(welcome_image)
@@ -1847,7 +1869,8 @@ async def _run_startup_sync_locked(client) -> dict:
                             form_data.add_field("chat_id", str(owner_id))
                             form_data.add_field("caption", str(payload.get("caption") or ""))
                             form_data.add_field("parse_mode", "HTML")
-                            form_data.add_field("reply_markup", json.dumps(payload["reply_markup"], ensure_ascii=False))
+                            if payload.get("reply_markup"):
+                                form_data.add_field("reply_markup", json.dumps(payload["reply_markup"], ensure_ascii=False))
                             form_data.add_field("disable_web_page_preview", "true")
                             form_data.add_field("photo", welcome_image.read_bytes(), filename=welcome_image.name, content_type="image/png")
                             async with session.post(url, data=form_data, timeout=20) as response:
@@ -1881,13 +1904,9 @@ async def _run_startup_sync_locked(client) -> dict:
                 errors.append(error)
 
         try:
-            direct_lines = [
-                emoji_line("pirate", "Welcome to DeathTG.", owner_premium),
-                "",
-                emoji_line("mail", "Your personal private panel link is ready.", owner_premium),
-                emoji_line("key", "Do not share this link with anyone.", owner_premium),
-                panel_url,
-            ]
+            direct_lines = welcome_lines[:]
+            if panel_url:
+                direct_lines.append(panel_url)
             if remote_note:
                 direct_lines.extend(["", remote_note.strip()])
             await client.send_message("me", "\n".join(direct_lines), parse_mode="html", link_preview=False)

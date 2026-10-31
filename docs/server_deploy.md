@@ -31,19 +31,29 @@ Optional public reverse proxy:
 DTG_PUBLIC_HOST=panel.example.com DTG_PUBLIC_URL=https://panel.example.com bash scripts/install_server.sh
 ```
 
-Private phone/server access is automatic when Tailscale is connected. DeathTG
-always keeps its local listener on `127.0.0.1`. If an existing Tailscale Serve
-route already points to the panel, DeathTG reuses its private HTTPS address.
-Otherwise it opens a second listener only on the machine's own Tailscale IP;
-it never falls back to `0.0.0.0` or the LAN address.
+During setup and Web mode, the panel binds only to `127.0.0.1`. Remote access
+uses Tailscale Serve over HTTPS; DeathTG does not open a public or LAN listener.
 
-For remote installs, the first QR setup can use the SSH tunnel printed on the
-setup page. After selecting the web-panel mode, authorize Tailscale on the
-server from the sign-in URL printed in the server console. Install Tailscale
-on the computer or phone that will open the panel, and sign in to the same
-Tailscale account on both devices. They then share the private tailnet; no
-separate pairing step is needed. Open the private HTTPS address DeathTG prints
-after the server connects. Telegram-only mode does not require Tailscale.
+On a server/VPS, the first run asks the operator to confirm that a main
+computer or phone is already signed in to Tailscale. DeathTG installs and
+starts Tailscale on the server, then prints the server authorization URL in
+the console. Sign in to the same Tailscale account there. Once both devices
+are online, press `Y` in the server console. DeathTG checks that the remote
+device has the same Tailscale user ID as the server, configures HTTPS Serve,
+and prints a one-time private setup URL. Both the tailnet identity and the
+setup token are required to open it.
+
+The setup page then offers Web dashboard or Telegram only. Web mode keeps the
+Tailscale HTTPS route. Telegram-only mode uses the private setup page only for
+the initial QR login, then disables the Serve route and closes the panel
+listener while the userbot stays active. Tailscale may remain installed and
+signed in, but no DeathTG website is available in this mode. On a local
+computer, setup starts at localhost and Tailscale is only installed if Web
+mode is selected.
+
+To change the saved mode later, stop DeathTG and run `python dtg.py --choose-mode`.
+On a server, this repeats the private Tailscale owner check before opening the
+mode picker. A normal Telegram-only restart keeps the website closed.
 
 On first successful start, DeathTG stores the local Tailscale user, tailnet,
 MagicDNS suffix, and hostname in `runtime/tailscale_binding.json`. Later account
@@ -53,9 +63,8 @@ do not receive automatic panel access.
 
 Optional settings:
 
-- `PANEL_TAILSCALE_DIRECT=1` enables the private Tailscale-IP listener.
-- `PANEL_TAILSCALE_SERVE=1` reuses an already configured Serve route.
-- `PANEL_TAILSCALE_AUTO_SERVE=1` explicitly allows DeathTG to try configuring Serve.
+- `PANEL_TAILSCALE_SERVE=1` enables the private HTTPS Serve route.
+- `PANEL_TAILSCALE_AUTO_SERVE=1` allows DeathTG to configure that route.
 - `PANEL_TAILSCALE_EXPECTED_LOGIN=user@example.com` pins an additional expected login.
 
 The installer:

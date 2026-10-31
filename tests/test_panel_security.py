@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+import time
+import os
 from unittest.mock import AsyncMock, patch
 
 from starlette.requests import Request
@@ -39,6 +41,41 @@ def request_for(
 
 
 class PanelSecurityTests(unittest.TestCase):
+    def test_telegram_only_completion_disables_tailnet_and_closes_panel(self) -> None:
+        panel.SHUTDOWN_REQUESTED.clear()
+        with (
+            patch.object(panel.time, "sleep"),
+            patch.object(panel, "disable_tailscale_serve", return_value={"disabled": True}),
+            patch.object(panel, "update_env_values") as update_env,
+        ):
+            panel._finish_telegram_only_setup()
+
+        try:
+            self.assertTrue(panel.SHUTDOWN_REQUESTED.is_set())
+            updates = update_env.call_args.args[0]
+            self.assertEqual(updates["PANEL_TAILSCALE_TRUST"], "0")
+            self.assertEqual(updates["PANEL_TAILSCALE_SERVE"], "0")
+            self.assertEqual(updates["PANEL_TAILSCALE_DIRECT"], "0")
+        finally:
+            panel.SHUTDOWN_REQUESTED.clear()
+
+    def test_remote_setup_token_cannot_bypass_tailscale_identity(self) -> None:
+        request = request_for("192.0.2.40", path="/setup")
+        request.session["setup_granted_at"] = int(time.time())
+        with (
+            patch.object(panel, "_is_local_request", return_value=False),
+            patch.object(panel, "_tailscale_request_peer", return_value=None),
+        ):
+            self.assertFalse(panel._setup_allowed(request, "one-time-token"))
+
+    def test_mode_picker_can_be_opened_for_a_ready_install(self) -> None:
+        request = request_for("127.0.0.1", path="/setup/mode")
+        with (
+            patch.dict(os.environ, {"DEATHTG_MODE_SELECTED": "0"}),
+            patch.object(panel, "startup_snapshot", return_value={"setup_required": False}),
+        ):
+            self.assertTrue(panel._setup_mutation_allowed(request))
+
     def test_session_middleware_wraps_post_hardening(self) -> None:
         middleware = panel.app.user_middleware
         self.assertEqual(middleware[0].cls.__name__, "SessionMiddleware")

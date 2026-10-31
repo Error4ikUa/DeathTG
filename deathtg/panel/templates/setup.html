@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ tr('setup.title') }}</title>
   <link rel="stylesheet" href="/static/engineering.css?v=20260819.7">
-  <link rel="stylesheet" href="/static/setup-mode.css?v=5">
+  <link rel="stylesheet" href="/static/setup-mode.css?v=6">
 <link rel="stylesheet" href="/static/forest.css?v=3">
 <script src="/static/forest.js?v=3"></script>
 </head>
@@ -18,21 +18,21 @@
       <p>{{ tr('setup.intro') }}</p>
       {% if step == "mode" %}
       {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
-      <div class="mode-intro"><span class="mode-kicker">{% if lang == 'ru' %}ШАГ 01 · ВЫБОР СЦЕНАРИЯ{% else %}STEP 01 · CHOOSE YOUR SETUP{% endif %}</span><h2>{% if lang == 'ru' %}Как ты хочешь управлять DeathTG?{% else %}How do you want to use DeathTG?{% endif %}</h2><p>{% if lang == 'ru' %}Выбери режим. Его можно изменить позже в настройках.{% else %}Choose a mode. You can change it later in settings.{% endif %}</p></div>
+      <div class="mode-intro"><span class="mode-kicker">{% if lang == 'ru' %}ШАГ 01 · ВЫБОР СЦЕНАРИЯ{% else %}STEP 01 · CHOOSE YOUR SETUP{% endif %}</span><h2>{% if lang == 'ru' %}Как ты хочешь управлять DeathTG?{% else %}How do you want to use DeathTG?{% endif %}</h2><p>{% if lang == 'ru' %}Выбери режим до входа в Telegram. Перед QR-входом можно вернуться и поменять выбор.{% else %}Choose a mode before connecting Telegram. You can return here and change it before QR sign-in.{% endif %}</p></div>
       <div class="mode-grid">
         <form method="post" action="/setup/mode" class="mode-card mode-web">
           <input type="hidden" name="mode" value="web">
           <div class="mode-icon">◈</div><span class="mode-tag">PRIVATE WEB</span>
           <h3>{% if lang == 'ru' %}С веб-панелью{% else %}Web dashboard{% endif %}</h3>
-          <p>{% if lang == 'ru' %}Управляй DeathTG через защищённый сайт на компьютере и других устройствах.{% else %}Control DeathTG from a secure website on this computer and your other devices.{% endif %}</p>
-          <div class="mode-action"><button type="submit">{% if lang == 'ru' %}Выбрать веб-режим{% else %}Choose web mode{% endif %} <span>↗</span></button><span class="mode-hint" role="tooltip">{% if lang == 'ru' %}DeathTG установит Tailscale для приватного доступа. Войди в один аккаунт Tailscale на сервере и устройствах, с которых нужна панель. Сам сайт не будет открыт всему интернету.{% else %}DeathTG sets up Tailscale for private access. Sign in to the same Tailscale account on the server and the devices that need the dashboard. The site will not be exposed to the public internet.{% endif %}</span></div>
+          <p>{% if lang == 'ru' %}Управляй DeathTG через защищённый сайт на компьютере и других своих устройствах.{% else %}Control DeathTG from a private website on this computer and your other devices.{% endif %}</p>
+          <div class="mode-action"><button type="submit" aria-describedby="mode-web-hint">{% if lang == 'ru' %}Выбрать веб-режим{% else %}Choose web mode{% endif %} <span>↗</span></button><span class="mode-hint" id="mode-web-hint" role="tooltip">{% if lang == 'ru' %}DeathTG настроит Tailscale и создаст приватный HTTPS-адрес. Войди в один аккаунт Tailscale на компьютере или сервере и на устройствах, с которых нужна панель. Если при регистрации Tailscale выбран Google, войди через него. DeathTG не открывает сайт всему интернету.{% else %}DeathTG sets up Tailscale and creates a private HTTPS address. Sign in to the same Tailscale account on the computer or server and on each device that needs the dashboard. If you chose Google when creating your Tailscale account, sign in with Google. DeathTG does not expose the site to the public internet.{% endif %}</span></div>
         </form>
         <form method="post" action="/setup/mode" class="mode-card mode-telegram">
           <input type="hidden" name="mode" value="telegram">
           <div class="mode-icon">✳</div><span class="mode-tag">TELEGRAM ONLY</span>
           <h3>{% if lang == 'ru' %}Только Telegram{% else %}Telegram only{% endif %}</h3>
-          <p>{% if lang == 'ru' %}Без сайта и Tailscale. Управление — в Telegram.{% else %}No website or Tailscale. Manage everything in Telegram.{% endif %}</p>
-          <div class="mode-action"><button type="submit">{% if lang == 'ru' %}Выбрать Telegram{% else %}Choose Telegram{% endif %} <span>↗</span></button><span class="mode-hint" role="tooltip">{% if lang == 'ru' %}Tailscale не устанавливается. Локальная страница нужна только для первоначальной настройки и входа по QR-коду.{% else %}Tailscale is not installed. The local page is used only for initial setup and QR sign-in.{% endif %}</span></div>
+          <p>{% if lang == 'ru' %}Без постоянной веб-панели. На сервере Tailscale нужен только для безопасной настройки; дальше управление — в Telegram.{% else %}No permanent web dashboard. On a server, Tailscale is only used for secure setup; after that, manage DeathTG in Telegram.{% endif %}</p>
+          <div class="mode-action"><button type="submit" aria-describedby="mode-telegram-hint">{% if lang == 'ru' %}Выбрать Telegram{% else %}Choose Telegram{% endif %} <span>↗</span></button><span class="mode-hint" id="mode-telegram-hint" role="tooltip">{% if lang == 'ru' %}На локальном компьютере Tailscale не нужен: сайт закроется после QR-входа. На сервере он нужен только для безопасного первого входа; после настройки DeathTG отключит HTTPS-сайт и продолжит работать через Telegram и консоль.{% else %}On a local computer, Tailscale is not needed and the site closes after QR sign-in. On a server, Tailscale is used only for secure first access; after setup DeathTG turns off the HTTPS site and continues in Telegram and the console.{% endif %}</span></div>
         </form>
       </div>
       <div class="mode-foot"><span class="mode-pulse"></span> {% if lang == 'ru' %}ДАЛЕЕ · API TELEGRAM · ВХОД ПО QR-КОДУ{% else %}NEXT · TELEGRAM API · QR SIGN-IN{% endif %}</div>
@@ -88,15 +88,13 @@
       <details class="server-help">
         <summary>{% if lang == 'ru' %}DeathTG установлен на сервере? Как подключить компьютер{% else %}Installed DeathTG on a server? Connect your computer{% endif %}</summary>
         {% if lang == 'ru' %}
-        <p><strong>Для первого входа и QR-кода:</strong> создай SSH-туннель от компьютера к серверу. Узнай SSH-адрес у хостинга, например <code>root@203.0.113.10</code>, и замени им пример в команде:</p>
-        <code>ssh -N -L 64174:127.0.0.1:{{ setup_port }} root@203.0.113.10</code>
-        <p>Оставь окно PowerShell открытым, затем на этом компьютере открой <code>http://127.0.0.1:64174/setup</code> и сканируй QR-код приложением Telegram на телефоне. Этот туннель нужен только для первоначальной настройки.</p>
-        <p><strong>Для постоянной веб-панели:</strong> выбери «С веб-панелью». DeathTG установит Tailscale на сервер и покажет в серверной консоли ссылку для входа. Установи Tailscale на компьютере или телефоне и войди в тот же аккаунт, затем открой ссылку из консоли и войди в этот аккаунт на сервере. Так оба устройства попадут в одну приватную сеть; код сопряжения не нужен. Открывай адрес панели <code>https://…</code>, который DeathTG напечатает после подключения.</p>
+        <p><strong>Если DeathTG запускается на сервере:</strong> сначала установи Tailscale на основной компьютер или телефон и войди в свой аккаунт. В консоли подтверди, что устройство готово, затем открой ссылку авторизации Tailscale, которую покажет сервер, и войди в тот же аккаунт. Вернись в консоль: DeathTG проверит владельца автоматически. Если он всё ещё ждёт, нажми <kbd>Y</kbd>, чтобы проверить ещё раз. При регистрации Tailscale через Google используй Google при входе.</p>
+        <p>После проверки консоль покажет приватную ссылку <code>https://…ts.net/setup?setup_token=…</code>. Открой её на устройстве, уже подключённом к тому же аккаунту Tailscale. Для входа нужны и эта приватная сеть, и одноразовый токен; один адрес не даёт доступ.</p>
+        <p><strong>Выбор режима:</strong> веб-режим оставляет сайт доступным только по HTTPS через Tailscale. «Только Telegram» выключает сайт и HTTPS-маршрут после QR-входа, DeathTG продолжает работать в Telegram и консоли. SSH-туннель нужен только для ручной диагностики, не для обычной установки.</p>
         {% else %}
-        <p><strong>For the first login and QR code:</strong> create an SSH tunnel from your computer to the server. Get the SSH address from your hosting provider, for example <code>root@203.0.113.10</code>, and replace the example in this command:</p>
-        <code>ssh -N -L 64174:127.0.0.1:{{ setup_port }} root@203.0.113.10</code>
-        <p>Keep PowerShell open, then visit <code>http://127.0.0.1:64174/setup</code> on this computer and scan the QR code with Telegram on your phone. This tunnel is only needed for initial setup.</p>
-        <p><strong>For ongoing web access:</strong> choose “Web dashboard”. DeathTG installs Tailscale on the server and prints a sign-in link in the server console. Install Tailscale on your computer or phone and sign in, then open the console link and sign in to that same account on the server. Both devices will join one private network; no pairing code is needed. Open the <code>https://…</code> panel address printed by DeathTG after it connects.</p>
+        <p><strong>If DeathTG runs on a server:</strong> first install Tailscale on your main computer or phone and sign in. Confirm in the server console that your device is ready, then open the Tailscale authorization link printed by the server and sign in to the same account. Return to the console; DeathTG checks the account automatically. If it is still waiting, press <kbd>Y</kbd> to check again. If you created the Tailscale account with Google, sign in with Google.</p>
+        <p>After the check, the console shows a private link such as <code>https://…ts.net/setup?setup_token=…</code>. Open it on a device already connected to the same Tailscale account. Both private network access and the one-time token are required; knowing the address alone does not grant access.</p>
+        <p><strong>Choose a mode:</strong> Web dashboard keeps the site available only through private Tailscale HTTPS. Telegram only turns off the website and HTTPS route after QR sign-in; DeathTG continues running in Telegram and the console. An SSH tunnel is only for manual troubleshooting, not normal setup.</p>
         {% endif %}
       </details>
     </section>

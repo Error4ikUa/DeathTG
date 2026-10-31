@@ -60,6 +60,7 @@ python -m pip install -r requirements.txt
 BOOTSTRAP_ARGS=(
   -m deathtg.server_bootstrap
   --write-env
+  --server-install
   --panel-host 127.0.0.1
   --panel-port "${PANEL_PORT}"
   --service-file "${INSTALL_DIR}/runtime/deploy/${SERVICE_NAME}.service"
@@ -97,8 +98,10 @@ fi
 
 echo
 echo "DeathTG server bootstrap complete."
-echo "Panel local URL: http://127.0.0.1:${PANEL_PORT}"
-if [ -n "${PUBLIC_HOST}" ]; then
-  echo "Public host prepared for HTTPS access: ${PUBLIC_HOST}"
+echo "Install Tailscale on your PC or phone and sign in to your account."
+if command -v systemctl >/dev/null 2>&1; then
+  echo "Follow the private setup link printed by DeathTG: sudo journalctl -u ${SERVICE_NAME} -f"
+else
+  echo "Start the server flow in this console: cd \"${INSTALL_DIR}\" && .venv/bin/python dtg.py --server"
 fi
-echo "Next step: open the panel and finish Telegram web setup."
+echo "The server setup link appears only after Tailscale authorization succeeds."

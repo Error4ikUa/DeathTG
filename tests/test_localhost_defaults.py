@@ -7,10 +7,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 from deathtg.panel_access import effective_panel_bind_host
-from deathtg.server_bootstrap import ensure_server_env
+from deathtg.server_bootstrap import ensure_server_env, render_systemd_service
 
 
 class LocalhostDefaultTests(unittest.TestCase):
+    def test_systemd_install_marks_deathtg_as_a_server(self) -> None:
+        service = render_systemd_service(Path("/opt/DeathTG"), Path("/opt/DeathTG/.venv/bin/python"))
+
+        self.assertIn("Environment=DEATHTG_SERVER_INSTALL=1", service)
+
     def test_legacy_wildcard_bind_is_migrated_to_loopback(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             env_path = Path(temp_dir) / ".env"

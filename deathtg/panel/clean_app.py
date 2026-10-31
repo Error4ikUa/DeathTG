@@ -4,9 +4,7 @@ from contextlib import asynccontextmanager
 import html
 import ipaddress
 import os
-import platform
 import secrets
-import shutil
 import subprocess
 import time
 import re
@@ -23,6 +21,7 @@ from deathtg.assets import IMAGES_DIR, module_image_path
 from deathtg.metrics import init_metrics
 from deathtg.module_repo import MAX_MODULE_SOURCE_BYTES, fetch_public_binary
 from deathtg.panel.auth_flow import begin_qr_login, confirm_2fa, finish_login, friendly_login_error, qr_status, refresh_qr_login, write_env
+from deathtg.panel.lifecycle import SHUTDOWN_REQUESTED
 from deathtg.panel.clean_actions import _queue_userbot_action, load_pending_install, router as actions_router
 from deathtg.panel.clean_core import (
     STATIC_DIR,
@@ -89,8 +88,8 @@ from deathtg.startup_state import (
     startup_snapshot,
     sync_startup_state,
 )
-from deathtg.setup_access import consume_setup_token, rotate_setup_token
-from deathtg.tailscale import tailscale_peer, tailscale_status
+from deathtg.setup_access import consume_setup_token, rotate_setup_token, setup_link
+from deathtg.tailscale import disable_tailscale_serve, ensure_tailscale_access, install_tailscale_and_run_up, tailscale_peer, tailscale_status
 from deathtg.update_manager import (
     apply_update,
     inspect_update,
@@ -495,6 +494,10 @@ def _setup_allowed(request: Request, setup_token: str = "") -> bool:
     if _is_local_request(request):
         request.session["setup_granted_at"] = int(time.time())
         return True
+    # The setup token is a one-time page grant, never a way around the private
+    # network boundary. Remote setup must come from the bound Tailscale owner.
+    if not _tailscale_request_peer(request):
+        return False
     if _setup_session_allowed(request):
         return True
     candidate = setup_token or request.query_params.get("setup_token", "")
@@ -505,7 +508,12 @@ def _setup_allowed(request: Request, setup_token: str = "") -> bool:
 
 
 def _setup_mutation_allowed(request: Request, setup_token: str = "") -> bool:
-    return bool(startup_snapshot().get("setup_required") and _setup_allowed(request, setup_token))
+    snapshot = startup_snapshot()
+    mode_selection_pending = (
+        request.url.path == "/setup/mode"
+        and os.getenv("DEATHTG_MODE_SELECTED", "").strip() != "1"
+    )
+    return bool((snapshot.get("setup_required") or mode_selection_pending) and _setup_allowed(request, setup_token))
 
 
 def _authorize_setup_device(request: Request) -> None:
@@ -608,44 +616,64 @@ def _setup_context(request: Request, step: str, *, error: str | None = None, mes
     }
 
 
-def _install_tailscale_for_web_mode() -> str:
-    """Install the Tailscale client when the user explicitly selects web mode."""
-    command = shutil.which("tailscale") or shutil.which("tailscale.exe")
-    if not command and os.name == "nt":
-        winget = shutil.which("winget")
-        if not winget:
-            raise RuntimeError("winget is unavailable; install Tailscale from https://tailscale.com/download/windows")
-        subprocess.run(
-            [winget, "install", "--id", "Tailscale.Tailscale", "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements"],
-            check=True,
-            timeout=600,
-            capture_output=True,
-            text=True,
-        )
-        command = shutil.which("tailscale") or shutil.which("tailscale.exe") or r"C:\Program Files\Tailscale\tailscale.exe"
-    elif not command and platform.system() == "Linux":
-        curl = shutil.which("curl")
-        if not curl:
-            raise RuntimeError("curl is unavailable; install Tailscale from https://tailscale.com/download/linux")
-        installer = f"{curl} -fsSL https://tailscale.com/install.sh | sh"
-        if hasattr(os, "geteuid") and os.geteuid() != 0:
-            sudo = shutil.which("sudo")
-            if not sudo:
-                raise RuntimeError("Tailscale needs administrator access. Install it with sudo, then choose web mode again.")
-            installer = f"{sudo} -n sh -c '{installer}'"
-        subprocess.run(["sh", "-c", installer], check=True, timeout=600)
-        command = shutil.which("tailscale")
-    elif not command:
-        raise RuntimeError("Automatic Tailscale installation is not supported on this operating system.")
-    if not command:
-        raise RuntimeError("Tailscale installed, but its command was not found. Restart DeathTG and choose web mode again.")
-    completed = subprocess.run([command, "up"], check=False, timeout=90, capture_output=True, text=True)
-    output = (completed.stdout or completed.stderr or "").strip()
-    if output:
-        print("Tailscale sign-in:\n" + output, flush=True)
-    if completed.returncode:
-        raise RuntimeError("Tailscale is installed, but could not start. Sign in to Tailscale on this computer and retry.")
-    return "Tailscale is installed. Complete its sign-in from the console link, then restart DeathTG to activate private web access."
+def _install_tailscale_for_web_mode() -> dict:
+    """Install and start Tailscale, then require private HTTPS for web mode."""
+    install_tailscale_and_run_up()
+    try:
+        port = int(os.getenv("PANEL_PORT", "8080").strip() or "8080")
+    except ValueError:
+        port = 8080
+    return ensure_tailscale_access(port)
+
+
+def _finish_telegram_only_setup() -> None:
+    """Remove DeathTG web access while leaving the userbot process running."""
+    time.sleep(2.0)
+    try:
+        port = int(os.getenv("PANEL_PORT", "8080").strip() or "8080")
+    except ValueError:
+        port = 8080
+    result = disable_tailscale_serve(port)
+    if result.get("disabled"):
+        print("Telegram-only mode: Tailscale HTTPS route disabled.", flush=True)
+    elif result.get("message") not in {"Tailscale is not installed", "No DeathTG Tailscale Serve route was found"}:
+        print(f"Telegram-only mode: {result.get('message')}. Panel will still close locally.", flush=True)
+
+    update_env_values(
+        {
+            "PANEL_TAILSCALE_TRUST": "0",
+            "PANEL_TAILSCALE_SERVE": "0",
+            "PANEL_TAILSCALE_AUTO_SERVE": "0",
+            "PANEL_TAILSCALE_DIRECT": "0",
+            "PANEL_HOST": "127.0.0.1",
+            "PANEL_ALLOW_REMOTE_BIND": "0",
+        }
+    )
+    os.environ.pop("PANEL_TAILSCALE_URL", None)
+    SHUTDOWN_REQUESTED.set()
+
+
+def _telegram_only_confirmation(request: Request) -> HTMLResponse:
+    language = _request_lang(request)
+    if language == "ru":
+        title = "Панель отключается"
+        message = "Настройка завершена. Веб-сайт и HTTPS-доступ будут закрыты. Продолжай управлять DeathTG в Telegram; процесс останется работать на этом устройстве."
+        later = "Если позже понадобится веб-панель, останови DeathTG и запусти команду"
+    else:
+        title = "The panel is closing"
+        message = "Setup is complete. The website and HTTPS access will be turned off. Continue using DeathTG in Telegram; the userbot will stay running on this device."
+        later = "To enable the web dashboard later, stop DeathTG and run"
+    body = (
+        f"<!doctype html><html lang='{language}'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+        f"<title>DeathTG · {html.escape(title)}</title><link rel='stylesheet' href='/static/clean.css'>"
+        "<link rel='stylesheet' href='/static/engineering.css?v=20260819.7'><link rel='stylesheet' href='/static/forest.css?v=3'>"
+        "</head><body><canvas id='matrix'></canvas><main class='auth'><section class='card auth-card'>"
+        "<div class='mark big'>DTG</div><small>DEATHTG · TELEGRAM ONLY</small>"
+        f"<h1>{html.escape(title)}</h1><p>{html.escape(message)}</p>"
+        f"<p>{html.escape(later)} <code>python dtg.py --choose-mode</code>.</p>"
+        "</section></main><script src='/static/forest.js?v=3'></script></body></html>"
+    )
+    return HTMLResponse(body, background=BackgroundTask(_finish_telegram_only_setup))
 
 
 class _InfoPreviewMap(dict):
@@ -681,9 +709,10 @@ def _render_info_preview(profile: dict, st: dict, lang: str) -> str:
 async def setup_page(request: Request):
     snapshot = startup_snapshot()
     sync_startup_state()
-    if request.session.get("auth") and not snapshot.get("setup_required"):
+    mode_selected = os.getenv("DEATHTG_MODE_SELECTED", "").strip() == "1"
+    if request.session.get("auth") and not snapshot.get("setup_required") and mode_selected:
         return RedirectResponse("/", status_code=303)
-    if not snapshot.get("setup_required") and has_env() and has_session():
+    if not snapshot.get("setup_required") and has_env() and has_session() and mode_selected:
         return RedirectResponse("/", status_code=303)
     if not _setup_allowed(request):
         return HTMLResponse(
@@ -711,25 +740,47 @@ async def setup_mode(request: Request, mode: str = Form(...), setup_token: str =
     selected = str(mode or "").strip().lower()
     if selected not in {"web", "telegram"}:
         return _template_response("setup.html", _setup_context(request, "mode", error="Выберите один из режимов."), status_code=400)
-    tailscale = "1" if selected == "web" else "0"
+    server_setup_pending = (
+        os.getenv("DEATHTG_SERVER_INSTALL", "").strip() == "1"
+        and bool(startup_snapshot().get("setup_required"))
+    )
+    tailscale = "1" if selected == "web" or server_setup_pending else "0"
     update_env_values({
         "DEATHTG_MODE": selected,
         "DEATHTG_MODE_SELECTED": "1",
         "PANEL_TAILSCALE_TRUST": tailscale,
         "PANEL_TAILSCALE_SERVE": tailscale,
-        "PANEL_TAILSCALE_DIRECT": tailscale,
-        "PANEL_TAILSCALE_AUTO_SERVE": "1" if selected == "web" else "0",
+        "PANEL_TAILSCALE_DIRECT": "0",
+        "PANEL_TAILSCALE_AUTO_SERVE": tailscale,
+        "PANEL_HOST": "127.0.0.1",
+        "PANEL_ALLOW_REMOTE_BIND": "0",
+        "PANEL_PUBLIC_URL": "",
+        "PANEL_PUBLIC_HOST": "",
+        "PANEL_SCHEME": "http",
+        "PANEL_COOKIE_SECURE": "1" if tailscale == "1" else "0",
     })
     if selected == "web":
         try:
-            install_message = _install_tailscale_for_web_mode()
+            access = _install_tailscale_for_web_mode()
         except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
             return _template_response(
                 "setup.html",
                 _setup_context(request, "mode", error=f"Режим сохранён, но Tailscale не удалось подготовить: {exc}"),
                 status_code=503,
             )
-        return RedirectResponse(f"/setup?message={quote(install_message)}", status_code=303)
+        if access.get("serve_ready") and str(access.get("url") or "").startswith("https://"):
+            return RedirectResponse(setup_link(), status_code=303)
+        message = str(access.get("message") or "Tailscale login is pending.")
+        return _template_response(
+            "setup.html",
+            _setup_context(
+                request,
+                "mode",
+                error=f"Веб-режим сохранён, но приватный HTTPS пока не готов: {message}. Заверши вход по ссылке Tailscale в консоли и нажми веб-режим ещё раз.",
+            ),
+        )
+    if not startup_snapshot().get("setup_required"):
+        return _telegram_only_confirmation(request)
     return RedirectResponse("/setup", status_code=303)
 
 
@@ -737,6 +788,11 @@ async def setup_mode(request: Request, mode: str = Form(...), setup_token: str =
 async def setup_done_page(request: Request):
     sync_startup_state()
     local_ready = bool(request.session.get("auth"))
+    telegram_only = (
+        os.getenv("DEATHTG_MODE_SELECTED", "").strip() == "1"
+        and os.getenv("DEATHTG_MODE", "").strip().lower() == "telegram"
+        and not startup_snapshot().get("setup_required")
+    )
     panel_url = _current_panel_url(request)
     remote_ready = panel_remote_access_ready()
     body = (
@@ -746,18 +802,22 @@ async def setup_done_page(request: Request):
         "<body><main class='auth'><section class='card auth-card'>"
         "<div class='mark big'>DTG</div>"
         "<h1>Telegram connected</h1>"
-        "<p>DeathTG created your session and is preparing secure access.</p>"
-        f"<p>Current panel address: <code>{html.escape(panel_url)}</code></p>"
-        "<p>Check Telegram. Your personal secure panel links will arrive from the DeathTG bot.</p>"
-        "<p>Do not share those links with anyone.</p>"
-        "<p>If the bot message does not appear yet, wait a little and refresh later.</p>"
+        + (
+            "<p>Telegram-only mode is active. The setup website will close; keep using DeathTG in Telegram and this console.</p>"
+            if telegram_only
+            else "<p>DeathTG created your session and is preparing private access.</p>"
+            f"<p>Current panel address: <code>{html.escape(panel_url)}</code></p>"
+            "<p>Check Telegram for your private panel link. Do not share it with anyone.</p>"
+            "<p>If the bot message does not appear yet, wait a little and refresh later.</p>"
+        )
     )
-    if not remote_ready:
+    if not telegram_only and not remote_ready:
         body += "<p>This panel is local-only right now. For phone access from another device, use a LAN/public URL configuration.</p>"
-    if local_ready:
+    if local_ready and not telegram_only:
         body += "<p><a class='btn' href='/'>Open panel in this browser</a></p>"
     body += "</section></main></body></html>"
-    return HTMLResponse(body)
+    background = BackgroundTask(_finish_telegram_only_setup) if telegram_only else None
+    return HTMLResponse(body, background=background)
 
 
 @app.post("/setup/save")
@@ -1047,6 +1107,8 @@ async def logout(request: Request):
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
+    if os.getenv("DEATHTG_MODE_SELECTED", "").strip() != "1":
+        return RedirectResponse("/setup?step=mode", status_code=303)
     blocked = _auth_guard(request)
     if blocked:
         return blocked

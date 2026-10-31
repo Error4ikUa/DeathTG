@@ -219,6 +219,76 @@ class TailscaleTests(unittest.TestCase):
         with patch.dict(os.environ, {"PANEL_TAILSCALE_DIRECT": "1"}):
             self.assertEqual(tailscale.tailscale_listener_hosts(status=status), ["100.90.80.70"])
 
+    def test_telegram_only_can_disable_only_its_own_serve_route(self) -> None:
+        status = self._bound_status()
+        route = {"Web": {"death-pc.example.ts.net:443": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:8082"}}}}}
+        completed = SimpleNamespace(returncode=0, stdout="", stderr="")
+        with (
+            patch.object(tailscale, "tailscale_status", return_value=status),
+            patch.object(tailscale, "_run_serve_status", return_value=route),
+            patch.object(tailscale.subprocess, "run", return_value=completed) as run,
+        ):
+            result = tailscale.disable_tailscale_serve(8082)
+
+        self.assertTrue(result["disabled"])
+        self.assertEqual(
+            run.call_args.args[0],
+            ["tailscale", "serve", "--https=443", "--set-path=/", "off"],
+        )
+
+    def test_telegram_only_preserves_another_serve_service(self) -> None:
+        status = self._bound_status()
+        completed = SimpleNamespace(returncode=0, stdout="", stderr="")
+        route = {
+            "Web": {
+                "death-pc.example.ts.net:443": {
+                    "Handlers": {
+                        "/": {"Proxy": "http://127.0.0.1:8082"},
+                        "/other": {"Proxy": "http://127.0.0.1:9000"},
+                    }
+                }
+            }
+        }
+        with (
+            patch.object(tailscale, "tailscale_status", return_value=status),
+            patch.object(tailscale, "_run_serve_status", return_value=route),
+            patch.object(tailscale.subprocess, "run", return_value=completed) as run,
+        ):
+            result = tailscale.disable_tailscale_serve(8082)
+
+        self.assertTrue(result["disabled"])
+        self.assertEqual(
+            run.call_args.args[0],
+            ["tailscale", "serve", "--https=443", "--set-path=/", "off"],
+        )
+
+    def test_telegram_only_preserves_another_path_on_same_serve_port(self) -> None:
+        status = self._bound_status()
+        route = {
+            "Web": {
+                "death-pc.example.ts.net:443": {
+                    "Handlers": {
+                        "/": {"Proxy": "http://127.0.0.1:8082"},
+                        "/other": {"Proxy": "http://127.0.0.1:8082"},
+                    }
+                }
+            }
+        }
+        completed = SimpleNamespace(returncode=0, stdout="", stderr="")
+        with (
+            patch.object(tailscale, "tailscale_status", return_value=status),
+            patch.object(tailscale, "_run_serve_status", return_value=route),
+            patch.object(tailscale.subprocess, "run", return_value=completed) as run,
+        ):
+            result = tailscale.disable_tailscale_serve(8082)
+
+        self.assertTrue(result["disabled"])
+        self.assertEqual(
+            run.call_args.args[0],
+            ["tailscale", "serve", "--https=443", "--set-path=/", "off"],
+        )
+        run.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -27,7 +27,13 @@ from deathtg.panel_access import (
 )
 from deathtg.server_bootstrap import ensure_server_env, update_env_values
 from deathtg.setup_access import setup_link
-from deathtg.tailscale import ensure_tailscale_access, tailscale_listener_hosts
+from deathtg.panel.lifecycle import SHUTDOWN_REQUESTED as PANEL_SHUTDOWN_REQUESTED
+from deathtg.tailscale import (
+    ensure_tailscale_access,
+    install_tailscale_and_run_up,
+    tailscale_listener_hosts,
+    tailscale_status,
+)
 from deathtg.startup_core import print_report, ready_to_start_userbot, run_preflight
 from deathtg.startup_state import (
     PHASE_DEGRADED,
@@ -99,66 +105,115 @@ def _wait_for_replaced_parent(timeout: float = 15.0) -> None:
         time.sleep(0.1)
 
 
-def _console_yes(prompt: str) -> bool:
+def _console_yes(prompt: str, *, default: bool = False) -> bool:
     try:
         answer = input(prompt).strip().lower()
     except (EOFError, OSError):
-        return False
+        return default
+    if not answer:
+        return default
     return answer in {"y", "yes", "д", "да"}
 
 
-def _server_access_onboarding(tailnet: dict) -> None:
-    """Explain the private Tailscale setup when DeathTG is hosted remotely."""
-    if not (sys.stdin.isatty() and sys.stdout.isatty()):
-        return
-
-    selected = os.getenv("DEATHTG_SERVER_INSTALL_SELECTED", "").strip() == "1"
-    if not selected:
-        print("\nAre you running DeathTG on a remote server or VPS? [y/N]: ", end="", flush=True)
-        is_server = _console_yes("")
+def _select_server_install(args: argparse.Namespace) -> bool:
+    """Persist the local/server choice once, with flags for non-interactive installs."""
+    if args.server_install is not None:
+        value = bool(args.server_install)
         update_env_values(
-            {
-                "DEATHTG_SERVER_INSTALL_SELECTED": "1",
-                "DEATHTG_SERVER_INSTALL": "1" if is_server else "0",
-            },
+            {"DEATHTG_SERVER_INSTALL_SELECTED": "1", "DEATHTG_SERVER_INSTALL": "1" if value else "0"},
             path=ENV_PATH,
         )
-        os.environ["DEATHTG_SERVER_INSTALL_SELECTED"] = "1"
-        os.environ["DEATHTG_SERVER_INSTALL"] = "1" if is_server else "0"
-        selected = True
+        return value
 
-    if os.getenv("DEATHTG_SERVER_INSTALL", "").strip() != "1":
-        return
+    if os.getenv("DEATHTG_SERVER_INSTALL_SELECTED", "").strip() == "1":
+        return os.getenv("DEATHTG_SERVER_INSTALL", "").strip() == "1"
 
-    mode_selected = os.getenv("DEATHTG_MODE_SELECTED", "").strip() == "1"
-    web_mode_selected = mode_selected and os.getenv("DEATHTG_MODE", "").strip().lower() == "web"
-    if mode_selected and not web_mode_selected:
-        return
+    # An explicit environment setting is useful when DeathTG is launched by systemd.
+    configured = os.getenv("DEATHTG_SERVER_INSTALL", "").strip().lower()
+    if configured in {"1", "true", "yes", "on"}:
+        update_env_values({"DEATHTG_SERVER_INSTALL_SELECTED": "1"}, path=ENV_PATH)
+        return True
+    if configured in {"0", "false", "no", "off"}:
+        update_env_values({"DEATHTG_SERVER_INSTALL_SELECTED": "1"}, path=ENV_PATH)
+        return False
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return False
 
-    print("\nREMOTE SERVER ACCESS")
-    print("For the private web panel, Tailscale must be signed in on BOTH the server and your PC/phone.")
-    print("Use the same Tailscale account on both devices. That puts them in the same private network; there is no pairing code.")
-    client_ready = os.getenv("DEATHTG_TAILSCALE_CLIENT_READY", "").strip() == "1"
-    if not client_ready:
-        print("Install the Tailscale app on the device you will use to open DeathTG:")
-        print("https://tailscale.com/download")
-        print("Sign in there, then confirm below. Tailscale is only needed if you choose Web dashboard.")
-        if _console_yes("Is Tailscale installed and signed in on your PC/phone? [y/N]: "):
-            update_env_values({"DEATHTG_TAILSCALE_CLIENT_READY": "1"}, path=ENV_PATH)
-            os.environ["DEATHTG_TAILSCALE_CLIENT_READY"] = "1"
-            if web_mode_selected and tailnet.get("connected") and tailnet.get("url"):
-                print("\nBoth devices are ready. Open the private panel address printed above while Tailscale is on.")
-            elif not web_mode_selected:
-                print("\nWhen you choose Web dashboard, sign in to the server with this SAME Tailscale account.")
-                print("DeathTG will print a server sign-in link here. Opening it and using this account adds the server to the same private network.")
-            else:
-                print("\nTo connect the server, open the Tailscale sign-in link printed in this console and use the SAME account.")
-                print("After the server connects, open the private HTTPS panel address DeathTG prints at startup.")
+    is_server = _console_yes("\nAre you running DeathTG on a remote server or VPS? [y/N]: ")
+    update_env_values(
+        {"DEATHTG_SERVER_INSTALL_SELECTED": "1", "DEATHTG_SERVER_INSTALL": "1" if is_server else "0"},
+        path=ENV_PATH,
+    )
+    return is_server
+
+
+def _tailnet_has_owner_device(status: dict) -> bool:
+    owner_id = str(status.get("own_user_id") or "")
+    if not owner_id:
+        return False
+    return any(
+        isinstance(peer, dict)
+        and peer.get("online")
+        and str(peer.get("user_id") or "") == owner_id
+        for peer in (status.get("peer_ips") or {}).values()
+    )
+
+
+def _prepare_remote_server_setup(panel_port: int) -> dict:
+    """Connect this host and the user's device before exposing a setup URL."""
+    update_env_values(
+        {
+            "PANEL_TAILSCALE_TRUST": "1",
+            "PANEL_TAILSCALE_SERVE": "1",
+            "PANEL_TAILSCALE_AUTO_SERVE": "1",
+            "PANEL_TAILSCALE_DIRECT": "0",
+            "PANEL_HOST": "127.0.0.1",
+            "PANEL_ALLOW_REMOTE_BIND": "0",
+            "PANEL_PUBLIC_URL": "",
+            "PANEL_PUBLIC_HOST": "",
+            "PANEL_SCHEME": "http",
+            "PANEL_COOKIE_SECURE": "1",
+        },
+        path=ENV_PATH,
+    )
+    print("\nPRIVATE SERVER SETUP")
+    print("1. Install Tailscale on your PC or phone and sign in to the account you will use for DeathTG.")
+    print("   Download: https://tailscale.com/download")
+    if not os.getenv("DEATHTG_TAILSCALE_CLIENT_READY", "").strip() == "1":
+        if sys.stdin.isatty() and not _console_yes("Is Tailscale connected on your PC/phone? Press Y to continue. [y/N]: "):
+            raise RuntimeError("Setup paused. Connect Tailscale on your PC/phone, then start DeathTG again.")
+        update_env_values({"DEATHTG_TAILSCALE_CLIENT_READY": "1"}, path=ENV_PATH)
+
+    print("2. DeathTG will connect this server to that same account. Approve its sign-in link below.")
+    try:
+        install_tailscale_and_run_up()
+    except Exception as exc:
+        raise RuntimeError(f"Could not start Tailscale on the server: {exc}") from exc
+
+    if sys.stdin.isatty():
+        while True:
+            status = tailscale_status(refresh=True)
+            if status.get("connected") and status.get("identity_bound") and _tailnet_has_owner_device(status):
+                break
+            print("Waiting for the server and your PC/phone to appear in the same Tailscale account.")
+            if not _console_yes("After authorizing the server link above, press Y to check again. [y/N]: "):
+                raise RuntimeError("Tailscale authorization is still required before opening server setup.")
+    else:
+        deadline = time.monotonic() + 15 * 60
+        status = {}
+        while time.monotonic() < deadline:
+            status = tailscale_status(refresh=True)
+            if status.get("connected") and status.get("identity_bound") and _tailnet_has_owner_device(status):
+                break
+            time.sleep(3)
         else:
-            print("You can install and sign in later. Then use the same account for the Tailscale link that DeathTG prints for the server.")
-    elif not web_mode_selected:
-        print("Choose Web dashboard on the setup page to enable this. DeathTG will install Tailscale on the server and print its sign-in link in this console.")
-        print("Use that link to sign in to the SAME account you use on your PC/phone. Then open the private HTTPS address DeathTG prints.")
+            raise RuntimeError("Tailscale did not connect the server and your device to the same account within 15 minutes.")
+
+    access = ensure_tailscale_access(panel_port)
+    if not access.get("serve_ready") or not str(access.get("url") or "").startswith("https://"):
+        detail = str(access.get("message") or "Tailscale Serve HTTPS is not ready")
+        raise RuntimeError(f"The private HTTPS setup link was not created: {detail}")
+    return access
 
 
 def _spawn_replacement() -> bool:
@@ -214,7 +269,12 @@ def release_instance_lock() -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="DeathTG full stack launcher")
+    install_target = parser.add_mutually_exclusive_group()
+    install_target.add_argument("--server", dest="server_install", action="store_true", help="prepare private Tailscale HTTPS setup for a server")
+    install_target.add_argument("--local", dest="server_install", action="store_false", help="run setup on this device at localhost")
+    parser.set_defaults(server_install=None)
     parser.add_argument("--repair", action="store_true", help="repair runtime layout/config before startup")
+    parser.add_argument("--choose-mode", action="store_true", help="temporarily reopen setup to switch between Web and Telegram-only")
     parser.add_argument("--safe", action="store_true", help="start without userbot/modules; panel stays available")
     parser.add_argument("--no-panel", action="store_true", help="start userbot supervisor only")
     parser.add_argument("--no-modules", action="store_true", help="disable third-party modules for this run")
@@ -399,6 +459,16 @@ def run_panel(debug: bool = False) -> None:
         access_log=debug,
     )
     sockets: list[socket.socket] = []
+    server = uvicorn.Server(config)
+    PANEL_SHUTDOWN_REQUESTED.clear()
+
+    def watch_panel_shutdown() -> None:
+        while not PANEL_SHUTDOWN_REQUESTED.wait(0.2):
+            if server.should_exit:
+                return
+        server.should_exit = True
+
+    shutdown_watcher = threading.Thread(target=watch_panel_shutdown, name="dtg-panel-shutdown", daemon=True)
     try:
         for host in hosts:
             family = socket.AF_INET6 if ":" in host else socket.AF_INET
@@ -407,8 +477,12 @@ def run_panel(debug: bool = False) -> None:
             listener.bind((host, port))
             listener.set_inheritable(True)
             sockets.append(listener)
-        uvicorn.Server(config).run(sockets=sockets)
+        shutdown_watcher.start()
+        server.run(sockets=sockets)
     finally:
+        PANEL_SHUTDOWN_REQUESTED.set()
+        if shutdown_watcher.is_alive():
+            shutdown_watcher.join(timeout=1.0)
         for listener in sockets:
             try:
                 listener.close()
@@ -435,6 +509,15 @@ def main() -> int:
     atexit.register(release_instance_lock)
 
     ensure_server_env()
+    if args.choose_mode:
+        update_env_values(
+            {"DEATHTG_MODE_SELECTED": "0"},
+            path=ENV_PATH,
+        )
+        os.environ["DEATHTG_MODE_SELECTED"] = "0"
+    clear_console()
+    print(CONSOLE_BANNER)
+    print()
     report = run_preflight(
         repair=args.repair,
         safe=args.safe,
@@ -450,38 +533,92 @@ def main() -> int:
         release_instance_lock()
         return 1
 
-    if not args.no_panel:
+    snapshot = startup_snapshot()
+    phase = str(snapshot.get("phase") or PHASE_FIRST_RUN)
+    mode_selected = os.getenv("DEATHTG_MODE_SELECTED", "").strip() == "1"
+    selected_mode = os.getenv("DEATHTG_MODE", "").strip().lower()
+    telegram_only_ready = mode_selected and selected_mode == "telegram" and not snapshot.get("setup_required")
+    panel_enabled = not args.no_panel and not telegram_only_ready
+    server_install = _select_server_install(args) if panel_enabled else os.getenv("DEATHTG_SERVER_INSTALL", "").strip() == "1"
+    safe_runtime = args.safe or phase == PHASE_SAFE_MODE
+
+    if panel_enabled:
         panel_port = normalize_panel_port()
-        tailnet = ensure_tailscale_access(panel_port)
+        server_first_setup = server_install and not mode_selected
+        server_setup_in_progress = server_install and selected_mode == "telegram" and snapshot.get("setup_required")
+        if server_first_setup or server_setup_in_progress:
+            try:
+                tailnet = _prepare_remote_server_setup(panel_port)
+            except Exception as exc:
+                print(f"\nRemote setup is locked until Tailscale is ready: {exc}")
+                print("DeathTG did not expose the setup website. Complete the Tailscale steps and run it again.")
+                release_instance_lock()
+                return 1
+        elif mode_selected and selected_mode == "web":
+            update_env_values(
+                {
+                    "PANEL_TAILSCALE_TRUST": "1",
+                    "PANEL_TAILSCALE_SERVE": "1",
+                    "PANEL_TAILSCALE_AUTO_SERVE": "1",
+                    "PANEL_TAILSCALE_DIRECT": "0",
+                    "PANEL_HOST": "127.0.0.1",
+                    "PANEL_ALLOW_REMOTE_BIND": "0",
+                    "PANEL_PUBLIC_URL": "",
+                    "PANEL_PUBLIC_HOST": "",
+                    "PANEL_SCHEME": "http",
+                    "PANEL_COOKIE_SECURE": "1",
+                },
+                path=ENV_PATH,
+            )
+            status = tailscale_status(refresh=True)
+            if not status.get("connected"):
+                try:
+                    install_tailscale_and_run_up()
+                except Exception as exc:
+                    print(f"Tailscale startup warning: {exc}")
+            tailnet = ensure_tailscale_access(panel_port)
+        else:
+            update_env_values(
+                {
+                    "PANEL_TAILSCALE_TRUST": "0",
+                    "PANEL_TAILSCALE_SERVE": "0",
+                    "PANEL_TAILSCALE_AUTO_SERVE": "0",
+                    "PANEL_TAILSCALE_DIRECT": "0",
+                    "PANEL_HOST": "127.0.0.1",
+                    "PANEL_ALLOW_REMOTE_BIND": "0",
+                    "PANEL_PUBLIC_URL": "",
+                    "PANEL_PUBLIC_HOST": "",
+                    "PANEL_SCHEME": "http",
+                    "PANEL_COOKIE_SECURE": "0",
+                },
+                path=ENV_PATH,
+            )
+            tailnet = {"message": "Tailscale is off until you choose Web dashboard"}
     else:
-        tailnet = {"message": "panel disabled"}
+        tailnet = {"message": "Panel disabled by Telegram-only mode" if telegram_only_ready else "panel disabled"}
 
     sync_startup_state()
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
 
-    clear_console()
-    print(CONSOLE_BANNER)
-    print()
-    snapshot = startup_snapshot()
-    phase = str(snapshot.get("phase") or PHASE_FIRST_RUN)
-    safe_runtime = args.safe or phase == PHASE_SAFE_MODE
-
     print("DeathTG full stack is starting...")
     print(f"Mode: {report.mode}")
-    if not args.no_panel:
-        print(f"Panel (this device): {panel_local_url()}")
-        if panel_remote_access_ready():
+    if panel_enabled:
+        if server_install and tailnet.get("serve_ready"):
+            print(f"Private panel (Tailscale HTTPS): {tailnet['url']}")
+        else:
+            print(f"Panel (this device): {panel_local_url()}")
+        if panel_remote_access_ready() and not server_install:
             print(f"Panel (phone / PC): {panel_url()}")
         if tailnet.get("connected") and tailnet.get("url"):
-            print(f"Panel (Tailscale): {tailnet['url']}")
+            print(f"Panel (Tailscale HTTPS): {tailnet['url']}")
         elif str(tailnet.get("message") or "").strip():
-            print(f"Panel (Tailscale): {tailnet['message']}")
-        _server_access_onboarding(tailnet)
-    if phase in {PHASE_FIRST_RUN, PHASE_SETUP_WAIT_QR, PHASE_SETUP_WAIT_2FA}:
+            print(f"Tailscale: {tailnet['message']}")
+    if phase in {PHASE_FIRST_RUN, PHASE_SETUP_WAIT_QR, PHASE_SETUP_WAIT_2FA} or not mode_selected:
         first_run_url = setup_link()
-        print(f"Setup link: {first_run_url}")
-        if os.name == "nt" and sys.stdout.isatty():
+        link_kind = "private HTTPS setup link (one-time token)" if server_install else "local setup link (one-time token)"
+        print(f"Setup link ({link_kind}): {first_run_url}")
+        if os.name == "nt" and sys.stdout.isatty() and not server_install:
             webbrowser.open(first_run_url, new=2)
     if phase == PHASE_FIRST_RUN:
         print("First run: open setup, enter API_ID/API_HASH, scan the QR code in Telegram, then enter 2FA only if Telegram asks for it.")
@@ -498,12 +635,14 @@ def main() -> int:
         print(f"Startup warning: {snapshot.get('message') or 'DeathTG started in degraded mode.'}")
     elif phase == PHASE_READY:
         print("Runtime state: ready.")
-        if os.name == "nt" and sys.stdout.isatty() and not args.no_panel:
+        if os.name == "nt" and sys.stdout.isatty() and panel_enabled and not server_install:
             webbrowser.open(panel_local_url(), new=2)
     elif phase == PHASE_REPAIR:
         print("Runtime state: repair flow is active.")
-    if not os.getenv("PANEL_PUBLIC_URL", "").strip():
-        print("Panel stays on localhost. Optional phone/server access is private through Tailscale Serve.")
+    if telegram_only_ready:
+        print("Telegram-only mode: the setup website is off. Use Telegram to control DeathTG.")
+    elif not server_install and not (tailnet.get("serve_ready") or os.getenv("PANEL_PUBLIC_URL", "").strip()):
+        print("The panel is local-only until Web dashboard is selected.")
     print("Userbot: will auto-start after setup and session creation." if not safe_runtime else "Safe mode: userbot/modules are disabled.")
     print("Git updates are not auto-applied. DeathTG will notify you in Telegram when a new update appears.")
 
@@ -515,11 +654,20 @@ def main() -> int:
         supervisor_thread.start()
 
     try:
-        if args.no_panel:
+        if not panel_enabled:
             while True:
                 time.sleep(1)
         else:
             run_panel(debug=args.debug)
+            final_snapshot = startup_snapshot()
+            if (
+                os.getenv("DEATHTG_MODE_SELECTED", "").strip() == "1"
+                and os.getenv("DEATHTG_MODE", "").strip().lower() == "telegram"
+                and not final_snapshot.get("setup_required")
+            ):
+                print("Telegram-only setup is complete. DeathTG website is now closed; userbot stays active.")
+                while True:
+                    time.sleep(1)
     finally:
         supervisor_stop.set()
         if supervisor_thread:

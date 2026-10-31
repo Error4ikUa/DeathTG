@@ -231,6 +231,7 @@ def render_systemd_service(project_dir: Path, python_path: Path) -> str:
             "RestartSec=5",
             "TimeoutStopSec=20",
             "Environment=PYTHONUNBUFFERED=1",
+            "Environment=DEATHTG_SERVER_INSTALL=1",
             "",
             "[Install]",
             "WantedBy=multi-user.target",
@@ -293,6 +294,7 @@ def render_caddy_config(server_name: str, *, panel_port: str = "8080") -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate secure DeathTG server defaults and deploy files.")
     parser.add_argument("--write-env", action="store_true", help="Fill missing or insecure env values.")
+    parser.add_argument("--server-install", action="store_true", help="Mark this deployment as a server install for the first-run Tailscale flow.")
     parser.add_argument("--panel-host", default="127.0.0.1")
     parser.add_argument("--panel-port", default="8080")
     parser.add_argument("--public-host", default="")
@@ -309,6 +311,14 @@ def main() -> None:
         public_host=args.public_host,
         public_url=args.public_url,
     ) if args.write_env else parse_env_file()
+    if args.write_env and args.server_install:
+        env = update_env_values(
+            {
+                "DEATHTG_SERVER_INSTALL": "1",
+                "DEATHTG_SERVER_INSTALL_SELECTED": "1",
+            },
+            path=ENV_PATH,
+        )
 
     if args.service_file:
         service_path = Path(args.service_file)

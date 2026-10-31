@@ -1,27 +1,34 @@
 .setup-card { width: min(920px, 100%) !important; }
 .mode-intro { margin: 30px 0 22px; text-align: center; }
-.mode-kicker,.mode-tag { color: #81f3ca; font: 700 10px/1.4 ui-monospace,Consolas,monospace; letter-spacing: .17em; }
+.mode-kicker,.mode-tag { color: #91d8bf; font: 700 10px/1.4 ui-monospace,Consolas,monospace; letter-spacing: .17em; }
 .mode-intro h2 { margin: 12px 0 8px; font-size: clamp(25px,5vw,38px); letter-spacing: -.04em; }
-.mode-intro p { color: #9aa9a7; }
-.mode-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
-.mode-card { position: relative; display: flex; min-height: 330px; flex-direction: column; align-items: flex-start; padding: 26px; overflow: visible; border: 1px solid #344744; background: linear-gradient(145deg,rgba(17,36,32,.98),rgba(8,13,16,.98)); text-align: left; transition: transform .2s ease,border-color .2s ease,box-shadow .2s ease; }
-.mode-card::after { position: absolute; inset: 0; z-index: 0; border: 1px solid transparent; content: ""; pointer-events: none; transition: border-color .2s ease; }
-.mode-card:hover,.mode-card:focus-within { transform: translateY(-4px); border-color: #8af5cd; box-shadow: 0 18px 55px #0008,0 0 34px #57dfad1c; }
+.mode-intro p { color: #aab9b4; }
+.mode-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-items: start; gap: 18px; }
+.mode-card { position: relative; display: flex; min-height: 330px; height: auto; flex-direction: column; align-items: flex-start; padding: 26px; overflow: visible; border: 1px solid #52615a99; border-radius: 20px; background: linear-gradient(145deg,rgba(20,34,30,.88),rgba(12,19,19,.86)); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); text-align: left; transition: border-color .24s ease,background-color .24s ease,box-shadow .24s ease; }
+.mode-card::after { position: absolute; inset: 0; z-index: 0; border: 1px solid transparent; border-radius: inherit; content: ""; pointer-events: none; transition: border-color .24s ease; }
+.mode-card:hover,.mode-card:focus-within { border-color: #83c9b2b8; background-color: rgba(22,39,33,.94); box-shadow: 0 12px 36px #0005; }
 .mode-card > * { position: relative; z-index: 1; }
-.mode-icon { display: grid; width: 44px; height: 44px; margin-bottom: 23px; place-items: center; border: 1px solid #477669; color: #8af5cd; font-size: 23px; }
-.mode-telegram .mode-icon { color: #8dbbff; border-color: #426188; }
-.mode-tag { margin-bottom: 9px; color: #86a49b; font-size: 9px; }
-.mode-card h3 { margin: 0 0 10px; color: #effff9; font-size: 23px; }
-.mode-card p { min-height: 54px; margin: 0 0 16px; color: #acbdb8; font-size: 14px; line-height: 1.65; }
+.mode-icon { display: grid; width: 44px; height: 44px; margin-bottom: 23px; place-items: center; border: 1px solid #547b6b; border-radius: 14px; color: #a0dec7; font-size: 23px; }
+.mode-telegram .mode-icon { color: #b2c6ec; border-color: #65758e; }
+.mode-tag { margin-bottom: 9px; color: #91a69c; font-size: 9px; }
+.mode-card h3 { margin: 0 0 10px; color: #eff8f3; font-size: 23px; }
+.mode-card p { min-height: 54px; margin: 0 0 16px; color: #b3c0ba; font-size: 14px; line-height: 1.65; }
 .mode-action { position: relative; z-index: 3; width: 100%; margin-top: auto; }
-.mode-hint { display: block; width: 100%; max-height: 0; box-sizing: border-box; margin-top: 0; padding: 0 13px; overflow: hidden; border: 0 solid #5b9a83; border-left-width: 3px; background: #101a18; color: #d2eee2; font-size: 11px; line-height: 1.55; text-align: left; opacity: 0; visibility: hidden; transition: max-height .2s ease,margin .2s ease,padding .2s ease,opacity .16s ease,visibility .16s,border-width .2s ease; }
-.mode-action:hover .mode-hint { max-height: 120px; margin-top: 8px; padding: 10px 13px; border-width: 1px; border-left-width: 3px; opacity: 1; visibility: visible; }
-.mode-telegram .mode-hint { border-color: #5578af; border-left-color: #87adff; }
-.mode-card button { display: flex; width: 100%; justify-content: space-between; margin-top: 0; padding: 13px 15px; border: 1px solid #6de3bd; background: #74e6c41a; color: #dbfff2; font-weight: 700; }
-.mode-telegram button { border-color: #789ff0; background: #789ff019; color: #e4ebff; }
-.mode-foot { display: flex; align-items: center; justify-content: center; gap: 9px; margin: 22px 0 4px; color: #7d918a; font: 700 9px/1.4 ui-monospace,Consolas,monospace; letter-spacing: .1em; text-align: center; }
-.mode-pulse { width: 7px; height: 7px; border-radius: 50%; background: #75e7bc; box-shadow: 0 0 12px #75e7bc; }
-.setup-back { display: inline-flex; width: fit-content; align-items: center; gap: 8px; margin: 4px 0 16px; padding: 9px 12px; border: 1px solid #426188; color: #b9d4ff; font: 700 11px/1.4 ui-monospace,Consolas,monospace; text-decoration: none; transition: background .16s ease,border-color .16s ease,color .16s ease; }
-.setup-back:hover,.setup-back:focus-visible { border-color: #87adff; background: #789ff019; color: #fff; }
-@media(max-width:640px) { .setup-card { padding: 22px 16px !important; } .mode-grid { grid-template-columns: 1fr; } .mode-card { min-height: 300px; padding: 21px; } }
-@media(prefers-reduced-motion:reduce) { .mode-card,.mode-hint { transition: none; } }
+.mode-hint { display: block; width: 100%; max-height: 0; box-sizing: border-box; margin-top: 0; padding: 0 14px; overflow: hidden; border: 0 solid #a2c9b333; border-radius: 12px; background: rgba(19,31,27,.92); color: #d4e4dc; font-size: 12px; line-height: 1.6; text-align: left; opacity: 0; visibility: hidden; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); transition: max-height .24s ease,margin .24s ease,padding .24s ease,opacity .18s ease,visibility .18s,border-width .18s ease; }
+.mode-action:hover .mode-hint,.mode-action:focus-within .mode-hint { max-height: 180px; margin-top: 9px; padding: 11px 14px; border-width: 1px; opacity: 1; visibility: visible; }
+.mode-card button { display: flex; width: 100%; justify-content: space-between; margin-top: 0; padding: 13px 15px; border: 1px solid #88c9b5; border-radius: 12px; background: #72ceb61c; color: #e1f3eb; font-weight: 700; transition: background .2s ease,border-color .2s ease,color .2s ease,transform .2s ease; }
+.mode-card button:hover { border-color: #a3dec9; background: #82d4bd2b; color: #f3fff9; }
+.mode-card button:focus-visible { outline: 2px solid #b5e4d2; outline-offset: 3px; }
+.mode-telegram button { border-color: #8494ac; background: #8494ac18; color: #e3e9f1; }
+.mode-telegram button:hover { border-color: #a9b9cf; background: #8494ac2b; }
+.mode-foot { display: flex; align-items: center; justify-content: center; gap: 9px; margin: 22px 0 4px; color: #8b9b94; font: 700 9px/1.4 ui-monospace,Consolas,monospace; letter-spacing: .1em; text-align: center; }
+.mode-pulse { width: 7px; height: 7px; border-radius: 50%; background: #89d3b6; box-shadow: 0 0 8px #89d3b666; }
+.setup-back { display: inline-flex; width: fit-content; align-items: center; gap: 8px; margin: 4px 0 16px; padding: 9px 12px; border: 1px solid #647b70; border-radius: 10px; color: #c2d8cc; font: 700 11px/1.4 ui-monospace,Consolas,monospace; text-decoration: none; transition: background .16s ease,border-color .16s ease,color .16s ease; }
+.setup-back:hover,.setup-back:focus-visible { border-color: #9acdb5; background: #789f8919; color: #fff; }
+.server-help { margin-top: 22px; border: 1px solid #ffffff20; border-radius: 14px; background: #ffffff06; color: #bbc9c2; }
+.server-help summary { padding: 14px 16px; cursor: pointer; color: #dbe8e0; }
+.server-help p,.server-help > code { display: block; margin: 0 16px 13px; font-size: 13px; line-height: 1.65; }
+.server-help code,.server-help kbd { overflow-wrap: anywhere; color: #d4e5db; }
+@media(max-width:640px) { .setup-card { padding: 22px 16px !important; } .mode-grid { grid-template-columns: 1fr; gap: 14px; } .mode-card { min-height: 0; padding: 21px; } .mode-card p { min-height: 0; } }
+@media(max-width:640px),(hover:none) { .mode-hint { max-height: none; margin-top: 9px; padding: 11px 14px; border-width: 1px; opacity: 1; visibility: visible; } }
+@media(prefers-reduced-motion:reduce) { .mode-card,.mode-hint,.mode-card button { transition: none; } }
