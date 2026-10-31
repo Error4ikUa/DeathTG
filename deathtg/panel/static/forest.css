@@ -51,6 +51,7 @@ img { max-width:100%; }
 .page > *,section,article,.grid2 > * { min-width:0; }
 .auth,.login-shell { min-height:100dvh; padding:30px 16px !important; }
 .auth-card,.glass-card.login-card { padding:32px !important; }
+.glass-card.login-card.setup-card { width:min(920px,100%) !important; }
 .auth-card h1,.glass-card.login-card h1 { font-size:clamp(30px,6vw,44px) !important; line-height:1.15 !important; }
 .form-stack { gap:12px !important; }
 .mode-card { border-radius:20px; background:var(--cp-panel); min-height:310px; border-color:var(--cp-line-hot); }

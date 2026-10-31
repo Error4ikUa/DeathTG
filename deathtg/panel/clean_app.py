@@ -666,7 +666,7 @@ def _telegram_only_confirmation(request: Request) -> HTMLResponse:
     body = (
         f"<!doctype html><html lang='{language}'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
         f"<title>DeathTG · {html.escape(title)}</title><link rel='stylesheet' href='/static/clean.css'>"
-        "<link rel='stylesheet' href='/static/engineering.css?v=20260819.7'><link rel='stylesheet' href='/static/forest.css?v=3'>"
+        "<link rel='stylesheet' href='/static/engineering.css?v=20260819.7'><link rel='stylesheet' href='/static/forest.css?v=4'>"
         "</head><body><canvas id='matrix'></canvas><main class='auth'><section class='card auth-card'>"
         "<div class='mark big'>DTG</div><small>DEATHTG · TELEGRAM ONLY</small>"
         f"<h1>{html.escape(title)}</h1><p>{html.escape(message)}</p>"
