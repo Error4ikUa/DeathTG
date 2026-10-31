@@ -770,13 +770,26 @@ async def setup_mode(request: Request, mode: str = Form(...), setup_token: str =
             )
         if access.get("serve_ready") and str(access.get("url") or "").startswith("https://"):
             return RedirectResponse(setup_link(), status_code=303)
-        message = str(access.get("message") or "Tailscale login is pending.")
+        backend_state = str(access.get("backend_state") or "").strip().lower()
+        if backend_state in {"nostate", "needslogin", "needs_login", "stopped"}:
+            if _request_lang(request) == "ru":
+                message = (
+                    "Tailscale ещё не подключён. Открой ссылку входа в окне PowerShell, "
+                    "авторизуй DeathTG в своём аккаунте Tailscale и нажми «Выбрать веб-режим» ещё раз."
+                )
+            else:
+                message = (
+                    "Tailscale is not connected yet. Open the sign-in link in PowerShell, "
+                    "authorize DeathTG with your Tailscale account, then choose web mode again."
+                )
+        else:
+            message = str(access.get("message") or "Tailscale login is pending.")
         return _template_response(
             "setup.html",
             _setup_context(
                 request,
                 "mode",
-                error=f"Веб-режим сохранён, но приватный HTTPS пока не готов: {message}. Заверши вход по ссылке Tailscale в консоли и нажми веб-режим ещё раз.",
+                error=message,
             ),
         )
     if not startup_snapshot().get("setup_required"):
