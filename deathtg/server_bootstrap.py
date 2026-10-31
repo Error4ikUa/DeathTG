@@ -99,18 +99,16 @@ def ensure_server_env(*, path: Path = ENV_PATH, panel_host: str = "", panel_port
     default_panel_host = "127.0.0.1"
     current_panel_host = current.get("PANEL_HOST", "").strip()
     requested_panel_host = panel_host.strip()
-    allow_remote_bind = _strip(current.get("PANEL_ALLOW_REMOTE_BIND")).lower() in {"1", "true", "yes", "on"}
     tailscale_serve = current.get("PANEL_TAILSCALE_SERVE", "1") or "1"
     private_proxy_enabled = tailscale_serve.lower() not in {"0", "false", "no", "off"}
     if requested_panel_host:
+        if requested_panel_host not in {"127.0.0.1", "localhost", "::1"}:
+            raise ValueError("DeathTG panel must bind to localhost; remote access uses Tailscale HTTPS.")
         resolved_panel_host = requested_panel_host
     elif current_panel_host in {"127.0.0.1", "localhost", "::1"}:
         resolved_panel_host = current_panel_host
-    elif current_panel_host and allow_remote_bind:
-        resolved_panel_host = current_panel_host
     else:
-        # Migrate the legacy 0.0.0.0 default back to loopback. Remote binding
-        # is an explicit escape hatch; normal remote access uses Tailscale Serve.
+        # Migrate every legacy wildcard or interface bind back to loopback.
         resolved_panel_host = default_panel_host
         if current_panel_host != resolved_panel_host:
             updates["PANEL_HOST"] = resolved_panel_host
@@ -132,7 +130,7 @@ def ensure_server_env(*, path: Path = ENV_PATH, panel_host: str = "", panel_port
         "PANEL_TAILSCALE_AUTO_SERVE": current.get("PANEL_TAILSCALE_AUTO_SERVE", "0") or "0",
         "PANEL_TAILSCALE_DIRECT": current.get("PANEL_TAILSCALE_DIRECT", "1") or "1",
         "PANEL_TAILSCALE_EXPECTED_LOGIN": current.get("PANEL_TAILSCALE_EXPECTED_LOGIN", ""),
-        "PANEL_ALLOW_REMOTE_BIND": current.get("PANEL_ALLOW_REMOTE_BIND", "0") or "0",
+        "PANEL_ALLOW_REMOTE_BIND": "0",
         "PANEL_SHORTCUTS_ON_STARTUP": current.get("PANEL_SHORTCUTS_ON_STARTUP", "1") or "1",
         "PANEL_SHORTCUTS_MIN_INTERVAL": current.get("PANEL_SHORTCUTS_MIN_INTERVAL", "21600") or "21600",
         "BOT_TOKEN": current.get("BOT_TOKEN", ""),
@@ -147,6 +145,8 @@ def ensure_server_env(*, path: Path = ENV_PATH, panel_host: str = "", panel_port
     for key, value in desired_defaults.items():
         if key not in current:
             updates[key] = value
+    if current.get("PANEL_ALLOW_REMOTE_BIND", "0") != "0":
+        updates["PANEL_ALLOW_REMOTE_BIND"] = "0"
 
     if updates:
         current = update_env_values(updates, path=path)
@@ -304,6 +304,9 @@ def main() -> None:
     parser.add_argument("--caddy-file", default="")
     parser.add_argument("--server-name", default="")
     args = parser.parse_args()
+
+    if any((args.public_host, args.public_url, args.nginx_file, args.caddy_file, args.server_name)):
+        parser.error("Public panel publishing is disabled. Use private Tailscale HTTPS instead.")
 
     env = ensure_server_env(
         panel_host=args.panel_host,

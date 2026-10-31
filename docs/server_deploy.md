@@ -4,10 +4,10 @@ DeathTG now supports a secure-by-default server bootstrap:
 
 - panel binds to `127.0.0.1` by default on desktops and servers
 - private remote access uses the active Tailscale identity and requires no public domain
-- a public bind is disabled unless `PANEL_ALLOW_REMOTE_BIND=1` is set explicitly
+- panel listeners are forced to loopback, including when migrating older `.env` files
 - strong `PANEL_SECRET` is auto-generated if missing or weak
 - trusted hosts are enforced
-- secure cookies switch on automatically when `PANEL_PUBLIC_URL=https://...`
+- secure cookies switch on automatically for private Tailscale HTTPS
 - login/setup routes are rate-limited
 - password login is removed from the active panel flow
 - one-time signed device links can be created for phone, laptop, tablet, and other browsers
@@ -25,14 +25,10 @@ Cross-platform local bootstrap:
 python3 bootstrap.py
 ```
 
-Optional public reverse proxy:
-
-```bash
-DTG_PUBLIC_HOST=panel.example.com DTG_PUBLIC_URL=https://panel.example.com bash scripts/install_server.sh
-```
-
 During setup and Web mode, the panel binds only to `127.0.0.1`. Remote access
 uses Tailscale Serve over HTTPS; DeathTG does not open a public or LAN listener.
+Public reverse-proxy publishing is unsupported. Use the private Tailscale HTTPS
+address printed after the server and your device join the same account.
 
 On a server/VPS, the first run asks the operator to confirm that a main
 computer or phone is already signed in to Tailscale. DeathTG installs and
@@ -75,16 +71,13 @@ The installer:
 - installs Python dependencies
 - generates secure env defaults
 - writes a `systemd` unit to `runtime/deploy/`
-- writes a `Caddyfile` for automatic HTTPS when `DTG_PUBLIC_HOST` is set
-- writes an `nginx` config to `runtime/deploy/` when `DTG_PUBLIC_HOST` is set
-- installs and restarts `systemd` / `caddy` or `nginx` when available
+- installs and restarts `systemd` when available
 - enables background auto-update by default
 
 ## Recommended production shape
 
 - Keep the FastAPI panel on `127.0.0.1`
-- Put `caddy` or another TLS reverse proxy in front if you need public access
-- Set `DTG_PUBLIC_URL=https://your-domain`
+- Keep web access on private Tailscale HTTPS
 - Use bot/device grant links for daily login
 - Treat one-time device links as the normal login method for phones and extra browsers
 - Keep Telegram setup in the web flow, not in manual `.env` editing

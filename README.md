@@ -18,24 +18,54 @@ DeathTG is a secure Telegram userbot platform with:
 - module cards with images on the website
 - folder-based module architecture
 
-## One-Line Install
+## Install or Update
 
 For Ubuntu / WSL / VPS / Oracle Cloud:
 
 ```bash
-clear && cd ~ && rm -rf DeathTG && git clone https://github.com/Error4ikUa/DeathTG.git && cd DeathTG && python3 bootstrap.py
+set -e
+clear
+cd "$HOME"
+if [ -d DeathTG/.git ]; then
+  cd DeathTG && git pull --ff-only
+elif [ -e DeathTG ]; then
+  echo "~/DeathTG exists but is not a Git checkout; inspect it or choose another install directory."
+  exit 1
+else
+  git clone https://github.com/Error4ikUa/DeathTG.git DeathTG
+  cd DeathTG
+fi
+python3 bootstrap.py
 ```
 
 For Windows PowerShell:
 
 ```powershell
-Clear-Host; Set-Location $HOME; if (Test-Path DeathTG) { Remove-Item DeathTG -Recurse -Force }; git clone https://github.com/Error4ikUa/DeathTG.git; Set-Location DeathTG; py bootstrap.py
+$ErrorActionPreference = "Stop"
+Clear-Host
+$installDir = Join-Path $HOME "DeathTG"
+if (Test-Path -LiteralPath (Join-Path $installDir ".git")) {
+    Set-Location $installDir
+    git pull --ff-only
+    if ($LASTEXITCODE -ne 0) { throw "Git update failed; DeathTG was not started." }
+} elseif (Test-Path -LiteralPath $installDir) {
+    throw "$installDir exists but is not a Git checkout. Inspect it or choose another install directory."
+} else {
+    git clone https://github.com/Error4ikUa/DeathTG.git $installDir
+    if ($LASTEXITCODE -ne 0) { throw "Git clone failed; DeathTG was not started." }
+    Set-Location $installDir
+}
+py bootstrap.py
 ```
 
 If port `8080` is already busy, use a different panel port:
 
 ```powershell
-Clear-Host; Set-Location $HOME; if (Test-Path DeathTG) { Remove-Item DeathTG -Recurse -Force }; git clone https://github.com/Error4ikUa/DeathTG.git; Set-Location DeathTG; $env:PANEL_PORT="8090"; py bootstrap.py
+$installDir = Join-Path $HOME "DeathTG"
+if (-not (Test-Path -LiteralPath (Join-Path $installDir ".git"))) { throw "DeathTG Git checkout was not found." }
+Set-Location $installDir
+$env:PANEL_PORT="8090"
+py bootstrap.py
 ```
 
 What happens automatically:
@@ -78,7 +108,7 @@ After that DeathTG:
 3. Syncs bots
 4. Sends a welcome message in Telegram; Web mode includes a personal secure panel link, Telegram-only mode does not include a website link
 
-## Public Server Logic
+## Private Server Logic
 
 Supported environments:
 
@@ -92,15 +122,10 @@ Blocked or limited:
 
 - Termux
 - Android terminal environments
-- WSL for phone/public panel access (use only for local development on the same PC)
+- WSL for server-style remote panel access (use native Linux or a VPS for that)
 
-For public servers DeathTG uses:
-
-- setup-token protection
-- trusted multi-device sessions
-- secure signed one-time device links
-- trusted secure-link login for remote devices
-- per-device revoke
+Server dashboards bind locally and use private Tailscale HTTPS. A public reverse
+proxy is not part of the supported setup flow.
 
 ## Update Logic
 
@@ -204,19 +229,13 @@ Server bootstrap:
 bash scripts/install_server.sh
 ```
 
-Public HTTPS-ready VPS bootstrap:
-
-```bash
-DTG_PUBLIC_HOST=panel.example.com DTG_PUBLIC_URL=https://panel.example.com bash scripts/install_server.sh
-```
-
 ## Security Notes
 
 - keep `.env` private
 - keep `*.session` private
 - do not share secure panel links
-- do not expose plain HTTP publicly
-- prefer HTTPS for public panel access
+- open the web panel only from localhost or a device on the bound Tailscale account
+- do not publish the panel through a public reverse proxy
 - use trusted one-device links instead of passwords
 
 ## Docs

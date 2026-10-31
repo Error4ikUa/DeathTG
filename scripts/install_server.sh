@@ -23,11 +23,9 @@ REPO_URL="${DTG_REPO_URL:-https://github.com/Error4ikUa/DeathTG.git}"
 INSTALL_DIR="${DTG_INSTALL_DIR:-$HOME/DeathTG}"
 SERVICE_NAME="${DTG_SERVICE_NAME:-deathtg}"
 PANEL_PORT="${DTG_PANEL_PORT:-8080}"
-PUBLIC_HOST="${DTG_PUBLIC_HOST:-}"
-PUBLIC_URL="${DTG_PUBLIC_URL:-}"
-
-if [ -n "${PUBLIC_HOST}" ] && [ -z "${PUBLIC_URL}" ]; then
-  PUBLIC_URL="https://${PUBLIC_HOST}"
+if [ -n "${DTG_PUBLIC_HOST:-}" ] || [ -n "${DTG_PUBLIC_URL:-}" ]; then
+  echo "DeathTG panels are private-only. Do not configure a public domain; use Tailscale HTTPS."
+  exit 2
 fi
 
 SUDO=""
@@ -38,10 +36,6 @@ fi
 if command -v apt-get >/dev/null 2>&1; then
   ${SUDO} apt-get update
   ${SUDO} apt-get install -y git python3 python3-venv python3-pip
-  if [ -n "${PUBLIC_HOST}" ]; then
-    ${SUDO} apt-get install -y caddy || true
-    ${SUDO} apt-get install -y nginx || true
-  fi
 fi
 
 if [ -d "${INSTALL_DIR}/.git" ]; then
@@ -66,17 +60,6 @@ BOOTSTRAP_ARGS=(
   --service-file "${INSTALL_DIR}/runtime/deploy/${SERVICE_NAME}.service"
 )
 
-if [ -n "${PUBLIC_HOST}" ]; then
-  BOOTSTRAP_ARGS+=(--public-host "${PUBLIC_HOST}")
-  BOOTSTRAP_ARGS+=(--nginx-file "${INSTALL_DIR}/runtime/deploy/${SERVICE_NAME}.nginx.conf")
-  BOOTSTRAP_ARGS+=(--caddy-file "${INSTALL_DIR}/runtime/deploy/${SERVICE_NAME}.Caddyfile")
-  BOOTSTRAP_ARGS+=(--server-name "${PUBLIC_HOST}")
-fi
-
-if [ -n "${PUBLIC_URL}" ]; then
-  BOOTSTRAP_ARGS+=(--public-url "${PUBLIC_URL}")
-fi
-
 python "${BOOTSTRAP_ARGS[@]}"
 
 if command -v systemctl >/dev/null 2>&1; then
@@ -84,16 +67,6 @@ if command -v systemctl >/dev/null 2>&1; then
   ${SUDO} systemctl daemon-reload
   ${SUDO} systemctl enable "${SERVICE_NAME}"
   ${SUDO} systemctl restart "${SERVICE_NAME}"
-fi
-
-if [ -n "${PUBLIC_HOST}" ] && command -v caddy >/dev/null 2>&1; then
-  ${SUDO} cp "${INSTALL_DIR}/runtime/deploy/${SERVICE_NAME}.Caddyfile" "/etc/caddy/Caddyfile"
-  ${SUDO} systemctl restart caddy
-elif [ -n "${PUBLIC_HOST}" ] && command -v nginx >/dev/null 2>&1; then
-  ${SUDO} cp "${INSTALL_DIR}/runtime/deploy/${SERVICE_NAME}.nginx.conf" "/etc/nginx/sites-available/${SERVICE_NAME}"
-  ${SUDO} ln -sf "/etc/nginx/sites-available/${SERVICE_NAME}" "/etc/nginx/sites-enabled/${SERVICE_NAME}"
-  ${SUDO} nginx -t
-  ${SUDO} systemctl reload nginx
 fi
 
 echo

@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 import time
 import os
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from starlette.requests import Request
 
@@ -120,19 +120,29 @@ class PanelSecurityTests(unittest.TestCase):
         self.assertEqual(response.headers["location"], "/setup")
         self.assertNotIn("setup_token", response.headers["location"])
 
-    def test_remote_access_requires_tailnet_or_explicit_public_mode(self) -> None:
+    def test_public_https_does_not_bypass_tailnet_access(self) -> None:
         request = request_for("192.0.2.40")
         with (
             patch.object(panel, "tailscale_peer", return_value=None),
-            patch.object(panel, "public_panel_enabled", return_value=False),
+            patch.dict(os.environ, {"PANEL_PUBLIC_URL": "https://panel.example.com"}),
         ):
             self.assertFalse(panel._network_access_allowed(request))
+
+    def test_public_https_does_not_bypass_panel_auth_guard(self) -> None:
+        request = request_for("192.0.2.40")
+        with (
+            patch.object(panel, "startup_snapshot", return_value={"setup_required": False}),
+            patch.object(panel, "_tailscale_request_peer", return_value=None),
+            patch.dict(os.environ, {"PANEL_PUBLIC_URL": "https://panel.example.com"}),
+        ):
+            response = panel._auth_guard(request)
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("Tailscale", response.headers["location"])
 
     def test_tailnet_peer_is_allowed_without_public_mode(self) -> None:
         request = request_for("100.90.80.71")
         with (
             patch.object(panel, "tailscale_peer", return_value={"hostname": "phone"}),
-            patch.object(panel, "public_panel_enabled", return_value=False),
         ):
             self.assertTrue(panel._network_access_allowed(request))
 
@@ -310,6 +320,32 @@ class PanelSecurityMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PanelSetupCompletionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_public_https_cannot_redeem_a_device_link(self) -> None:
+        request = request_for("192.0.2.40", path="/grant/Abcdefghijklmnopqrstuvwxyz123456")
+        consume_grant = Mock()
+        with (
+            patch.object(panel, "has_env", return_value=True),
+            patch.dict(os.environ, {"PANEL_PUBLIC_URL": "https://panel.example.com"}),
+            patch.object(panel, "tailscale_peer", return_value=None),
+            patch.object(panel, "consume_device_grant", consume_grant),
+        ):
+            response = await panel.grant_login(request, "Abcdefghijklmnopqrstuvwxyz123456")
+
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("Tailscale", response.headers["location"])
+        consume_grant.assert_not_called()
+
+    async def test_public_https_login_page_is_blocked_without_tailnet(self) -> None:
+        request = request_for("192.0.2.40", path="/login")
+        with (
+            patch.object(panel, "startup_snapshot", return_value={"setup_required": False, "phase": "ready"}),
+            patch.object(panel, "_tailscale_request_peer", return_value=None),
+            patch.dict(os.environ, {"PANEL_PUBLIC_URL": "https://panel.example.com"}),
+        ):
+            response = await panel.login_page(request)
+
+        self.assertEqual(response.status_code, 403)
+
     async def test_telegram_only_completion_is_localized_and_closes_website(self) -> None:
         request = request_for("127.0.0.1", path="/setup/done")
         request.scope["headers"].append((b"accept-language", b"ru"))

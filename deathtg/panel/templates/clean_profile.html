@@ -221,9 +221,7 @@
                         <span>{{ tr('profile.tailnet_peers') }}: {{ tailscale.peer_ips|length }}</span>
                     </div>
                 </div>
-                {% if public_panel_enabled %}
-                <p class="helper">{{ tr('profile.public_access_note') }}</p>
-                {% elif panel_remote_access_ready %}
+                {% if panel_remote_access_ready %}
                 <p class="helper">{{ tr('profile.network_access_note') }}</p>
                 {% else %}
                 <p class="helper">{{ tr('profile.local_access_note') }}</p>

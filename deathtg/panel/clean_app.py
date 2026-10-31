@@ -62,7 +62,6 @@ from deathtg.panel_access import (
     panel_base_url,
     panel_remote_access_ready,
     panel_site_id,
-    public_panel_enabled,
     remember_device_session,
     revoke_device_session,
     touch_device_session,
@@ -311,7 +310,7 @@ def _auth_guard(request: Request):
         return RedirectResponse("/setup", status_code=303)
     local_request = _is_local_request(request)
     peer = _tailscale_request_peer(request)
-    if not local_request and not peer and not public_panel_enabled():
+    if not local_request and not peer:
         return RedirectResponse("/login?error=Use+localhost+or+the+Tailscale+panel+address", status_code=303)
     if not request.session.get("auth") and local_request:
         _authorize_local_request(request)
@@ -389,7 +388,7 @@ def _tailscale_request_peer(request: Request) -> dict | None:
 
 
 def _network_access_allowed(request: Request) -> bool:
-    return bool(_is_local_request(request) or _tailscale_request_peer(request) or public_panel_enabled())
+    return bool(_is_local_request(request) or _tailscale_request_peer(request))
 
 
 def _client_ip(request: Request) -> str:
@@ -555,7 +554,6 @@ async def _base_context(request: Request) -> dict:
             ip=_client_ip(request),
             user_agent=request.headers.get("user-agent", ""),
         ) if session_id else None,
-        "public_panel_enabled": public_panel_enabled(),
         "panel_remote_access_ready": panel_remote_access_ready(),
         "panel_url": _current_panel_url(request),
         "tailscale": tailscale_status(),
@@ -964,7 +962,7 @@ async def login_page(request: Request):
         return RedirectResponse("/setup", status_code=303)
     local_request = _is_local_request(request)
     peer = _tailscale_request_peer(request)
-    network_allowed = bool(local_request or peer or public_panel_enabled())
+    network_allowed = bool(local_request or peer)
     if request.session.get("auth") and network_allowed:
         return RedirectResponse("/", status_code=303)
     if request.session.get("auth") and not network_allowed:
@@ -983,6 +981,16 @@ async def login_page(request: Request):
     if peer:
         _authorize_tailscale_request(request, peer)
         return RedirectResponse("/?message=Tailnet+device+connected", status_code=303)
+    if not network_allowed:
+        return _template_response(
+            "clean_login.html",
+            {
+                "request": request,
+                "error": "Open this private panel from localhost or a device on the bound Tailscale account.",
+                "lang": _request_lang(request),
+            },
+            status_code=403,
+        )
     return _template_response(
         "clean_login.html",
         {"request": request, "error": request.query_params.get("error"), "lang": _request_lang(request)},

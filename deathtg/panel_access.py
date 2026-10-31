@@ -334,8 +334,7 @@ def effective_panel_bind_host() -> str:
     configured = _env("PANEL_HOST") or "127.0.0.1"
     if configured in {"127.0.0.1", "localhost", "::1"}:
         return configured
-    allow_remote = _env("PANEL_ALLOW_REMOTE_BIND", "0").lower() in {"1", "true", "yes", "on"}
-    return configured if allow_remote else "127.0.0.1"
+    return "127.0.0.1"
 
 
 def _is_unspecified_host(host: str) -> bool:
