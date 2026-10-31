@@ -6,8 +6,8 @@
   <title>{{ tr('setup.title') }}</title>
   <link rel="stylesheet" href="/static/engineering.css?v=20260819.7">
   <link rel="stylesheet" href="/static/setup-mode.css?v=5">
-<link rel="stylesheet" href="/static/forest.css?v=2">
-<script src="/static/forest.js?v=2"></script>
+<link rel="stylesheet" href="/static/forest.css?v=3">
+<script src="/static/forest.js?v=3"></script>
 </head>
 <body>
   <canvas id="matrix"></canvas>
@@ -18,24 +18,24 @@
       <p>{{ tr('setup.intro') }}</p>
       {% if step == "mode" %}
       {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
-      <div class="mode-intro"><span class="mode-kicker">ШАГ 01 · ВЫБОР СЦЕНАРИЯ</span><h2>Как ты хочешь управлять DeathTG?</h2><p>Выбор сохранится для этой установки.</p></div>
+      <div class="mode-intro"><span class="mode-kicker">{% if lang == 'ru' %}ШАГ 01 · ВЫБОР СЦЕНАРИЯ{% else %}STEP 01 · CHOOSE YOUR SETUP{% endif %}</span><h2>{% if lang == 'ru' %}Как ты хочешь управлять DeathTG?{% else %}How do you want to use DeathTG?{% endif %}</h2><p>{% if lang == 'ru' %}Выбери режим. Его можно изменить позже в настройках.{% else %}Choose a mode. You can change it later in settings.{% endif %}</p></div>
       <div class="mode-grid">
         <form method="post" action="/setup/mode" class="mode-card mode-web">
           <input type="hidden" name="mode" value="web">
           <div class="mode-icon">◈</div><span class="mode-tag">PRIVATE WEB</span>
-          <h3>С веб-панелью</h3>
-          <p>Управляй DeathTG через сайт с компьютера и других устройств в своей сети Tailscale.</p>
-          <div class="mode-action"><button type="submit">Выбрать веб-режим <span>↗</span></button><span class="mode-hint" role="tooltip">Tailscale установится автоматически. Затем подключи этот компьютер и устройство управления к своему tailnet.</span></div>
+          <h3>{% if lang == 'ru' %}С веб-панелью{% else %}Web dashboard{% endif %}</h3>
+          <p>{% if lang == 'ru' %}Управляй DeathTG через защищённый сайт на компьютере и других устройствах.{% else %}Control DeathTG from a secure website on this computer and your other devices.{% endif %}</p>
+          <div class="mode-action"><button type="submit">{% if lang == 'ru' %}Выбрать веб-режим{% else %}Choose web mode{% endif %} <span>↗</span></button><span class="mode-hint" role="tooltip">{% if lang == 'ru' %}DeathTG установит Tailscale для приватного доступа. Войди в один аккаунт Tailscale на сервере и устройствах, с которых нужна панель. Сам сайт не будет открыт всему интернету.{% else %}DeathTG sets up Tailscale for private access. Sign in to the same Tailscale account on the server and the devices that need the dashboard. The site will not be exposed to the public internet.{% endif %}</span></div>
         </form>
         <form method="post" action="/setup/mode" class="mode-card mode-telegram">
           <input type="hidden" name="mode" value="telegram">
           <div class="mode-icon">✳</div><span class="mode-tag">TELEGRAM ONLY</span>
-          <h3>Только Telegram</h3>
-          <p>Без удалённой веб-панели и Tailscale. Основное управление — в Telegram.</p>
-          <div class="mode-action"><button type="submit">Выбрать Telegram <span>↗</span></button><span class="mode-hint" role="tooltip">Локальная страница установки нужна только для первичного QR-входа.</span></div>
+          <h3>{% if lang == 'ru' %}Только Telegram{% else %}Telegram only{% endif %}</h3>
+          <p>{% if lang == 'ru' %}Без сайта и Tailscale. Управление — в Telegram.{% else %}No website or Tailscale. Manage everything in Telegram.{% endif %}</p>
+          <div class="mode-action"><button type="submit">{% if lang == 'ru' %}Выбрать Telegram{% else %}Choose Telegram{% endif %} <span>↗</span></button><span class="mode-hint" role="tooltip">{% if lang == 'ru' %}Tailscale не устанавливается. Локальная страница нужна только для первоначальной настройки и входа по QR-коду.{% else %}Tailscale is not installed. The local page is used only for initial setup and QR sign-in.{% endif %}</span></div>
         </form>
       </div>
-      <div class="mode-foot"><span class="mode-pulse"></span> ДАЛЕЕ · API TELEGRAM · ВХОД ПО QR-КОДУ</div>
+      <div class="mode-foot"><span class="mode-pulse"></span> {% if lang == 'ru' %}ДАЛЕЕ · API TELEGRAM · ВХОД ПО QR-КОДУ{% else %}NEXT · TELEGRAM API · QR SIGN-IN{% endif %}</div>
       {% elif step == "start" %}
       {% if panel_url %}
       <small class="setup-network-note setup-current-address">{{ tr('setup.current_address') }}: {{ panel_url }}</small>
@@ -86,10 +86,16 @@
       <small>{{ tr('setup.2fa_help') }}</small>
       {% endif %}
       <details class="server-help">
-        <summary>Устанавливаешь DeathTG на сервере?</summary>
-        <p>Открой терминал на своём компьютере и подключись к серверу с перенаправлением порта. Замени user@server своим SSH-адресом, а порт назначения — портом DeathTG из консоли сервера.</p>
-        <code>ssh -N -L 64174:127.0.0.1:{{ setup_port }} user@server</code>
-        <p>Оставь терминал открытым и перейди на http://127.0.0.1:64174/setup в браузере компьютера. QR-код сканируй приложением Telegram на телефоне. Для дальнейшего доступа с других устройств подключи сервер и устройства к одной сети Tailscale.</p>
+        <summary>{% if lang == 'ru' %}DeathTG установлен на сервере? Вот как открыть настройку с компьютера{% else %}Installed DeathTG on a server? Open setup from your computer{% endif %}</summary>
+        {% if lang == 'ru' %}
+        <ol><li>Узнай SSH-имя и адрес сервера у своего хостинга. Например: <code>root@203.0.113.10</code>.</li><li>Открой PowerShell на компьютере и выполни команду ниже, заменив <code>root@203.0.113.10</code> на свой адрес. Число справа оставь таким, как порт панели из консоли сервера (обычно 64174).</li></ol>
+        <code>ssh -N -L 64174:127.0.0.1:{{ setup_port }} root@203.0.113.10</code>
+        <p>Если SSH спрашивает, подключаться ли к серверу, введи <code>yes</code>, затем пароль сервера. Пока команда работает, окно PowerShell не закрывай: оно держит туннель.</p><p>Открой на своём компьютере <code>http://127.0.0.1:64174/setup</code>. QR-код на экране компьютера отсканируй приложением Telegram на телефоне.</p>
+        {% else %}
+        <ol><li>Get your server's SSH username and address from your hosting provider, for example <code>root@203.0.113.10</code>.</li><li>Open PowerShell on your computer and run the command below, replacing <code>root@203.0.113.10</code> with your server address. Keep the right-hand port equal to the panel port printed in the server console (usually 64174).</li></ol>
+        <code>ssh -N -L 64174:127.0.0.1:{{ setup_port }} root@203.0.113.10</code>
+        <p>If SSH asks whether to trust the server, type <code>yes</code>, then enter your server password. Keep this PowerShell window open while setting up DeathTG; it carries the connection.</p><p>On your computer, open <code>http://127.0.0.1:64174/setup</code>. Scan the QR code on the computer screen with the Telegram app on your phone.</p>
+        {% endif %}
       </details>
     </section>
   </main>

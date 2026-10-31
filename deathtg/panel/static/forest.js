@@ -1,20 +1,22 @@
 (function () {
-  const root = document.documentElement;
-  try { root.dataset.appearance = localStorage.getItem("dtg-appearance") || "dark"; } catch (_) {}
   document.addEventListener("DOMContentLoaded", () => {
+    const root = document.documentElement;
+    let language = root.lang === "ru" ? "ru" : "en";
+    try { language = localStorage.getItem("dtg-language") || language; } catch (_) {}
+    if (language !== "ru" && language !== "en") language = "en";
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "theme-switch";
+    button.className = "language-switch";
     const update = () => {
-      const light = root.dataset.appearance === "light";
-      button.textContent = light ? "☾" : "☀";
-      button.setAttribute("aria-label", document.documentElement.lang === "ru" ? "Переключить тему" : "Switch theme");
-      button.setAttribute("aria-pressed", String(light));
+      button.textContent = language === "ru" ? "EN" : "RU";
+      button.setAttribute("aria-label", language === "ru" ? "Switch language to English" : "Переключить язык на русский");
+      button.setAttribute("title", button.getAttribute("aria-label"));
     };
     button.addEventListener("click", () => {
-      root.dataset.appearance = root.dataset.appearance === "light" ? "dark" : "light";
-      try { localStorage.setItem("dtg-appearance", root.dataset.appearance); } catch (_) {}
-      update();
+      language = language === "ru" ? "en" : "ru";
+      try { localStorage.setItem("dtg-language", language); } catch (_) {}
+      document.cookie = `dtg_lang=${language}; Path=/; Max-Age=31536000; SameSite=Lax`;
+      location.reload();
     });
     update();
     document.body.appendChild(button);

@@ -212,6 +212,9 @@ def _request_lang(request: Request) -> str:
     session_lang = str(request.session.get("lang") or "").lower()
     if session_lang in {"en", "ru"}:
         return session_lang
+    cookie_lang = str(request.cookies.get("dtg_lang") or "").lower()
+    if cookie_lang in {"en", "ru"}:
+        return cookie_lang
     header = (request.headers.get("accept-language") or "").lower()
     if header.startswith("ru") or header.startswith("uk") or ",ru" in header or ",uk" in header:
         return "ru"
@@ -696,7 +699,7 @@ async def setup_page(request: Request):
         "setup.html",
         _setup_context(
             request,
-            "mode" if request.query_params.get("step") == "mode" or os.getenv("DEATHTG_MODE") not in {"web", "telegram"} else "start",
+            "mode" if request.query_params.get("step") == "mode" or os.getenv("DEATHTG_MODE_SELECTED") != "1" else "start",
         ),
     )
 
@@ -711,6 +714,7 @@ async def setup_mode(request: Request, mode: str = Form(...), setup_token: str =
     tailscale = "1" if selected == "web" else "0"
     update_env_values({
         "DEATHTG_MODE": selected,
+        "DEATHTG_MODE_SELECTED": "1",
         "PANEL_TAILSCALE_TRUST": tailscale,
         "PANEL_TAILSCALE_SERVE": tailscale,
         "PANEL_TAILSCALE_DIRECT": tailscale,

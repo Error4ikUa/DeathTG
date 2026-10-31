@@ -65,7 +65,7 @@ img { max-width:100%; }
 .server-help { margin-top:24px; padding:16px; border:1px solid var(--cp-line); border-radius:14px; color:var(--cp-muted); }
 .server-help summary { cursor:pointer; color:var(--cp-text); }
 .server-help code { display:block; margin:12px 0; overflow-wrap:anywhere; }
-.theme-switch { position:fixed; bottom:20px; left:12px; z-index:81; width:44px; height:44px; padding:0 !important; border:1px solid var(--cp-line-hot) !important; background:var(--cp-panel) !important; color:var(--cp-text) !important; border-radius:50% !important; }
+.language-switch { position:fixed; top:20px; right:20px; z-index:81; min-width:48px; min-height:40px; padding:8px 12px !important; border:1px solid var(--cp-line-hot) !important; background:var(--glass) !important; color:var(--cp-text) !important; border-radius:12px !important; font:700 12px/1 var(--cp-mono) !important; letter-spacing:.08em; backdrop-filter:blur(12px); }
 .modal-card { max-height:calc(100dvh - 48px); overflow:auto; }
 [hidden] { display:none !important; }
 html[data-appearance="light"] {
@@ -76,7 +76,7 @@ html[data-appearance="light"] {
 @media(max-width:800px) {
  body .page { width:calc(100% - 28px) !important; margin:0 14px !important; padding:84px 0 40px !important; }
  .hero,.module-top { padding:22px !important; }
- .theme-switch { top:20px; bottom:auto; left:auto; right:16px; }
+ .language-switch { top:20px; right:16px; }
  .menu-btn { left:16px !important; }
  .stats,.theme-activity .stats,.stat-ribbon,.profile-stat-grid-v2 { grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:10px !important; }
  .runtime-grid,.grid2,.activity-grid,.health-grid,.profile-grid,.settings-grid,.editor-grid { grid-template-columns:1fr !important; }
