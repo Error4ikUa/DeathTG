@@ -477,7 +477,7 @@ def main() -> int:
             print(f"Panel (Tailscale): {tailnet['url']}")
         elif str(tailnet.get("message") or "").strip():
             print(f"Panel (Tailscale): {tailnet['message']}")
-    _server_access_onboarding(tailnet)
+        _server_access_onboarding(tailnet)
     if phase in {PHASE_FIRST_RUN, PHASE_SETUP_WAIT_QR, PHASE_SETUP_WAIT_2FA}:
         first_run_url = setup_link()
         print(f"Setup link: {first_run_url}")
