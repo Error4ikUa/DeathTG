@@ -232,6 +232,38 @@ def _template_response(
     return templates.TemplateResponse(request, name, context, status_code=status_code)
 
 
+def _notice_page(
+    request: Request,
+    title: str,
+    message: str,
+    *,
+    status_code: int = 200,
+    refresh_path: str = "",
+    refresh_seconds: int = 0,
+) -> HTMLResponse:
+    """Render small standalone notices with the same theme and language control."""
+    language = _request_lang(request)
+    safe_title = html.escape(title)
+    safe_message = html.escape(message)
+    refresh = ""
+    if refresh_path and refresh_seconds > 0:
+        safe_path = html.escape(refresh_path, quote=True)
+        refresh = f"<meta http-equiv='refresh' content='{int(refresh_seconds)};url={safe_path}'>"
+    body = (
+        f"<!doctype html><html lang='{language}'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        f"<title>DeathTG · {safe_title}</title>{refresh}"
+        "<link rel='stylesheet' href='/static/clean.css'>"
+        "<link rel='stylesheet' href='/static/engineering.css?v=20260819.7'>"
+        "<link rel='stylesheet' href='/static/forest.css?v=4'>"
+        "</head><body><canvas id='matrix'></canvas><main class='auth'><section class='card auth-card'>"
+        "<div class='mark big'>DTG</div><small>DEATHTG · SECURE CONTROL</small>"
+        f"<h1>{safe_title}</h1><p>{safe_message}</p>"
+        "</section></main><script src='/static/forest.js?v=3'></script></body></html>"
+    )
+    return HTMLResponse(body, status_code=status_code)
+
+
 @app.middleware("http")
 async def harden_responses(request: Request, call_next):
     response = None
@@ -241,14 +273,14 @@ async def harden_responses(request: Request, call_next):
         and request.url.path not in {"/setup", "/setup/done", "/login"}
         and not request.url.path.startswith("/static/")
     ):
-        response = HTMLResponse(
-            "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-            "<title>DeathTG · Telegram</title><style>body{margin:0;background:#090d0f;color:#e5fff5;font:16px system-ui;display:grid;min-height:100vh;place-items:center}"
-            "main{max-width:520px;padding:36px;border:1px solid #36564a;background:#101817}p{color:#a8bcb3;line-height:1.7}</style>"
-            "<main><small>DEATHTG · TELEGRAM ONLY</small><h1>Управление через Telegram</h1>"
-            "<p>Для этой установки веб-панель отключена. Используй команды DeathTG в Telegram.</p></main>",
-            status_code=404,
+        language = _request_lang(request)
+        title = "Управление через Telegram" if language == "ru" else "Control DeathTG in Telegram"
+        message = (
+            "Для этой установки веб-панель отключена. Используй команды DeathTG в Telegram."
+            if language == "ru"
+            else "The web dashboard is disabled for this installation. Use DeathTG commands in Telegram."
         )
+        response = _notice_page(request, title, message, status_code=404)
     if request.method.upper() in UNSAFE_METHODS:
         if response is not None:
             pass
@@ -713,15 +745,14 @@ async def setup_page(request: Request):
     if not snapshot.get("setup_required") and has_env() and has_session() and mode_selected:
         return RedirectResponse("/", status_code=303)
     if not _setup_allowed(request):
-        return HTMLResponse(
-            "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-            "<link rel='stylesheet' href='/static/clean.css'><link rel='stylesheet' href='/static/engineering.css?v=20260819.6'>"
-            "</head><body><main class='auth'><section class='card auth-card'>"
-            "<div class='mark big'>DTG</div><h1>Setup token required</h1>"
-            "<p>Open the private setup link printed in the DeathTG console.</p>"
-            "</section></main></body></html>",
-            status_code=403,
+        language = _request_lang(request)
+        title = "Нужна приватная ссылка настройки" if language == "ru" else "Private setup link required"
+        message = (
+            "Открой приватную ссылку настройки из консоли DeathTG, подключившись к тому же аккаунту Tailscale."
+            if language == "ru"
+            else "Open the private setup link printed in the DeathTG console while connected to the same Tailscale account."
         )
+        return _notice_page(request, title, message, status_code=403)
     return _template_response(
         "setup.html",
         _setup_context(
@@ -835,15 +866,14 @@ async def setup_save(
     setup_token: str = Form(""),
 ):
     if not _setup_mutation_allowed(request, setup_token):
-        return HTMLResponse(
-            "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-            "<link rel='stylesheet' href='/static/clean.css'><link rel='stylesheet' href='/static/engineering.css?v=20260819.6'>"
-            "</head><body><main class='auth'><section class='card auth-card'>"
-            "<div class='mark big'>DTG</div><h1>Setup token required</h1>"
-            "<p>Open the private setup link printed in the DeathTG console.</p>"
-            "</section></main></body></html>",
-            status_code=403,
+        language = _request_lang(request)
+        title = "Нужна приватная ссылка настройки" if language == "ru" else "Private setup link required"
+        message = (
+            "Открой приватную ссылку настройки из консоли DeathTG, подключившись к тому же аккаунту Tailscale."
+            if language == "ru"
+            else "Open the private setup link printed in the DeathTG console while connected to the same Tailscale account."
         )
+        return _notice_page(request, title, message, status_code=403)
     if _is_rate_limited("setup_save", request):
         return _template_response(
             "setup.html",
@@ -1300,14 +1330,14 @@ async def health_restart(request: Request):
     if blocked:
         return blocked
     schedule_restart()
-    return HTMLResponse(
-        "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<meta http-equiv='refresh' content='8;url=/health'><link rel='stylesheet' href='/static/clean.css'>"
-        "<link rel='stylesheet' href='/static/engineering.css?v=20260819.6'></head>"
-        "<body><main class='auth'><section class='card auth-card'><div class='mark big'>DTG</div>"
-        "<h1>DeathTG is restarting...</h1><p>Wait a few seconds. The health center will reopen automatically.</p>"
-        "</section></main></body></html>"
+    language = _request_lang(request)
+    title = "DeathTG перезапускается…" if language == "ru" else "DeathTG is restarting…"
+    message = (
+        "Подожди несколько секунд. Центр состояния откроется снова автоматически."
+        if language == "ru"
+        else "Wait a few seconds. The health center will reopen automatically."
     )
+    return _notice_page(request, title, message, refresh_path="/health", refresh_seconds=8)
 
 
 @app.post("/health/safe-mode")
@@ -1402,12 +1432,11 @@ async def restart_project(request: Request):
         return blocked
     target = await _system_return_target(request, "/")
     schedule_restart()
-    safe_target = html.escape(target, quote=True)
-    return HTMLResponse(
-        "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-        f"<meta http-equiv='refresh' content='8;url={safe_target}'><link rel='stylesheet' href='/static/clean.css'>"
-        "<link rel='stylesheet' href='/static/engineering.css?v=20260819.6'></head>"
-        "<body><main class='auth'><section class='card auth-card'><div class='mark big'>DTG</div>"
-        "<h1>DeathTG is restarting...</h1><p>Wait a few seconds. The panel will reopen automatically.</p>"
-        "</section></main></body></html>"
+    language = _request_lang(request)
+    title = "DeathTG перезапускается…" if language == "ru" else "DeathTG is restarting…"
+    message = (
+        "Подожди несколько секунд. Панель откроется снова автоматически."
+        if language == "ru"
+        else "Wait a few seconds. The dashboard will reopen automatically."
     )
+    return _notice_page(request, title, message, refresh_path=target, refresh_seconds=8)
