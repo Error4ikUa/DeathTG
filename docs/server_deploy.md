@@ -37,6 +37,14 @@ route already points to the panel, DeathTG reuses its private HTTPS address.
 Otherwise it opens a second listener only on the machine's own Tailscale IP;
 it never falls back to `0.0.0.0` or the LAN address.
 
+For remote installs, the first QR setup can use the SSH tunnel printed on the
+setup page. After selecting the web-panel mode, authorize Tailscale on the
+server from the sign-in URL printed in the server console. Install Tailscale
+on the computer or phone that will open the panel, and sign in to the same
+Tailscale account on both devices. They then share the private tailnet; no
+separate pairing step is needed. Open the private HTTPS address DeathTG prints
+after the server connects. Telegram-only mode does not require Tailscale.
+
 On first successful start, DeathTG stores the local Tailscale user, tailnet,
 MagicDNS suffix, and hostname in `runtime/tailscale_binding.json`. Later account
 or tailnet changes fail closed for remote access while localhost keeps working.

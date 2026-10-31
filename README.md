@@ -51,8 +51,10 @@ What happens automatically:
 
 On the first setup page, choose one of two modes:
 
-- **Web panel** installs the Tailscale client on Windows (via `winget`) or supported Linux systems, then prints the Tailscale sign-in link in the console. Sign in on this computer and on the device you use to access DeathTG, then restart DeathTG to activate private panel access through Tailscale Serve. Linux may require administrator access.
+- **Web panel** installs the Tailscale client on Windows (via `winget`) or supported Linux systems, then prints the server's Tailscale sign-in link in the console. Install Tailscale on the device you use to access DeathTG and sign in to the same account on both devices. This places them in one private network; there is no pairing code. DeathTG then prints the private panel address. Linux may require administrator access.
 - **Telegram only** disables Tailscale panel trust and blocks the management website after initial QR setup. The local setup page is still used once to connect the Telegram account.
+
+When started in an interactive console, DeathTG asks whether it is running on a remote server. For the first QR setup on a server, use the SSH tunnel shown in the setup page. For everyday web access, use the private Tailscale panel address; both the server and the device opening the panel must be online in the same Tailscale account.
 
 The current project does not include Google OAuth or a hosted account service, so DeathTG account registration and binding to a Google account are not part of this setup flow yet. Tailscale sign-in is separate and follows the identity provider configured in the user's tailnet.
 

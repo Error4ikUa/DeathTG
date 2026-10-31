@@ -112,7 +112,8 @@ def _run_status(command: str) -> dict[str, Any]:
 def _build_status(payload: dict[str, Any], command: str) -> dict[str, Any]:
     own = payload.get("Self") if isinstance(payload.get("Self"), dict) else {}
     backend_state = str(payload.get("BackendState") or "Unknown")
-    own_ips = [ip for value in own.get("TailscaleIPs", []) if (ip := _normalize_ip(str(value)))]
+    raw_own_ips = own.get("TailscaleIPs")
+    own_ips = [ip for value in raw_own_ips if (ip := _normalize_ip(str(value)))] if isinstance(raw_own_ips, list) else []
     dns_name = str(own.get("DNSName") or "").rstrip(".")
     hostname = str(own.get("HostName") or payload.get("HostName") or "")
     own_user_id = str(own.get("UserID") or "")
@@ -135,7 +136,8 @@ def _build_status(payload: dict[str, Any], command: str) -> dict[str, Any]:
             "user_id": str(peer.get("UserID") or ""),
             "online": bool(peer.get("Online", False)),
         }
-        for value in peer.get("TailscaleIPs", []):
+        raw_peer_ips = peer.get("TailscaleIPs")
+        for value in raw_peer_ips if isinstance(raw_peer_ips, list) else []:
             normalized = _normalize_ip(str(value))
             if normalized:
                 peer_ips[normalized] = identity

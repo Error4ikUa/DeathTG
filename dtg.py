@@ -99,6 +99,68 @@ def _wait_for_replaced_parent(timeout: float = 15.0) -> None:
         time.sleep(0.1)
 
 
+def _console_yes(prompt: str) -> bool:
+    try:
+        answer = input(prompt).strip().lower()
+    except (EOFError, OSError):
+        return False
+    return answer in {"y", "yes", "д", "да"}
+
+
+def _server_access_onboarding(tailnet: dict) -> None:
+    """Explain the private Tailscale setup when DeathTG is hosted remotely."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return
+
+    selected = os.getenv("DEATHTG_SERVER_INSTALL_SELECTED", "").strip() == "1"
+    if not selected:
+        print("\nAre you running DeathTG on a remote server or VPS? [y/N]: ", end="", flush=True)
+        is_server = _console_yes("")
+        update_env_values(
+            {
+                "DEATHTG_SERVER_INSTALL_SELECTED": "1",
+                "DEATHTG_SERVER_INSTALL": "1" if is_server else "0",
+            },
+            path=ENV_PATH,
+        )
+        os.environ["DEATHTG_SERVER_INSTALL_SELECTED"] = "1"
+        os.environ["DEATHTG_SERVER_INSTALL"] = "1" if is_server else "0"
+        selected = True
+
+    if os.getenv("DEATHTG_SERVER_INSTALL", "").strip() != "1":
+        return
+
+    mode_selected = os.getenv("DEATHTG_MODE_SELECTED", "").strip() == "1"
+    web_mode_selected = mode_selected and os.getenv("DEATHTG_MODE", "").strip().lower() == "web"
+    if mode_selected and not web_mode_selected:
+        return
+
+    print("\nREMOTE SERVER ACCESS")
+    print("For the private web panel, Tailscale must be signed in on BOTH the server and your PC/phone.")
+    print("Use the same Tailscale account on both devices. That puts them in the same private network; there is no pairing code.")
+    client_ready = os.getenv("DEATHTG_TAILSCALE_CLIENT_READY", "").strip() == "1"
+    if not client_ready:
+        print("Install the Tailscale app on the device you will use to open DeathTG:")
+        print("https://tailscale.com/download")
+        print("Sign in there, then confirm below. Tailscale is only needed if you choose Web dashboard.")
+        if _console_yes("Is Tailscale installed and signed in on your PC/phone? [y/N]: "):
+            update_env_values({"DEATHTG_TAILSCALE_CLIENT_READY": "1"}, path=ENV_PATH)
+            os.environ["DEATHTG_TAILSCALE_CLIENT_READY"] = "1"
+            if web_mode_selected and tailnet.get("connected") and tailnet.get("url"):
+                print("\nBoth devices are ready. Open the private panel address printed above while Tailscale is on.")
+            elif not web_mode_selected:
+                print("\nWhen you choose Web dashboard, sign in to the server with this SAME Tailscale account.")
+                print("DeathTG will print a server sign-in link here. Opening it and using this account adds the server to the same private network.")
+            else:
+                print("\nTo connect the server, open the Tailscale sign-in link printed in this console and use the SAME account.")
+                print("After the server connects, open the private HTTPS panel address DeathTG prints at startup.")
+        else:
+            print("You can install and sign in later. Then use the same account for the Tailscale link that DeathTG prints for the server.")
+    elif not web_mode_selected:
+        print("Choose Web dashboard on the setup page to enable this. DeathTG will install Tailscale on the server and print its sign-in link in this console.")
+        print("Use that link to sign in to the SAME account you use on your PC/phone. Then open the private HTTPS address DeathTG prints.")
+
+
 def _spawn_replacement() -> bool:
     environment = os.environ.copy()
     environment[RESTART_PARENT_ENV] = str(os.getpid())
@@ -415,6 +477,7 @@ def main() -> int:
             print(f"Panel (Tailscale): {tailnet['url']}")
         elif str(tailnet.get("message") or "").strip():
             print(f"Panel (Tailscale): {tailnet['message']}")
+    _server_access_onboarding(tailnet)
     if phase in {PHASE_FIRST_RUN, PHASE_SETUP_WAIT_QR, PHASE_SETUP_WAIT_2FA}:
         first_run_url = setup_link()
         print(f"Setup link: {first_run_url}")

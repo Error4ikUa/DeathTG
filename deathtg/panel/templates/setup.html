@@ -86,15 +86,17 @@
       <small>{{ tr('setup.2fa_help') }}</small>
       {% endif %}
       <details class="server-help">
-        <summary>{% if lang == 'ru' %}DeathTG установлен на сервере? Вот как открыть настройку с компьютера{% else %}Installed DeathTG on a server? Open setup from your computer{% endif %}</summary>
+        <summary>{% if lang == 'ru' %}DeathTG установлен на сервере? Как подключить компьютер{% else %}Installed DeathTG on a server? Connect your computer{% endif %}</summary>
         {% if lang == 'ru' %}
-        <ol><li>Узнай SSH-имя и адрес сервера у своего хостинга. Например: <code>root@203.0.113.10</code>.</li><li>Открой PowerShell на компьютере и выполни команду ниже, заменив <code>root@203.0.113.10</code> на свой адрес. Число справа оставь таким, как порт панели из консоли сервера (обычно 64174).</li></ol>
+        <p><strong>Для первого входа и QR-кода:</strong> создай SSH-туннель от компьютера к серверу. Узнай SSH-адрес у хостинга, например <code>root@203.0.113.10</code>, и замени им пример в команде:</p>
         <code>ssh -N -L 64174:127.0.0.1:{{ setup_port }} root@203.0.113.10</code>
-        <p>Если SSH спрашивает, подключаться ли к серверу, введи <code>yes</code>, затем пароль сервера. Пока команда работает, окно PowerShell не закрывай: оно держит туннель.</p><p>Открой на своём компьютере <code>http://127.0.0.1:64174/setup</code>. QR-код на экране компьютера отсканируй приложением Telegram на телефоне.</p>
+        <p>Оставь окно PowerShell открытым, затем на этом компьютере открой <code>http://127.0.0.1:64174/setup</code> и сканируй QR-код приложением Telegram на телефоне. Этот туннель нужен только для первоначальной настройки.</p>
+        <p><strong>Для постоянной веб-панели:</strong> выбери «С веб-панелью». DeathTG установит Tailscale на сервер и покажет в серверной консоли ссылку для входа. Установи Tailscale на компьютере или телефоне и войди в тот же аккаунт, затем открой ссылку из консоли и войди в этот аккаунт на сервере. Так оба устройства попадут в одну приватную сеть; код сопряжения не нужен. Открывай адрес панели <code>https://…</code>, который DeathTG напечатает после подключения.</p>
         {% else %}
-        <ol><li>Get your server's SSH username and address from your hosting provider, for example <code>root@203.0.113.10</code>.</li><li>Open PowerShell on your computer and run the command below, replacing <code>root@203.0.113.10</code> with your server address. Keep the right-hand port equal to the panel port printed in the server console (usually 64174).</li></ol>
+        <p><strong>For the first login and QR code:</strong> create an SSH tunnel from your computer to the server. Get the SSH address from your hosting provider, for example <code>root@203.0.113.10</code>, and replace the example in this command:</p>
         <code>ssh -N -L 64174:127.0.0.1:{{ setup_port }} root@203.0.113.10</code>
-        <p>If SSH asks whether to trust the server, type <code>yes</code>, then enter your server password. Keep this PowerShell window open while setting up DeathTG; it carries the connection.</p><p>On your computer, open <code>http://127.0.0.1:64174/setup</code>. Scan the QR code on the computer screen with the Telegram app on your phone.</p>
+        <p>Keep PowerShell open, then visit <code>http://127.0.0.1:64174/setup</code> on this computer and scan the QR code with Telegram on your phone. This tunnel is only needed for initial setup.</p>
+        <p><strong>For ongoing web access:</strong> choose “Web dashboard”. DeathTG installs Tailscale on the server and prints a sign-in link in the server console. Install Tailscale on your computer or phone and sign in, then open the console link and sign in to that same account on the server. Both devices will join one private network; no pairing code is needed. Open the <code>https://…</code> panel address printed by DeathTG after it connects.</p>
         {% endif %}
       </details>
     </section>
