@@ -598,6 +598,7 @@ def _setup_context(request: Request, step: str, *, error: str | None = None, mes
         "error": error,
         "message": message or request.query_params.get("message"),
         "setup_token": "",
+        "setup_port": os.getenv("PANEL_PORT", "64174"),
         "panel_url": _current_panel_url(request),
         "panel_remote_access_ready": panel_remote_access_ready(),
         **extra,

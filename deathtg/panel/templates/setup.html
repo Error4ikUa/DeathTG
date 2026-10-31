@@ -6,13 +6,14 @@
   <title>{{ tr('setup.title') }}</title>
   <link rel="stylesheet" href="/static/engineering.css?v=20260819.7">
   <link rel="stylesheet" href="/static/setup-mode.css?v=5">
+<link rel="stylesheet" href="/static/forest.css?v=2">
+<script src="/static/forest.js?v=2"></script>
 </head>
 <body>
   <canvas id="matrix"></canvas>
   <main class="login-shell">
     <section class="glass-card login-card setup-card">
       <div class="brand-mark">DTG</div>
-      <p class="eyebrow">DTG</p>
       <h1>{{ tr('setup.title') }}</h1>
       <p>{{ tr('setup.intro') }}</p>
       {% if step == "mode" %}
@@ -84,9 +85,15 @@
       </form>
       <small>{{ tr('setup.2fa_help') }}</small>
       {% endif %}
+      <details class="server-help">
+        <summary>Устанавливаешь DeathTG на сервере?</summary>
+        <p>Открой терминал на своём компьютере и подключись к серверу с перенаправлением порта. Замени user@server своим SSH-адресом, а порт назначения — портом DeathTG из консоли сервера.</p>
+        <code>ssh -N -L 64174:127.0.0.1:{{ setup_port }} user@server</code>
+        <p>Оставь терминал открытым и перейди на http://127.0.0.1:64174/setup в браузере компьютера. QR-код сканируй приложением Telegram на телефоне. Для дальнейшего доступа с других устройств подключи сервер и устройства к одной сети Tailscale.</p>
+      </details>
     </section>
   </main>
-  <script src="/static/matrix.js"></script>
+
   <script src="/static/clean.js?v=20260819.3"></script>
 </body>
 </html>

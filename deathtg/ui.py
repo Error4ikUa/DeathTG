@@ -37,8 +37,7 @@ def colorize(text: str, *codes: str) -> str:
 def welcome_block() -> str:
     return "\n".join(
         [
-            colorize("Welcome", BOLD, GREEN) + " to " + colorize("DeathTG", BOLD, MAGENTA),
-            colorize("Secure", CYAN) + " Telegram userbot " + colorize("platform", YELLOW),
+            colorize("Welcome to your userbot", BOLD, GREEN),
         ]
     )
 

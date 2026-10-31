@@ -6,6 +6,8 @@
     <title>{{ tr('installed.title') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
     <link rel="stylesheet" href="/static/engineering.css?v=20260819.7">
+<link rel="stylesheet" href="/static/forest.css?v=2">
+<script src="/static/forest.js?v=2"></script>
 </head>
 <body class="theme-modules" data-accent="{{ profile.accent or 'blue' }}">
 <canvas id="matrix"></canvas>
@@ -64,7 +66,7 @@
         {% if not grouped %}<article class="module-empty"><h2>{{ tr('installed.no_modules') }}</h2><p>{{ tr('installed.no_modules_desc') }}</p></article>{% endif %}
     </section>
 </main>
-<script src="/static/matrix.js"></script>
+
 <script src="/static/clean.js?v=20260819.3"></script>
 </body>
 </html>

@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 import time
+import webbrowser
 from pathlib import Path
 
 from deathtg.dependency_bootstrap import ensure_core_dependencies
@@ -415,7 +416,10 @@ def main() -> int:
         elif str(tailnet.get("message") or "").strip():
             print(f"Panel (Tailscale): {tailnet['message']}")
     if phase in {PHASE_FIRST_RUN, PHASE_SETUP_WAIT_QR, PHASE_SETUP_WAIT_2FA}:
-        print(f"First run setup link: {setup_link()}")
+        first_run_url = setup_link()
+        print(f"Setup link: {first_run_url}")
+        if os.name == "nt" and sys.stdout.isatty():
+            webbrowser.open(first_run_url, new=2)
     if phase == PHASE_FIRST_RUN:
         print("First run: open setup, enter API_ID/API_HASH, scan the QR code in Telegram, then enter 2FA only if Telegram asks for it.")
         print("Console never asks for the Telegram code. DeathTG waits for QR approval from the website flow and finishes login in the background.")
@@ -431,6 +435,8 @@ def main() -> int:
         print(f"Startup warning: {snapshot.get('message') or 'DeathTG started in degraded mode.'}")
     elif phase == PHASE_READY:
         print("Runtime state: ready.")
+        if os.name == "nt" and sys.stdout.isatty() and not args.no_panel:
+            webbrowser.open(panel_local_url(), new=2)
     elif phase == PHASE_REPAIR:
         print("Runtime state: repair flow is active.")
     if not os.getenv("PANEL_PUBLIC_URL", "").strip():
