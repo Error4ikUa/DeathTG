@@ -309,5 +309,41 @@ class PanelSecurityMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         begin.assert_not_awaited()
 
 
+class PanelSetupCompletionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_telegram_only_completion_is_localized_and_closes_website(self) -> None:
+        request = request_for("127.0.0.1", path="/setup/done")
+        request.scope["headers"].append((b"accept-language", b"ru"))
+        with (
+            patch.dict(os.environ, {"DEATHTG_MODE_SELECTED": "1", "DEATHTG_MODE": "telegram"}),
+            patch.object(panel, "sync_startup_state"),
+            patch.object(panel, "startup_snapshot", return_value={"setup_required": False}),
+            patch.object(panel, "panel_remote_access_ready", return_value=False),
+        ):
+            response = await panel.setup_done_page(request)
+
+        body = response.body.decode("utf-8")
+        self.assertIn("Продолжай управлять DeathTG через Telegram", body)
+        self.assertIn("Сайт настройки закрывается", body)
+        self.assertNotIn("LAN", body)
+        self.assertIsNotNone(response.background)
+
+    async def test_web_completion_shows_only_the_ready_private_tailnet_address(self) -> None:
+        request = request_for("127.0.0.1", path="/setup/done")
+        request.scope["headers"].append((b"accept-language", b"en"))
+        with (
+            patch.dict(os.environ, {"DEATHTG_MODE_SELECTED": "1", "DEATHTG_MODE": "web"}),
+            patch.object(panel, "sync_startup_state"),
+            patch.object(panel, "startup_snapshot", return_value={"setup_required": False}),
+            patch.object(panel, "panel_remote_access_ready", return_value=True),
+            patch.object(panel, "_current_panel_url", return_value="https://deathbox.tailnet.ts.net"),
+        ):
+            response = await panel.setup_done_page(request)
+
+        body = response.body.decode("utf-8")
+        self.assertIn("signed in to the same Tailscale account", body)
+        self.assertIn("https://deathbox.tailnet.ts.net", body)
+        self.assertIsNone(response.background)
+
+
 if __name__ == "__main__":
     unittest.main()

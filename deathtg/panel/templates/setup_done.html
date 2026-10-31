@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeathTG · {% if lang == 'ru' %}Настройка завершена{% else %}Setup complete{% endif %}</title>
+  <link rel="stylesheet" href="/static/clean.css">
+  <link rel="stylesheet" href="/static/engineering.css?v=20260819.7">
+  <link rel="stylesheet" href="/static/forest.css?v=3">
+</head>
+<body>
+  <canvas id="matrix" aria-hidden="true"></canvas>
+  <main class="auth">
+    <section class="card auth-card">
+      <div class="mark big" aria-hidden="true">DTG</div>
+      <small>DEATHTG · SETUP COMPLETE</small>
+      {% if telegram_only %}
+        {% if lang == 'ru' %}
+          <h1>Настройка завершена</h1>
+          <p>Продолжай управлять DeathTG через Telegram. Сайт настройки закрывается, а юзербот останется работать.</p>
+          <p>Если позже понадобится веб-панель, запусти DeathTG с параметром <code>--choose-mode</code>.</p>
+        {% else %}
+          <h1>Setup is complete</h1>
+          <p>Continue using DeathTG in Telegram. The setup website is closing, and the userbot will keep running.</p>
+          <p>To enable the web dashboard later, start DeathTG with <code>--choose-mode</code>.</p>
+        {% endif %}
+      {% elif web_mode and remote_ready %}
+        {% if lang == 'ru' %}
+          <h1>Telegram подключён</h1>
+          <p>Приватная веб-панель готова. Открывай её только с устройств, вошедших в тот же аккаунт Tailscale.</p>
+          <a class="btn" href="/">Открыть панель</a>
+          {% if panel_url %}<p class="muted">Адрес Tailnet: <code>{{ panel_url }}</code></p>{% endif %}
+        {% else %}
+          <h1>Telegram is connected</h1>
+          <p>Your private dashboard is ready. Open it only from devices signed in to the same Tailscale account.</p>
+          <a class="btn" href="/">Open dashboard</a>
+          {% if panel_url %}<p class="muted">Tailnet address: <code>{{ panel_url }}</code></p>{% endif %}
+        {% endif %}
+      {% else %}
+        {% if lang == 'ru' %}
+          <h1>Telegram подключён</h1>
+          <p>Сессия создана. Веб-панель пока доступна только на этом устройстве.</p>
+          {% if web_mode %}
+            <p>Для доступа с других устройств заверши вход в Tailscale по ссылке в окне PowerShell, затем снова выбери веб-режим.</p>
+          {% else %}
+            <p>Вернись в консоль и выбери режим управления DeathTG.</p>
+          {% endif %}
+        {% else %}
+          <h1>Telegram is connected</h1>
+          <p>Your session is ready. The dashboard is currently available on this device only.</p>
+          {% if web_mode %}
+            <p>To open it from other devices, finish Tailscale sign-in using the link in PowerShell, then choose web mode again.</p>
+          {% else %}
+            <p>Return to the console and choose how DeathTG should be controlled.</p>
+          {% endif %}
+        {% endif %}
+        {% if local_ready %}<a class="btn" href="/">{% if lang == 'ru' %}Открыть панель здесь{% else %}Open dashboard here{% endif %}</a>{% endif %}
+      {% endif %}
+    </section>
+  </main>
+  <script src="/static/forest.js?v=3"></script>
+</body>
+</html>

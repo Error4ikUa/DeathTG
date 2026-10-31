@@ -201,7 +201,12 @@ def _telegram_only_mode() -> bool:
 
 
 def _panel_grant_url_for_mode(owner_id: int) -> str:
-    return "" if _telegram_only_mode() else _build_panel_grant_url(owner_id)
+    if _telegram_only_mode():
+        return ""
+    web_mode = _env("DEATHTG_MODE_SELECTED") == "1" and _env("DEATHTG_MODE").lower() == "web"
+    if web_mode and not _env("PANEL_TAILSCALE_URL").strip():
+        return ""
+    return _build_panel_grant_url(owner_id)
 
 
 def _owner_shortcut_buttons(panel_url: str, news_url: str, support_url: str, personal_url: str) -> list[list[dict]]:
@@ -1813,7 +1818,13 @@ async def _run_startup_sync_locked(client) -> dict:
         personal_url = _env("PANEL_PERSONAL_URL")
         buttons = _owner_shortcut_buttons(panel_url, news_url, support_url, personal_url)
         remote_note = ""
-        if panel_url and not remote_ready:
+        web_mode = _env("DEATHTG_MODE_SELECTED") == "1" and _env("DEATHTG_MODE").lower() == "web"
+        if web_mode and not remote_ready:
+            remote_note = (
+                "\n\nPrivate web access is not ready yet. Finish Tailscale sign-in in the DeathTG console, "
+                "then choose Web mode again in the setup page."
+            )
+        elif panel_url and not remote_ready:
             remote_note = (
                 "\n\nRemote phone access is not enabled yet because the panel is still local-only. "
                 "Restart DeathTG after this update so it can rebind the panel and refresh your secure links."
@@ -1828,8 +1839,15 @@ async def _run_startup_sync_locked(client) -> dict:
                     "If you need another device later, create a new secure link from inside the panel.",
                 ]
             )
-        else:
+        elif telegram_only:
             welcome_lines.append("Telegram-only mode is active. Use DeathTG in Telegram; no website is enabled.")
+        elif web_mode:
+            welcome_lines.append(
+                "Web mode is selected, but the private panel is not ready yet. "
+                "Finish the Tailscale sign-in shown in the DeathTG console, then choose Web mode again."
+            )
+        else:
+            welcome_lines.append("Finish setup in the DeathTG console and open its private setup page.")
         if remote_note:
             welcome_lines.append(remote_note)
         payload = {
@@ -1907,8 +1925,6 @@ async def _run_startup_sync_locked(client) -> dict:
             direct_lines = welcome_lines[:]
             if panel_url:
                 direct_lines.append(panel_url)
-            if remote_note:
-                direct_lines.extend(["", remote_note.strip()])
             await client.send_message("me", "\n".join(direct_lines), parse_mode="html", link_preview=False)
             return True, "Bot delivery failed, shortcut was sent to Saved Messages", panel_url
         except Exception as exc:

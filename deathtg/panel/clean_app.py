@@ -801,36 +801,31 @@ async def setup_mode(request: Request, mode: str = Form(...), setup_token: str =
 async def setup_done_page(request: Request):
     sync_startup_state()
     local_ready = bool(request.session.get("auth"))
+    setup_required = bool(startup_snapshot().get("setup_required"))
+    mode_selected = os.getenv("DEATHTG_MODE_SELECTED", "").strip() == "1"
+    selected_mode = os.getenv("DEATHTG_MODE", "").strip().lower()
     telegram_only = (
-        os.getenv("DEATHTG_MODE_SELECTED", "").strip() == "1"
-        and os.getenv("DEATHTG_MODE", "").strip().lower() == "telegram"
-        and not startup_snapshot().get("setup_required")
+        mode_selected
+        and selected_mode == "telegram"
+        and not setup_required
     )
-    panel_url = _current_panel_url(request)
     remote_ready = panel_remote_access_ready()
-    body = (
-        "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>DeathTG Ready</title><link rel='stylesheet' href='/static/clean.css'>"
-        "<link rel='stylesheet' href='/static/engineering.css?v=20260819.6'></head>"
-        "<body><main class='auth'><section class='card auth-card'>"
-        "<div class='mark big'>DTG</div>"
-        "<h1>Telegram connected</h1>"
-        + (
-            "<p>Telegram-only mode is active. The setup website will close; keep using DeathTG in Telegram and this console.</p>"
-            if telegram_only
-            else "<p>DeathTG created your session and is preparing private access.</p>"
-            f"<p>Current panel address: <code>{html.escape(panel_url)}</code></p>"
-            "<p>Check Telegram for your private panel link. Do not share it with anyone.</p>"
-            "<p>If the bot message does not appear yet, wait a little and refresh later.</p>"
-        )
+    lang = _request_lang(request)
+    response = _template_response(
+        "setup_done.html",
+        {
+            "request": request,
+            "lang": lang,
+            "telegram_only": telegram_only,
+            "web_mode": mode_selected and selected_mode == "web",
+            "remote_ready": remote_ready,
+            "local_ready": local_ready,
+            "panel_url": _current_panel_url(request) if remote_ready else "",
+        },
     )
-    if not telegram_only and not remote_ready:
-        body += "<p>This panel is local-only right now. For phone access from another device, use a LAN/public URL configuration.</p>"
-    if local_ready and not telegram_only:
-        body += "<p><a class='btn' href='/'>Open panel in this browser</a></p>"
-    body += "</section></main></body></html>"
-    background = BackgroundTask(_finish_telegram_only_setup) if telegram_only else None
-    return HTMLResponse(body, background=background)
+    if telegram_only:
+        response.background = BackgroundTask(_finish_telegram_only_setup)
+    return response
 
 
 @app.post("/setup/save")

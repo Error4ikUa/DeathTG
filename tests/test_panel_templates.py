@@ -37,6 +37,14 @@ class PanelTemplateTests(unittest.TestCase):
         self.assertIn("grid-template-rows:max-content max-content !important", source)
         self.assertIn(".editor-form { overflow:visible !important; }", source)
 
+    def test_setup_completion_explains_each_mode_without_public_url_advice(self) -> None:
+        source = (TEMPLATE_DIR / "setup_done.html").read_text(encoding="utf-8")
+        self.assertIn("Continue using DeathTG in Telegram", source)
+        self.assertIn("Продолжай управлять DeathTG через Telegram", source)
+        self.assertIn("same Tailscale account", source)
+        self.assertIn("тот же аккаунт Tailscale", source)
+        self.assertNotIn("LAN/public", source)
+
 
 if __name__ == "__main__":
     unittest.main()
