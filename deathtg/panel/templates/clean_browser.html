@@ -60,23 +60,25 @@
         <div class="actions">
             <form method="post" action="/modules/pending/{{ pending_warning.token }}/delete" data-confirm="{{ tr('confirm.cancel_install') }}">
                 <input type="hidden" name="return_to" value="browser">
+                <input type="hidden" name="return_page" value="{{ browser_page }}">
                 <button class="small danger" type="submit">{{ tr('browser.delete') }}</button>
             </form>
             <form method="post" action="/modules/pending/{{ pending_warning.token }}/continue" data-confirm="{{ tr('confirm.security_override') }}">
                 <input type="hidden" name="return_to" value="browser">
+                <input type="hidden" name="return_page" value="{{ browser_page }}">
                 <button class="small ghost" type="submit">{{ tr('browser.continue_install') }}</button>
             </form>
         </div>
     </section>
     {% endif %}
 
-    <section class="section-tabs module-tabs">
-        <button type="button" class="active" data-tab="browserPane">{{ tr('browser.tab_browser') }}</button>
-        <button type="button" data-tab="installedPane">{{ tr('browser.tab_installed') }}</button>
-        <button type="button" data-tab="installPane">{{ tr('browser.tab_install') }}</button>
+    <section class="section-tabs module-tabs" role="tablist" aria-label="{{ tr('browser.hero_title') }}">
+        <button id="browserTab" type="button" class="active" role="tab" aria-selected="true" aria-controls="browserPane" data-tab="browserPane">{{ tr('browser.tab_browser') }}</button>
+        <button id="installedTab" type="button" role="tab" aria-selected="false" aria-controls="installedPane" data-tab="installedPane" tabindex="-1">{{ tr('browser.tab_installed') }}</button>
+        <button id="installTab" type="button" role="tab" aria-selected="false" aria-controls="installPane" data-tab="installPane" tabindex="-1">{{ tr('browser.tab_install') }}</button>
     </section>
 
-    <section id="browserPane" class="module-pane active">
+    <section id="browserPane" class="module-pane active" role="tabpanel" aria-labelledby="browserTab" aria-hidden="false" tabindex="0">
         <div class="module-grid">
             {% for mod in browser_modules %}
             {% set image = mod.image or mod.modul_png or '' %}
@@ -95,12 +97,13 @@
                 <p class="module-note">{{ mod.source_label or tr('browser.external_source') }}</p>
                 <p>{{ mod.description }}</p>
                 <div class="module-actions repo-actions">
-                    <a class="small ghost info-link" href="/repo-modules/{{ mod.name }}">{{ tr('browser.info') }}</a>
+                    <a class="small ghost info-link" href="/repo-modules/{{ mod.name }}?return_to=browser&amp;page={{ browser_page }}">{{ tr('browser.info') }}</a>
                     {% if mod.installed %}
-                    <a class="small installed-action" href="/modules/{{ mod.installed_name or mod.name }}">{{ tr('browser.open_installed') }}</a>
+                    <a class="small installed-action" href="/modules/{{ mod.installed_name or mod.name }}?return_to=installed_tab&amp;page={{ browser_page }}">{{ tr('browser.open_installed') }}</a>
                     {% elif mod.downloaded %}
                     <form method="post" action="/modules/{{ mod.name }}/update">
                         <input type="hidden" name="return_to" value="browser">
+                        <input type="hidden" name="return_page" value="{{ browser_page }}">
                         <button class="small" type="submit">{{ tr('browser.activate') }}</button>
                     </form>
                     {% else %}
@@ -111,6 +114,7 @@
                         <input type="hidden" name="author" value="{{ mod.author or 'DTG' }}">
                         <input type="hidden" name="version" value="{{ mod.version or 'latest' }}">
                         <input type="hidden" name="return_to" value="browser">
+                        <input type="hidden" name="return_page" value="{{ browser_page }}">
                         <button class="small" type="submit">{{ tr('browser.install') }}</button>
                     </form>
                     {% endif %}
@@ -143,7 +147,7 @@
         </article>
     </section>
 
-    <section id="installedPane" class="module-pane">
+    <section id="installedPane" class="module-pane" role="tabpanel" aria-labelledby="installedTab" aria-hidden="true" tabindex="0">
         <div class="pane-head">
             <div>
                 <p class="eyebrow">{{ tr('browser.installed_eyebrow') }}</p>
@@ -151,6 +155,7 @@
             </div>
             <form method="post" action="/modules/update-all">
                 <input type="hidden" name="return_to" value="installed_tab">
+                <input type="hidden" name="return_page" value="{{ browser_page }}">
                 <button class="ghost" type="submit">{{ tr('browser.update_all') }}</button>
             </form>
         </div>
@@ -160,7 +165,7 @@
             {% set card = module_cards.get(module, {}) %}
             {% set image = card.get('image') or '' %}
             <article class="module-card installed-card {% if image %}has-bg{% endif %}" data-name="{{ module }} {{ meta.get('description', '') }}">
-                <a class="module-card-link" href="/modules/{{ module }}" aria-label="Open {{ module }} details"></a>
+                <a class="module-card-link" href="/modules/{{ module }}?return_to=installed_tab&amp;page={{ browser_page }}" aria-label="Open {{ module }} details"></a>
                 <div class="module-card-glow"></div>
                 <div class="module-cover" aria-hidden="true">
                     {% if image %}<img src="{{ image }}" data-fallback="/images/modules/Module.png" alt="" loading="lazy" decoding="async">{% endif %}
@@ -175,11 +180,11 @@
                     {% if not commands %}<span>{{ tr('browser.no_commands') }}</span>{% endif %}
                 </div>
                 <div class="module-actions">
-                    <a class="small ghost info-link" href="/modules/{{ module }}">{{ tr('browser.info') }}</a>
+                <a class="small ghost info-link" href="/modules/{{ module }}?return_to=installed_tab&amp;page={{ browser_page }}">{{ tr('browser.info') }}</a>
                     {% if module not in protected %}
-                    <form method="post" action="/modules/{{ module }}/update"><input type="hidden" name="return_to" value="installed_tab"><button class="small ghost" type="submit">{{ tr('browser.update') }}</button></form>
-                    <form method="post" action="/modules/{{ module }}/unload" data-confirm="{{ tr('confirm.unload_module') }}"><input type="hidden" name="return_to" value="installed_tab"><button class="small ghost" type="submit">{{ tr('browser.unload') }}</button></form>
-                    <form method="post" action="/modules/{{ module }}/delete" data-confirm="{{ tr('confirm.delete_module') }}"><input type="hidden" name="return_to" value="installed_tab"><button class="small danger" type="submit">{{ tr('browser.delete') }}</button></form>
+                    <form method="post" action="/modules/{{ module }}/update"><input type="hidden" name="return_to" value="installed_tab"><input type="hidden" name="return_page" value="{{ browser_page }}"><button class="small ghost" type="submit">{{ tr('browser.update') }}</button></form>
+                    <form method="post" action="/modules/{{ module }}/unload" data-confirm="{{ tr('confirm.unload_module') }}"><input type="hidden" name="return_to" value="installed_tab"><input type="hidden" name="return_page" value="{{ browser_page }}"><button class="small ghost" type="submit">{{ tr('browser.unload') }}</button></form>
+                    <form method="post" action="/modules/{{ module }}/delete" data-confirm="{{ tr('confirm.delete_module') }}"><input type="hidden" name="return_to" value="installed_tab"><input type="hidden" name="return_page" value="{{ browser_page }}"><button class="small danger" type="submit">{{ tr('browser.delete') }}</button></form>
                     {% else %}
                     <span class="lock-pill">{{ tr('browser.protected') }}</span>
                     {% endif %}
@@ -189,7 +194,7 @@
         </div>
     </section>
 
-    <section id="installPane" class="module-pane">
+    <section id="installPane" class="module-pane" role="tabpanel" aria-labelledby="installTab" aria-hidden="true" tabindex="0">
         <div class="pane-head">
             <div>
                 <p class="eyebrow">{{ tr('browser.installmod') }}</p>
@@ -202,11 +207,13 @@
                 <label>{{ tr('browser.module_url') }}</label>
                 <input type="text" name="link" placeholder="https://.../module.py" required>
                 <input type="hidden" name="return_to" value="install_tab">
+                <input type="hidden" name="return_page" value="{{ browser_page }}">
                 <button type="submit">{{ tr('browser.install_from_url') }}</button>
             </form>
             <form class="stack" method="post" action="/modules/upload" enctype="multipart/form-data">
                 <label class="file-drop">{{ tr('browser.choose_py') }}<input type="file" name="file" accept=".py" required></label>
                 <input type="hidden" name="return_to" value="install_tab">
+                <input type="hidden" name="return_page" value="{{ browser_page }}">
                 <button type="submit">{{ tr('browser.upload_module') }}</button>
             </form>
         </div>
@@ -220,6 +227,6 @@
 </main>
 
 
-<script src="/static/clean.js?v=20260819.3"></script>
+<script src="/static/clean.js?v=20260819.4"></script>
 </body>
 </html>

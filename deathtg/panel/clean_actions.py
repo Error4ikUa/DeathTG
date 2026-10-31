@@ -94,19 +94,51 @@ def _redirect(path: str, *, message: str | None = None, error: str | None = None
     return RedirectResponse(path, status_code=303)
 
 
-def _target_path(return_to: str | None, default: str = "/browser") -> str:
+def _query_target(path: str, key: str, value: object) -> str:
+    base, marker, fragment = path.partition("#")
+    separator = "&" if "?" in base else "?"
+    target = f"{base}{separator}{quote(str(key), safe='')}={quote(str(value), safe='')}"
+    return f"{target}#{fragment}" if marker else target
+
+
+def _safe_return_page(value: str | int | None) -> int:
+    try:
+        return min(10000, max(1, int(value or 1)))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _target_path(
+    return_to: str | None,
+    default: str = "/browser",
+    return_page: str | int | None = None,
+) -> str:
     value = (return_to or "").strip().lower()
     if value == "news":
-        return "/"
-    if value == "installed_tab":
-        return "/browser#installedPane"
-    if value == "install_tab":
-        return "/browser#installPane"
-    if value == "browser":
-        return "/browser"
-    if value == "installed":
-        return "/installed"
-    return default
+        target = "/"
+    elif value == "installed_tab":
+        target = "/browser#installedPane"
+    elif value == "install_tab":
+        target = "/browser#installPane"
+    elif value == "browser":
+        target = "/browser"
+    elif value == "installed":
+        target = "/installed"
+    else:
+        target = default
+    if value in {"installed_tab", "install_tab", "browser"}:
+        page = _safe_return_page(return_page)
+        if page > 1:
+            target = _query_target(target, "page", page)
+    return target
+
+
+def _module_detail_path(module_name: str, return_to: str, return_page: str | int | None) -> str:
+    origin = str(return_to or "").strip().lower()
+    if origin not in {"browser", "installed_tab", "installed"}:
+        origin = "installed_tab"
+    page = _safe_return_page(return_page)
+    return f"/modules/{quote(module_name, safe='')}?return_to={origin}&page={page}"
 
 
 def _require_auth(request: Request) -> RedirectResponse | None:
@@ -537,6 +569,7 @@ async def download_mod(
     request: Request,
     link: str = Form(...),
     return_to: str = Form("browser"),
+    return_page: str = Form("1"),
     image: str = Form(""),
     description: str = Form(""),
     author: str = Form(""),
@@ -563,20 +596,26 @@ async def download_mod(
             image_name=str(bundle.get("image_name") or ""),
             requirements_text=str(bundle.get("requirements_text") or ""),
         )
-        target = _target_path(return_to)
-        if target == "/browser":
-            target = "/browser?refresh=1"
+        target = _target_path(return_to, return_page=return_page)
+        if target.startswith("/browser"):
+            target = _query_target(target, "refresh", "1")
         return _redirect(target, message=f"Installed: {name}")
     except Exception as e:
         text = str(e)
         if text.startswith("SECURITY_PENDING:"):
             token = text.split(":", 1)[1]
-            return RedirectResponse(f"{_target_path(return_to)}?warning={quote(token)}", status_code=303)
-        return _redirect(_target_path(return_to), error=str(e))
+            target = _target_path(return_to, return_page=return_page)
+            return RedirectResponse(_query_target(target, "warning", token), status_code=303)
+        return _redirect(_target_path(return_to, return_page=return_page), error=str(e))
 
 
 @router.post("/modules/upload")
-async def upload_mod(request: Request, file: UploadFile = File(...), return_to: str = Form("browser")):
+async def upload_mod(
+    request: Request,
+    file: UploadFile = File(...),
+    return_to: str = Form("browser"),
+    return_page: str = Form("1"),
+):
     blocked = _require_auth(request)
     if blocked:
         return blocked
@@ -597,17 +636,23 @@ async def upload_mod(request: Request, file: UploadFile = File(...), return_to: 
             description="Uploaded local module",
             install_kind="file",
         )
-        return _redirect(_target_path(return_to), message=f"Uploaded: {name}")
+        return _redirect(_target_path(return_to, return_page=return_page), message=f"Uploaded: {name}")
     except Exception as e:
         text = str(e)
         if text.startswith("SECURITY_PENDING:"):
             token = text.split(":", 1)[1]
-            return RedirectResponse(f"{_target_path(return_to)}?warning={quote(token)}", status_code=303)
-        return _redirect(_target_path(return_to), error=str(e))
+            target = _target_path(return_to, return_page=return_page)
+            return RedirectResponse(_query_target(target, "warning", token), status_code=303)
+        return _redirect(_target_path(return_to, return_page=return_page), error=str(e))
 
 
 @router.post("/modules/pending/{token}/delete")
-async def delete_pending_mod(request: Request, token: str, return_to: str = Form("browser")):
+async def delete_pending_mod(
+    request: Request,
+    token: str,
+    return_to: str = Form("browser"),
+    return_page: str = Form("1"),
+):
     blocked = _require_auth(request)
     if blocked:
         return blocked
@@ -615,17 +660,22 @@ async def delete_pending_mod(request: Request, token: str, return_to: str = Form
         _pending_path(token).unlink(missing_ok=True)
     except ValueError:
         pass
-    return _redirect(_target_path(return_to), message="Module install cancelled")
+    return _redirect(_target_path(return_to, return_page=return_page), message="Module install cancelled")
 
 
 @router.post("/modules/pending/{token}/continue")
-async def continue_pending_mod(request: Request, token: str, return_to: str = Form("browser")):
+async def continue_pending_mod(
+    request: Request,
+    token: str,
+    return_to: str = Form("browser"),
+    return_page: str = Form("1"),
+):
     blocked = _require_auth(request)
     if blocked:
         return blocked
     pending = _consume_pending_install(token)
     if not pending:
-        return _redirect(_target_path(return_to), error="Pending module was not found")
+        return _redirect(_target_path(return_to, return_page=return_page), error="Pending module was not found")
     try:
         name = await _install_module_source(
             filename=str(pending.get("filename") or "module.py"),
@@ -643,13 +693,18 @@ async def continue_pending_mod(request: Request, token: str, return_to: str = Fo
             image_name=str(pending.get("image_name") or ""),
             requirements_text=str(pending.get("requirements_text") or ""),
         )
-        return _redirect(_target_path(return_to), message=f"Installed with warning: {name}")
+        return _redirect(_target_path(return_to, return_page=return_page), message=f"Installed with warning: {name}")
     except Exception as e:
-        return _redirect(_target_path(return_to), error=str(e))
+        return _redirect(_target_path(return_to, return_page=return_page), error=str(e))
 
 
 @router.post("/modules/{name}/unload")
-async def unload_mod(request: Request, name: str, return_to: str = Form("browser")):
+async def unload_mod(
+    request: Request,
+    name: str,
+    return_to: str = Form("browser"),
+    return_page: str = Form("1"),
+):
     blocked = _require_auth(request)
     if blocked:
         return blocked
@@ -659,13 +714,18 @@ async def unload_mod(request: Request, name: str, return_to: str = Form("browser
             raise RuntimeError("Protected module cannot be unloaded")
         loader.unload(module_name)
         _queue_userbot_action("unload", module=module_name)
-        return _redirect(_target_path(return_to), message=f"Unloaded: {module_name}")
+        return _redirect(_target_path(return_to, return_page=return_page), message=f"Unloaded: {module_name}")
     except Exception as e:
-        return _redirect(_target_path(return_to), error=str(e))
+        return _redirect(_target_path(return_to, return_page=return_page), error=str(e))
 
 
 @router.post("/modules/{name}/delete")
-async def delete_mod(request: Request, name: str, return_to: str = Form("browser")):
+async def delete_mod(
+    request: Request,
+    name: str,
+    return_to: str = Form("browser"),
+    return_page: str = Form("1"),
+):
     blocked = _require_auth(request)
     if blocked:
         return blocked
@@ -688,13 +748,18 @@ async def delete_mod(request: Request, name: str, return_to: str = Form("browser
         _drop_module_meta(module_name)
         _queue_userbot_action("delete", module=module_name)
         await refresh_modules()
-        return _redirect(_target_path(return_to), message=f"Deleted: {module_name}")
+        return _redirect(_target_path(return_to, return_page=return_page), message=f"Deleted: {module_name}")
     except Exception as e:
-        return _redirect(_target_path(return_to), error=str(e))
+        return _redirect(_target_path(return_to, return_page=return_page), error=str(e))
 
 
 @router.post("/modules/{name}/update")
-async def update_mod(request: Request, name: str, return_to: str = Form("browser")):
+async def update_mod(
+    request: Request,
+    name: str,
+    return_to: str = Form("browser"),
+    return_page: str = Form("1"),
+):
     blocked = _require_auth(request)
     if blocked:
         return blocked
@@ -723,29 +788,37 @@ async def update_mod(request: Request, name: str, return_to: str = Form("browser
                 image_name=str(bundle.get("image_name") or ""),
                 requirements_text=str(bundle.get("requirements_text") or ""),
             )
-            return _redirect(_target_path(return_to), message=f"Updated: {updated_name}")
+            return _redirect(_target_path(return_to, return_page=return_page), message=f"Updated: {updated_name}")
         path = _local_module_path(module_name)
         if not path or not path.exists():
             raise RuntimeError("Module source was not found")
         force = bool(meta.get("verified") or meta.get("security_override"))
         _queue_userbot_action("install", path=str(path), force=force)
         await refresh_modules()
-        return _redirect(_target_path(return_to), message=f"Reload scheduled: {module_name}")
+        return _redirect(_target_path(return_to, return_page=return_page), message=f"Reload scheduled: {module_name}")
     except Exception as e:
         text = str(e)
         if text.startswith("SECURITY_PENDING:"):
             token = text.split(":", 1)[1]
-            return RedirectResponse(f"{_target_path(return_to)}?warning={quote(token)}", status_code=303)
-        return _redirect(_target_path(return_to), error=str(e))
+            target = _target_path(return_to, return_page=return_page)
+            return RedirectResponse(_query_target(target, "warning", token), status_code=303)
+        return _redirect(_target_path(return_to, return_page=return_page), error=str(e))
 
 
 @router.post("/modules/{name}/config")
-async def save_module_config(request: Request, name: str, return_to: str = Form("module")):
+async def save_module_config(
+    request: Request,
+    name: str,
+    return_to: str = Form("installed_tab"),
+    return_page: str = Form("1"),
+):
     blocked = _require_auth(request)
     if blocked:
         return blocked
+    detail_target = "/browser#installedPane"
     try:
         module_name = _safe_module_name(name)
+        detail_target = _module_detail_path(module_name, return_to, return_page)
         form = await request.form()
         instances = loader.instances.get(module_name, [])
         if not instances:
@@ -768,22 +841,29 @@ async def save_module_config(request: Request, name: str, return_to: str = Form(
                 changed += 1
             inst.save_config()
         if not changed:
-            return _redirect(f"/modules/{module_name}", message="No config changes")
+            return _redirect(detail_target, message="No config changes")
         _queue_userbot_action("reload_config", module=module_name)
-        return _redirect(f"/modules/{module_name}", message=f"Config saved: {changed} value(s)")
+        return _redirect(detail_target, message=f"Config saved: {changed} value(s)")
     except ValidationError as exc:
-        return _redirect(f"/modules/{name}", error=f"Config validation failed: {exc}")
+        return _redirect(detail_target, error=f"Config validation failed: {exc}")
     except Exception as e:
-        return _redirect(f"/modules/{name}", error=str(e))
+        return _redirect(detail_target, error=str(e))
 
 
 @router.post("/modules/{name}/requirements")
-async def install_module_requirements(request: Request, name: str):
+async def install_module_requirements(
+    request: Request,
+    name: str,
+    return_to: str = Form("installed_tab"),
+    return_page: str = Form("1"),
+):
     blocked = _require_auth(request)
     if blocked:
         return blocked
+    detail_target = "/browser#installedPane"
     try:
         module_name = _safe_module_name(name)
+        detail_target = _module_detail_path(module_name, return_to, return_page)
         path = loader.module_source_path(module_name)
         if not path or not path.exists():
             path = ROOT_DIR / "deathtg" / "modules" / f"{module_name}.py"
@@ -803,22 +883,26 @@ async def install_module_requirements(request: Request, name: str):
         if not result.get("ok"):
             output = str(result.get("message") or result.get("stderr") or "pip failed")
             raise RuntimeError(output[-800:])
-        return _redirect(f"/modules/{module_name}", message=f"Requirements installed: {', '.join(requirements)}")
+        return _redirect(detail_target, message=f"Requirements installed: {', '.join(requirements)}")
     except Exception as e:
-        return _redirect(f"/modules/{name}", error=str(e))
+        return _redirect(detail_target, error=str(e))
 
 
 @router.post("/modules/update-all")
-async def update_all_modules(request: Request, return_to: str = Form("browser")):
+async def update_all_modules(
+    request: Request,
+    return_to: str = Form("browser"),
+    return_page: str = Form("1"),
+):
     blocked = _require_auth(request)
     if blocked:
         return blocked
     try:
         await refresh_modules()
         _queue_userbot_action("reload_all")
-        return _redirect(_target_path(return_to), message="Update all checked")
+        return _redirect(_target_path(return_to, return_page=return_page), message="Update all checked")
     except Exception as e:
-        return _redirect(_target_path(return_to), error=str(e))
+        return _redirect(_target_path(return_to, return_page=return_page), error=str(e))
 
 
 @router.post("/runtime/sync")

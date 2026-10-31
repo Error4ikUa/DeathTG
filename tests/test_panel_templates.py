@@ -45,6 +45,22 @@ class PanelTemplateTests(unittest.TestCase):
         self.assertIn("тот же аккаунт Tailscale", source)
         self.assertNotIn("LAN/public", source)
 
+    def test_setup_mode_back_link_matches_selected_language(self) -> None:
+        source = (TEMPLATE_DIR / "setup.html").read_text(encoding="utf-8")
+        self.assertIn("Back to mode selection", source)
+        self.assertIn("К выбору режима", source)
+        self.assertEqual(source.count('href="/setup?step=mode"'), 3)
+
+    def test_module_catalog_tabs_and_details_keep_navigation_context(self) -> None:
+        browser = (TEMPLATE_DIR / "clean_browser.html").read_text(encoding="utf-8")
+        details = (TEMPLATE_DIR / "clean_module_detail.html").read_text(encoding="utf-8")
+        self.assertIn('role="tablist"', browser)
+        self.assertIn('aria-controls="installedPane"', browser)
+        self.assertIn("return_page", browser)
+        self.assertIn("return_to=installed_tab&amp;page={{ browser_page }}", browser)
+        self.assertIn("{{ module_back_url }}", details)
+        self.assertIn("module-detail.css?v=1", details)
+
 
 if __name__ == "__main__":
     unittest.main()

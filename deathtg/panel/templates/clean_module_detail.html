@@ -6,6 +6,7 @@
     <title>{{ module.name }} &middot; {{ tr('module.details') }}</title>
     <link rel="stylesheet" href="/static/clean.css">
     <link rel="stylesheet" href="/static/engineering.css?v=20260819.7">
+    <link rel="stylesheet" href="/static/module-detail.css?v=1">
 <link rel="stylesheet" href="/static/forest.css?v=4">
 <script src="/static/forest.js?v=3"></script>
 </head>
@@ -20,7 +21,7 @@
         <a href="/">{{ tr('nav.news') }}</a>
         <a href="/profile">{{ tr('nav.profile') }}</a>
         <a href="/activity">{{ tr('nav.activity') }}</a>
-        <a class="active" href="/browser#installedPane">{{ tr('nav.modules') }}</a>
+        <a class="active" href="{{ module_back_url }}">{{ tr('nav.modules') }}</a>
         <a href="/scanner">{{ tr('nav.scanner') }}</a>
         <a href="/health">{{ tr('nav.health') }}</a>
     </nav>
@@ -43,7 +44,7 @@
             </div>
         </div>
         <div class="detail-actions">
-            <a class="btn ghost" href="/browser{% if not module.repo %}#installedPane{% endif %}">{{ tr('module.back') }}</a>
+            <a class="btn ghost" href="{{ module_back_url }}">{{ tr('module.back') }}</a>
             {% if module.install_link %}
             <form method="post" action="/modules/download">
                 <input type="hidden" name="link" value="{{ module.install_link }}">
@@ -51,11 +52,12 @@
                 <input type="hidden" name="description" value="{{ module.description }}">
                 <input type="hidden" name="author" value="{{ module.hikka_meta.get('developer') or module.meta.get('author') or 'DTG' }}">
                 <input type="hidden" name="version" value="{{ module.meta.get('version') or 'latest' }}">
-                <input type="hidden" name="return_to" value="browser">
+                <input type="hidden" name="return_to" value="{{ module_return_to }}">
+                <input type="hidden" name="return_page" value="{{ module_return_page }}">
                 <button type="submit">{{ tr('browser.install') }}</button>
             </form>
             {% elif not module.protected %}
-            <form method="post" action="/modules/{{ module.name }}/update"><input type="hidden" name="return_to" value="installed_tab"><button type="submit">{{ tr('browser.update') }}</button></form>
+            <form method="post" action="/modules/{{ module.name }}/update"><input type="hidden" name="return_to" value="{{ module_return_to }}"><input type="hidden" name="return_page" value="{{ module_return_page }}"><button type="submit">{{ tr('browser.update') }}</button></form>
             {% endif %}
         </div>
     </section>
@@ -90,6 +92,8 @@
             </div>
             {% if module.requires and not module.repo %}
             <form class="module-inline-form" method="post" action="/modules/{{ module.name }}/requirements" data-confirm="{{ tr('confirm.install_requirements') }}">
+                <input type="hidden" name="return_to" value="{{ module_return_to }}">
+                <input type="hidden" name="return_page" value="{{ module_return_page }}">
                 <button class="ghost" type="submit">{{ tr('module.install_requirements') }}</button>
             </form>
             {% endif %}
@@ -101,7 +105,8 @@
         <p class="eyebrow">{{ tr('module.config') }}</p>
         <h2>{{ tr('module.settings') }}</h2>
         <form class="config-form" method="post" action="/modules/{{ module.name }}/config">
-            <input type="hidden" name="return_to" value="module">
+            <input type="hidden" name="return_to" value="{{ module_return_to }}">
+            <input type="hidden" name="return_page" value="{{ module_return_page }}">
             <div class="config-grid">
             {% for item in module.config_values %}
             <label class="config-chip">
@@ -160,6 +165,6 @@
 </main>
 
 
-<script src="/static/clean.js?v=20260819.3"></script>
+<script src="/static/clean.js?v=20260819.4"></script>
 </body>
 </html>

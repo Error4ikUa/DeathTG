@@ -1233,6 +1233,23 @@ async def installed_page(request: Request):
     return _template_response("clean_installed.html", ctx)
 
 
+def _browser_return_page(request: Request) -> int:
+    try:
+        return min(10000, max(1, int(request.query_params.get("page", "1"))))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _module_back_url(request: Request, *, repository_module: bool) -> str:
+    page = _browser_return_page(request)
+    origin = str(request.query_params.get("return_to") or "").strip().lower()
+    if repository_module:
+        return f"/browser?page={page}#browserPane"
+    if origin == "installed":
+        return "/installed"
+    return f"/browser?page={page}#installedPane"
+
+
 @app.get("/repo-modules/{name}", response_class=HTMLResponse)
 async def repo_module_detail_page(request: Request, name: str):
     blocked = _auth_guard(request)
@@ -1240,6 +1257,9 @@ async def repo_module_detail_page(request: Request, name: str):
         return blocked
     ctx = await _base_context(request)
     ctx.update({"module": await repo_module_detail(name), "protected": PROTECTED_MODULES})
+    ctx["module_back_url"] = _module_back_url(request, repository_module=True)
+    ctx["module_return_to"] = "browser"
+    ctx["module_return_page"] = _browser_return_page(request)
     return _template_response("clean_module_detail.html", ctx)
 
 
@@ -1251,6 +1271,9 @@ async def module_detail_page(request: Request, name: str):
     await refresh_modules()
     ctx = await _base_context(request)
     ctx.update({"module": await module_detail(name), "protected": PROTECTED_MODULES})
+    ctx["module_back_url"] = _module_back_url(request, repository_module=False)
+    ctx["module_return_to"] = "installed" if request.query_params.get("return_to") == "installed" else "installed_tab"
+    ctx["module_return_page"] = _browser_return_page(request)
     return _template_response("clean_module_detail.html", ctx)
 
 

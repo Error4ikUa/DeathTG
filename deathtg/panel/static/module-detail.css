@@ -1,0 +1,143 @@
+.module-detail-hero {
+  position: relative;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 24px;
+  padding: clamp(22px, 4vw, 38px) !important;
+  overflow: hidden;
+  border-left: 3px solid var(--accent) !important;
+  background: var(--glass) !important;
+}
+.module-detail-hero .detail-copy,
+.module-detail-hero .detail-actions { position: relative; z-index: 2; min-width: 0; }
+.module-detail-hero .detail-copy h1 {
+  margin: 4px 0 10px !important;
+  font-size: clamp(30px, 5vw, 54px) !important;
+  line-height: 1.04 !important;
+  letter-spacing: -.035em;
+  overflow-wrap: anywhere;
+}
+.module-detail-hero .detail-copy > p:not(.eyebrow) {
+  max-width: 760px;
+  margin: 0;
+  color: var(--cp-muted);
+  line-height: 1.65;
+}
+.detail-badges,
+.security-passport { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
+.detail-badges > span,
+.security-passport > span { min-height: 28px; padding: 6px 10px; border-radius: 999px; }
+.module-detail-hero .detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.module-detail-hero .detail-actions form { margin: 0; }
+.module-detail-hero .detail-actions .btn,
+.module-detail-hero .detail-actions button { min-width: 136px; }
+.module-stats-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+.module-stats-strip .mini-stat {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 15px 17px;
+  border: 1px solid var(--cp-line);
+  border-radius: 16px;
+  background: var(--cp-panel);
+}
+.module-stats-strip .mini-stat span { color: var(--cp-muted); font-size: 12px; }
+.module-stats-strip .mini-stat b { color: var(--cp-text); font-size: 23px; font-variant-numeric: tabular-nums; }
+.modules-page .detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.modules-page .detail-grid > .card,
+.modules-page .compact-section { min-width: 0; padding: 20px !important; }
+.modules-page .detail-grid h2,
+.modules-page .compact-section h2 { margin: 0 0 14px; font-size: clamp(18px, 2.2vw, 23px); }
+.modules-page .command-list { display: grid; gap: 6px; min-height: 0; }
+.modules-page .command-list > span {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--cp-line);
+  border-radius: 12px;
+  background: var(--cp-panel-2);
+  color: var(--cp-text);
+}
+.modules-page .command-list b { color: var(--accent); font-family: var(--cp-mono); font-size: 12px; }
+.modules-page .command-list em { color: var(--cp-muted); font-size: 12px; font-style: normal; line-height: 1.5; }
+.modules-page .meta-list { display: grid; gap: 0; margin: 0; }
+.modules-page .meta-list p {
+  display: grid;
+  grid-template-columns: minmax(92px, .38fr) minmax(0, 1fr);
+  gap: 12px;
+  margin: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--cp-line);
+  font-size: 13px;
+}
+.modules-page .meta-list p:first-child { padding-top: 0; }
+.modules-page .meta-list p:last-child { border-bottom: 0; }
+.modules-page .meta-list p > b { color: var(--cp-muted); font-weight: 550; }
+.modules-page .meta-list p > span { min-width: 0; color: var(--cp-text); overflow-wrap: anywhere; }
+.modules-page .module-inline-form { margin-top: 14px; }
+.modules-page .config-form { display: grid; gap: 16px; }
+.modules-page .config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 10px; }
+.modules-page .config-chip {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--cp-line);
+  border-radius: 14px;
+  background: var(--cp-panel-2);
+  color: var(--cp-text);
+}
+.modules-page .config-chip > b { font-family: var(--cp-mono); font-size: 12px; overflow-wrap: anywhere; }
+.modules-page .config-chip small { color: var(--cp-muted); line-height: 1.5; }
+.modules-page .config-chip input:not([type="hidden"]) { width: 100%; }
+.modules-page .switch-row { display: flex; align-items: center; gap: 10px; color: var(--cp-muted); }
+.modules-page .switch-row input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
+.modules-page .config-actions { display: flex; justify-content: flex-end; }
+.modules-page .security-passport { margin: 0 0 14px; color: var(--cp-muted); }
+.modules-page .finding-list { display: grid; gap: 8px; }
+.modules-page .finding-line { display: grid; gap: 8px; min-width: 0; padding: 12px; border: 1px solid var(--cp-line); border-radius: 12px; background: var(--cp-panel-2); }
+.modules-page .finding-line b { font-size: 12px; line-height: 1.5; }
+.modules-page .finding-line code { max-width: 100%; overflow: auto; color: var(--cp-muted); }
+.modules-page .source-accordion { overflow: hidden; border: 1px solid var(--cp-line); border-radius: 14px; background: var(--cp-panel-2); }
+.modules-page .source-accordion summary { padding: 12px 14px; color: var(--cp-text); cursor: pointer; }
+.modules-page .source-preview { max-height: min(60vh, 680px); margin: 0; padding: 14px; border-top: 1px solid var(--cp-line); color: var(--cp-muted); font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 800px) {
+  .module-detail-hero { grid-template-columns: 1fr; align-items: start; gap: 18px; }
+  .module-detail-hero .detail-actions { justify-content: stretch; }
+  .module-detail-hero .detail-actions > *,
+  .module-detail-hero .detail-actions form,
+  .module-detail-hero .detail-actions .btn,
+  .module-detail-hero .detail-actions button { flex: 1 1 150px; width: 100%; }
+  .module-stats-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .modules-page .detail-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .module-detail-hero { padding: 18px !important; }
+  .module-detail-hero .detail-actions > *,
+  .module-detail-hero .detail-actions form,
+  .module-detail-hero .detail-actions .btn,
+  .module-detail-hero .detail-actions button { flex-basis: 100%; }
+  .modules-page .detail-grid > .card,
+  .modules-page .compact-section { padding: 16px !important; }
+  .modules-page .meta-list p { grid-template-columns: 1fr; gap: 4px; }
+}

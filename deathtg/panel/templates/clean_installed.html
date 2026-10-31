@@ -27,7 +27,7 @@
         </div>
         <div class="actions">
             <form method="post" action="/modules/update-all"><input type="hidden" name="return_to" value="installed"><button class="btn ghost" type="submit">{{ tr('browser.update_all') }}</button></form>
-            <a class="btn ghost" href="/browser">{{ tr('installed.module_center') }}</a>
+            <a class="btn ghost" href="/browser#installedPane">{{ tr('installed.module_center') }}</a>
         </div>
     </section>
     {% if message %}<div class="toast ok">{{ message }}</div>{% endif %}
@@ -37,7 +37,7 @@
         {% set meta = module_meta.get(module, {}) %}
         {% set card = module_cards.get(module, {}) %}
         <article class="module-card installed-card {% if card.get('image') %}has-bg{% endif %}" data-name="{{ module }} {% for cmd in commands %}{{ cmd.name }} {% endfor %}">
-            <a class="module-card-link" href="/modules/{{ module }}" aria-label="Open {{ module }} details"></a>
+            <a class="module-card-link" href="/modules/{{ module }}?return_to=installed" aria-label="Open {{ module }} details"></a>
             <div class="module-card-glow"></div>
             <div class="module-cover" aria-hidden="true">
                 {% if card.get('image') %}<img src="{{ card.get('image') }}" data-fallback="/images/modules/Module.png" alt="" loading="lazy" decoding="async">{% endif %}
@@ -52,7 +52,7 @@
                 {% if commands|length > 8 %}<code>+{{ commands|length - 8 }}</code>{% endif %}
             </div>
             <div class="actions module-actions">
-                <a class="small ghost" href="/modules/{{ module }}">{{ tr('browser.info') }}</a>
+                <a class="small ghost" href="/modules/{{ module }}?return_to=installed">{{ tr('browser.info') }}</a>
                 {% if module not in protected %}
                 <form method="post" action="/modules/{{ module }}/update"><input type="hidden" name="return_to" value="installed"><button class="small ghost" type="submit">{{ tr('browser.update') }}</button></form>
                 <form method="post" action="/modules/{{ module }}/unload" data-confirm="{{ tr('confirm.unload_module') }}"><input type="hidden" name="return_to" value="installed"><button class="small ghost" type="submit">{{ tr('browser.unload') }}</button></form>
@@ -67,6 +67,6 @@
     </section>
 </main>
 
-<script src="/static/clean.js?v=20260819.3"></script>
+<script src="/static/clean.js?v=20260819.4"></script>
 </body>
 </html>

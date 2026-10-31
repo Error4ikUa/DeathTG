@@ -34,28 +34,53 @@ function activateTab(id) {
   if (!id) return;
   const btn = document.querySelector(`[data-tab="${id}"]`);
   const pane = document.getElementById(id);
-  if (!btn || !pane) return;
-  document.querySelectorAll("[data-tab]").forEach((b) => b.classList.remove("active"));
-  document.querySelectorAll(".module-pane").forEach((p) => p.classList.remove("active"));
+  if (!btn || !pane) return false;
+  document.querySelectorAll("[data-tab]").forEach((b) => {
+    const active = b === btn;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-selected", active ? "true" : "false");
+    b.tabIndex = active ? 0 : -1;
+  });
+  document.querySelectorAll(".module-pane").forEach((p) => {
+    const active = p === pane;
+    p.classList.toggle("active", active);
+    p.setAttribute("aria-hidden", active ? "false" : "true");
+  });
   btn.classList.add("active");
-  pane.classList.add("active");
+  return true;
 }
 
 function setupTabs() {
-  document.querySelectorAll("[data-tab]").forEach((btn) =>
+  const tabs = [...document.querySelectorAll('[role="tab"][data-tab]')];
+  tabs.forEach((btn, index) => {
     btn.addEventListener("click", () => {
       activateTab(btn.dataset.tab);
       history.replaceState(null, "", "#" + btn.dataset.tab);
-    }),
-  );
+    });
+    btn.addEventListener("keydown", (event) => {
+      const nextIndex = event.key === "ArrowRight" ? (index + 1) % tabs.length
+        : event.key === "ArrowLeft" ? (index - 1 + tabs.length) % tabs.length
+        : event.key === "Home" ? 0
+        : event.key === "End" ? tabs.length - 1
+        : -1;
+      if (nextIndex < 0) return;
+      event.preventDefault();
+      const next = tabs[nextIndex];
+      next.focus();
+      activateTab(next.dataset.tab);
+      history.replaceState(null, "", "#" + next.dataset.tab);
+    });
+  });
   const hash = location.hash.replace("#", "");
-  if (hash) {
-    activateTab(hash);
+  if (hash && activateTab(hash)) {
     // The target pane is hidden during the browser's native hash jump.  Once
     // it becomes visible, align it below the fixed DeathTG service control.
     requestAnimationFrame(() =>
       document.getElementById(hash)?.scrollIntoView({ block: "start" }),
     );
+  } else if (!hash) {
+    const selected = tabs.find((tab) => tab.getAttribute("aria-selected") === "true") || tabs[0];
+    if (selected) activateTab(selected.dataset.tab);
   }
 }
 
